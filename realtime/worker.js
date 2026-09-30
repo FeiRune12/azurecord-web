@@ -270,6 +270,7 @@ export class UserHub {
       );
       return;
     }
+  }
 
   webSocketClose(ws, code, reason) {
     try { ws.close(code, reason); } catch {}
