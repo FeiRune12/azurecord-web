@@ -23,6 +23,6 @@ test('Beta7.1: exclusão limpa os campos de login e renderiza imediatamente o me
 });
 
 test('Azurecord estável: rótulo visual não anuncia builds beta antigas', () => {
-  assert.match(html, /APP • V52 BETA 8\.4/);
+  assert.match(html, /APP • AZURECORD 1\.0/);
   assert.doesNotMatch(html, /APP • V52 BETA/);
 });
