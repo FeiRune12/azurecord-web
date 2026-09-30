@@ -142,6 +142,21 @@ export class UserHub {
       const targetUserId = String(message.targetUserId || "");
       if (!targetUserId || targetUserId === session.userId) return;
 
+      // O hub só aceita notificações de DM entre amigos da conta autenticada.
+      // O conteúdo nunca passa pelo WebSocket; ele apenas avisa os clientes para
+      // buscarem a mensagem real na API/D1.
+      try {
+        const response = await fetch(`${AZURECORD_API_URL}/api/friends`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const allowed = Array.isArray(data?.friends) && data.friends.some(friend => String(friend?.id || "") === targetUserId);
+        if (!allowed) return;
+      } catch {
+        return;
+      }
+
       const eventId = crypto.randomUUID();
       await Promise.allSettled([
         this.notifyUser(session.userId, {
