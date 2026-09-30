@@ -38,3 +38,26 @@ test('Beta 8.3.1 inclui publicação estática para GitHub Pages', () => {
   assert.ok(fs.existsSync(path.join(root, 'docs', 'index.html')));
   assert.ok(fs.existsSync(path.join(root, 'docs', '.nojekyll')));
 });
+
+
+test('Azurecord 1.0 tem convites por link, entrada por link e realtime instantâneo', () => {
+  assert.match(app, /serverInviteLink/);
+  assert.match(app, /joinServerByInvite/);
+  assert.match(app, /serverJoinLink/);
+  assert.match(app, /dm\.upsert/);
+  assert.match(app, /channel\.upsert/);
+  assert.match(app, /server\.commit/);
+  assert.match(app, /social\.commit/);
+});
+
+test('Azurecord 1.0 remove limite artificial de mídia ao criar e editar servidor', () => {
+  assert.match(app, /Sem limite artificial de MB/);
+  assert.match(app, /server-icon/);
+  assert.match(app, /server-banner/);
+  assert.doesNotMatch(app, /serverSettingsIconFile[\s\S]{0,400}maxChars:450000/);
+});
+
+test('Abas de amigos exibem contagem no estilo Online — N', () => {
+  assert.match(app, /Online — \$\{online\}/);
+  assert.match(app, /Todos — \$\{ids\.length\}/);
+});

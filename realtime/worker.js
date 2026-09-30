@@ -138,13 +138,48 @@ export class UserHub {
       return;
     }
 
+    if (message?.type === "account.commit") {
+      await this.notifyUser(session.userId, {
+        type: "account.changed",
+        eventId: crypto.randomUUID(),
+        reason: String(message.reason || "account"),
+        at: Date.now(),
+      });
+      return;
+    }
+
+    if (message?.type === "social.commit") {
+      const targetUserId = String(message.targetUserId || "");
+      const event = { type: "social.changed", eventId: crypto.randomUUID(), reason: String(message.reason || "social"), at: Date.now() };
+      const targets = [session.userId];
+      if (targetUserId && targetUserId !== session.userId) targets.push(targetUserId);
+      await Promise.allSettled(targets.map(userId => this.notifyUser(userId, event)));
+      return;
+    }
+
+    if (message?.type === "server.commit") {
+      const serverId = String(message.serverId || "");
+      if (!serverId) return;
+      let members = [];
+      try {
+        const response = await fetch(`${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/members`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        members = Array.isArray(data?.members) ? data.members : [];
+      } catch {
+        return;
+      }
+      const event = { type: "server.changed", eventId: crypto.randomUUID(), serverId, reason: String(message.reason || "server"), at: Date.now() };
+      await Promise.allSettled(members.map(member => String(member?.id || "")).filter(Boolean).map(userId => this.notifyUser(userId, event)));
+      return;
+    }
+
     if (message?.type === "dm.commit") {
       const targetUserId = String(message.targetUserId || "");
       if (!targetUserId || targetUserId === session.userId) return;
 
-      // O hub só aceita notificações de DM entre amigos da conta autenticada.
-      // O conteúdo nunca passa pelo WebSocket; ele apenas avisa os clientes para
-      // buscarem a mensagem real na API/D1.
       try {
         const response = await fetch(`${AZURECORD_API_URL}/api/friends`, {
           headers: { Authorization: `Bearer ${session.token}` },
@@ -157,20 +192,29 @@ export class UserHub {
         return;
       }
 
+      let canonical = null;
+      try {
+        const response = await fetch(`${AZURECORD_API_URL}/api/dms/${encodeURIComponent(targetUserId)}`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const messages = Array.isArray(data?.messages) ? data.messages : [];
+          canonical = messages.find(m =>
+            String(m?.id || "") === String(message.messageId || "") ||
+            (message.clientId && String(m?.clientId || "") === String(message.clientId))
+          ) || null;
+        }
+      } catch {}
+
       const eventId = crypto.randomUUID();
+      const makeEvent = peerId => canonical
+        ? { type: "dm.upsert", eventId, peerId, message: canonical, at: Date.now() }
+        : { type: "dm.changed", eventId, peerId, at: Date.now() };
+
       await Promise.allSettled([
-        this.notifyUser(session.userId, {
-          type: "dm.changed",
-          eventId,
-          peerId: targetUserId,
-          at: Date.now(),
-        }),
-        this.notifyUser(targetUserId, {
-          type: "dm.changed",
-          eventId,
-          peerId: session.userId,
-          at: Date.now(),
-        }),
+        this.notifyUser(session.userId, makeEvent(targetUserId)),
+        this.notifyUser(targetUserId, makeEvent(session.userId)),
       ]);
       return;
     }
@@ -193,11 +237,28 @@ export class UserHub {
         return;
       }
 
+      let canonical = null;
+      try {
+        const response = await fetch(
+          `${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}/messages?limit=100`,
+          { headers: { Authorization: `Bearer ${session.token}` } }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          const messages = Array.isArray(data?.messages) ? data.messages : [];
+          canonical = messages.find(m =>
+            String(m?.id || "") === String(message.messageId || "") ||
+            (message.clientId && String(m?.clientId || "") === String(message.clientId))
+          ) || null;
+        }
+      } catch {}
+
       const event = {
-        type: "channel.changed",
+        type: canonical ? "channel.upsert" : "channel.changed",
         eventId: crypto.randomUUID(),
         serverId,
         channelId,
+        ...(canonical ? { message: canonical } : {}),
         at: Date.now(),
       };
 
@@ -207,8 +268,8 @@ export class UserHub {
           .filter(Boolean)
           .map(userId => this.notifyUser(userId, event))
       );
+      return;
     }
-  }
 
   webSocketClose(ws, code, reason) {
     try { ws.close(code, reason); } catch {}
@@ -227,7 +288,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.0.0",
+        version: "1.1.0",
         transport: "websocket",
         hibernation: true,
       });

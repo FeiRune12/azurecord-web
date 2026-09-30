@@ -6,6 +6,7 @@
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
   const CLOUD_REALTIME_URL = String(window.AZURECORD_CONFIG?.realtimeBaseUrl || 'https://azurecord-realtime.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
+  const WEB_BASE_URL = String(window.AZURECORD_CONFIG?.webBaseUrl || 'https://feirune12.github.io/azurecord-web/').replace(/\/?$/, '/');
 
   const $ = (ref) => {
     if (typeof ref !== 'string') return null;
@@ -32,6 +33,28 @@
     } catch {}
     return '';
   };
+
+  function normalizeServerInvite(value){
+    const raw=String(value||'').trim();
+    if(!raw)return '';
+    try{
+      const url=new URL(raw,WEB_BASE_URL);
+      const query=url.searchParams.get('invite')||url.searchParams.get('code');
+      const pathMatch=url.pathname.match(/\/invite\/([^/?#]+)/i);
+      const candidate=query||pathMatch?.[1];
+      if(candidate)return String(candidate).trim().replace(/[^a-z0-9_-]/gi,'').toUpperCase();
+    }catch{}
+    return raw.replace(/^.*(?:invite=|code=)/i,'').replace(/[^a-z0-9_-]/gi,'').toUpperCase().slice(0,64);
+  }
+  function serverInviteLink(code){
+    const clean=normalizeServerInvite(code);
+    const url=new URL(WEB_BASE_URL,window.location.href);
+    url.search='';url.hash='';
+    url.searchParams.set('invite',clean);
+    return url.toString();
+  }
+  let pendingInviteCode=normalizeServerInvite(new URL(window.location.href).searchParams.get('invite')||'');
+  let inviteAutoJoinBusy=false;
 
   const LOLA_AVATAR_URL = 'https://gunvolt.com/en/X/system/img/system02_03Pic02.jpg';
   const LOLA_BANNER_URL = 'https://gunvolt.com/GRC/en/special/img/grc_wallpaper_00_1920x1080en.jpg';
@@ -542,44 +565,51 @@
     cloudRealtimeReconnectTimer=setTimeout(()=>startCloudRealtimeSocket(true),wait);
   }
 
+  function applyRealtimeDmMessage(peerId,remote){
+    if(!peerId||!remote?.id)return;
+    const key=dmKey(peerId),arr=state.dmMessages[key]||[];
+    const idx=arr.findIndex(x=>x.serverId===remote.id||x.id===remote.id||(remote.clientId&&(x.id===remote.clientId||x.clientId===remote.clientId)));
+    const normalized={...remote,author:remote.senderId,serverId:remote.id,pending:false,failed:false};
+    if(idx>=0){const localId=arr[idx].id;arr[idx]={...arr[idx],...normalized,id:localId};}else arr.push(normalized);
+    arr.sort((a,b)=>(a.time||0)-(b.time||0));state.dmMessages[key]=arr;
+    state.unread[key]=(view.mode==='dm'&&view.dmUserId===peerId)?0:1;save();renderDms();
+    if(view.mode==='dm'&&view.dmUserId===peerId)renderMessages();
+  }
+  function applyRealtimeChannelMessage(remoteServerId,remoteChannelId,remote){
+    if(!remote?.id)return false;
+    const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId);
+    const ch=srv?.channels?.find(c=>(c.backendId||c.id)===remoteChannelId);
+    if(!srv||!ch)return false;
+    if(remote.author)hydrateRemoteUser(remote.author);
+    const key=`${srv.id}|${ch.id}`,arr=state.channelMessages[key]||[];
+    const idx=arr.findIndex(x=>x.serverId===remote.id||x.id===remote.id||(remote.clientId&&(x.id===remote.clientId||x.clientId===remote.clientId)));
+    const normalized={...remote,author:remote.senderId,serverId:remote.id,pending:false,failed:false};
+    if(idx>=0){const localId=arr[idx].id;arr[idx]={...arr[idx],...normalized,id:localId};}else arr.push(normalized);
+    arr.sort((a,b)=>(a.time||0)-(b.time||0));state.channelMessages[key]=arr;
+    state.unread[key]=(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)?0:1;save();
+    if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)renderMessages();else renderServerRail();
+    return true;
+  }
   async function handleCloudRealtimeEvent(event){
     if(!event||rememberRealtimeEvent(event.eventId))return;
-    if(event.type==='ready'){
-      cloudRealtimeSocketReady=true;
-      cloudRealtimeReconnectAttempt=0;
-      cloudRealtimeFailures=0;
-      wakeCloudRealtimeSync({snapshot:true});
-      return;
-    }
+    if(event.type==='ready'){cloudRealtimeSocketReady=true;cloudRealtimeReconnectAttempt=0;cloudRealtimeFailures=0;wakeCloudRealtimeSync({snapshot:true});return;}
     if(event.type==='pong')return;
-
-    if(event.type==='dm.changed'){
-      const peerId=String(event.peerId||'');
-      if(!peerId||peerId==='user-lola')return;
-      if(view.mode==='dm'&&view.dmUserId===peerId){
-        await syncDmFromBackend(peerId);
-      }else{
-        await hydrateFromCloudSocial({quiet:true});
-      }
+    if(event.type==='dm.upsert'){const peerId=String(event.peerId||'');if(peerId&&event.message){applyRealtimeDmMessage(peerId,event.message);return;}}
+    if(event.type==='dm.changed'){const peerId=String(event.peerId||'');if(!peerId||peerId==='user-lola')return;await syncDmFromBackend(peerId);return;}
+    if(event.type==='channel.upsert'){const ok=applyRealtimeChannelMessage(String(event.serverId||''),String(event.channelId||''),event.message);if(!ok)await hydrateFromCloudSocial({quiet:true});return;}
+    if(event.type==='channel.changed'){
+      const remoteServerId=String(event.serverId||''),remoteChannelId=String(event.channelId||'');
+      const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId),ch=srv?.channels?.find(x=>(x.backendId||x.id)===remoteChannelId);
+      if(!srv||!ch){await hydrateFromCloudSocial({quiet:true});return;}
+      if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)await syncChannelMessages(srv.id,ch.id);
+      else{state.unread[`${srv.id}|${ch.id}`]=1;save();renderServerRail();}
       return;
     }
-
-    if(event.type==='channel.changed'){
-      const remoteServerId=String(event.serverId||'');
-      const remoteChannelId=String(event.channelId||'');
+    if(event.type==='account.changed'||event.type==='social.changed'){await hydrateFromCloudSocial({quiet:true});if(view.mode==='server')renderShell();return;}
+    if(event.type==='server.changed'){
+      const remoteServerId=String(event.serverId||'');await hydrateFromCloudSocial({quiet:true});
       const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId);
-      const ch=srv?.channels?.find(x=>(x.backendId||x.id)===remoteChannelId);
-      if(!srv||!ch){
-        await hydrateFromCloudSocial({quiet:true});
-        return;
-      }
-      if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id){
-        await syncChannelMessages(srv.id,ch.id);
-      }else{
-        state.unread[`${srv.id}|${ch.id}`]=1;
-        save();
-        renderServerRail();
-      }
+      if(srv&&view.mode==='server'&&view.serverId===srv.id)renderShell();
     }
   }
 
@@ -1305,7 +1335,7 @@
   }
   function updatePreview(){ const n=$('usernameInput').value||'Fei';$('previewName').textContent=n;$('previewHandle').textContent='@'+n.toLowerCase();$('previewBio').textContent=$('bioInput').value||'Novo por aqui.';$('previewAvatar').style.backgroundImage=state._onboardAvatar?`url('${safeUrl(state._onboardAvatar)}')`:'';$('previewAvatar').textContent=state._onboardAvatar?'':(n[0]||'F').toUpperCase();$('previewBanner').style.backgroundImage=state._onboardBanner?`url('${safeUrl(state._onboardBanner)}')`:'none';document.documentElement.style.setProperty('--accent',$('accentInput').value||'#0066ff'); }
 
-  function enterApp(){ const u=currentUser(); if(!u){setScreen('loginScreen');return;} ensureLolaSecretRequest(); if(socialCloudReady()){hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});} setScreen('appScreen'); view.mode='home'; view.home='friends'; view.serverId=null; view.channelId=null; view.dmUserId=null; view.showMembers=true; $('homePanel').hidden=false; $('chatView').hidden=true; $('serverSide').hidden=true; $('homeSide').hidden=false; $('profilePeek').hidden=true; document.documentElement.style.setProperty('--accent',u.accent||state.accent); renderShell(); renderSavedAccounts(); save(); }
+  function enterApp(){ const u=currentUser(); if(!u){setScreen('loginScreen');return;} ensureLolaSecretRequest(); if(socialCloudReady()){hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});} setScreen('appScreen'); view.mode='home'; view.home='friends'; view.serverId=null; view.channelId=null; view.dmUserId=null; view.showMembers=true; $('homePanel').hidden=false; $('chatView').hidden=true; $('serverSide').hidden=true; $('homeSide').hidden=false; $('profilePeek').hidden=true; document.documentElement.style.setProperty('--accent',u.accent||state.accent); renderShell(); renderSavedAccounts(); save(); if(pendingInviteCode)setTimeout(()=>consumePendingInviteLink(),220); }
   function renderShell(){
     const u=currentUser();
     if(!u){ return; }
@@ -1482,7 +1512,8 @@
   }
   function toggleDms(){ const list=$('dmList'); const hidden=list.hidden;list.hidden=!hidden;$('dmToggle').setAttribute('aria-expanded',String(hidden));$('dmToggle').querySelector('.dm-chevron').textContent=hidden?'⌄':'›'; }
 
-  function renderHome(){ if(view.mode!=='home') return; const content=$('homeContent'); const hasRequests=(state.requests||[]).some(r=>r.status==='pending'&&(r.from===state.currentAccountId||r.to===state.currentAccountId)); if((view.home==='requests'||view.homeTab==='pending')&&hasRequests){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(!hasRequests&&(view.home==='requests'||view.homeTab==='pending')){view.home='friends';view.homeTab='all';} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
+  function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p?.status==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
+  function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); const hasRequests=(state.requests||[]).some(r=>r.status==='pending'&&(r.from===state.currentAccountId||r.to===state.currentAccountId)); if((view.home==='requests'||view.homeTab==='pending')&&hasRequests){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(!hasRequests&&(view.home==='requests'||view.homeTab==='pending')){view.home='friends';view.homeTab='all';} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
   function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>p.status==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${allPeople().filter(p=>p.id!==currentUser()?.id&&!isFriend(p.id)).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
@@ -1541,6 +1572,7 @@
         state.requests.push({id:req.id,from:req.from,to:req.to,status:req.status||'pending',time:new Date(req.createdAt||Date.now()).getTime()});
         showToast(`Pedido enviado para @${target.username}.`);
       }
+      sendCloudRealtime({type:'social.commit',targetUserId:id,reason:'friend.request'});
       await hydrateFromCloudSocial({quiet:true});
       save();renderHome();renderBadges();renderDms();
     }catch(err){
@@ -1552,6 +1584,7 @@
     if(!socialCloudReady()){showToast('Entre na conta Cloud para aceitar pedidos.');return;}
     try{
       await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/accept`,{method:'POST'});
+      sendCloudRealtime({type:'social.commit',targetUserId:r.from,reason:'friend.accept'});
       await hydrateFromCloudSocial({quiet:true});
       const p=getProfile(r.from);if(p)addNotification('Novo amigo',`${p.username} agora é seu amigo.`,'friend');
       renderHome();renderDms();renderBadges();
@@ -1559,15 +1592,19 @@
   }
   async function declineRequest(id){
     if(!socialCloudReady()){showToast('Entre na conta Cloud para recusar pedidos.');return;}
+    const r=state.requests.find(x=>x.id===id);
     try{
       await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/decline`,{method:'POST'});
+      sendCloudRealtime({type:'social.commit',targetUserId:r?.from||'',reason:'friend.decline'});
       await hydrateFromCloudSocial({quiet:true});renderHome();renderBadges();
     }catch(err){showToast(err.message||'Não foi possível recusar o pedido.');}
   }
   async function cancelRequest(id){
     if(!socialCloudReady()){showToast('Entre na conta Cloud para cancelar pedidos.');return;}
+    const r=state.requests.find(x=>x.id===id);
     try{
       await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/cancel`,{method:'POST'});
+      sendCloudRealtime({type:'social.commit',targetUserId:r?.to||'',reason:'friend.cancel'});
       await hydrateFromCloudSocial({quiet:true});renderHome();renderBadges();
     }catch(err){showToast(err.message||'Não foi possível cancelar o pedido.');}
   }
@@ -2552,7 +2589,7 @@
     }
   }
 
-  async function sendBetaFeedback(){if(!backendOnline||!backendToken){showToast('Conecte-se ao backend para enviar feedback.');return;}const category=prompt('Categoria: bug, suggestion, design, performance ou other','bug');if(!category)return;const description=prompt('Descreva o que aconteceu (mínimo 10 caracteres):');if(!description)return;try{const result=await backendRequest('/api/beta/feedback',{method:'POST',body:JSON.stringify({category:category.trim().toLowerCase(),description,appVersion:'0.52.0-beta.8.3'})});showToast('Feedback registrado: '+result.feedback.id);}catch(err){showToast(err.message||'Não foi possível enviar feedback.');}}
+  async function sendBetaFeedback(){if(!backendOnline||!backendToken){showToast('Conecte-se ao backend para enviar feedback.');return;}const category=prompt('Categoria: bug, suggestion, design, performance ou other','bug');if(!category)return;const description=prompt('Descreva o que aconteceu (mínimo 10 caracteres):');if(!description)return;try{const result=await backendRequest('/api/beta/feedback',{method:'POST',body:JSON.stringify({category:category.trim().toLowerCase(),description,appVersion:'1.0.0'})});showToast('Feedback registrado: '+result.feedback.id);}catch(err){showToast(err.message||'Não foi possível enviar feedback.');}}
   async function fetchCloudSettings({rerender=false,tab='account'}={}){
     if(!socialCloudReady())return state.cloudSettings;
     try{
@@ -2602,7 +2639,7 @@
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
     if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Uploads grandes</strong><p>A interface já está preparada para a futura migração para Cloudflare R2. Até essa etapa, os limites atuais continuam para não sobrecarregar o D1.</p></div></div>`;
     if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>Chamadas estão no roadmap</strong><p>A futura implementação usará WebRTC para voz, vídeo e compartilhamento de tela, com sinalização Cloud.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn" disabled>▣ Vídeo</button><button class="choice-btn" disabled>▤ Tela</button></div></div></div>`;
-    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>V52 Beta 8.3</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
+    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 1.0</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
   function bindAppSettings(tab){
@@ -2647,55 +2684,49 @@
   function runGlobalSearch(){const q=usernameKey($('globalSearchInput').value);const holder=$('globalResults');if(!q){holder.innerHTML='';return;}const userResults=allPeople().filter(p=>usernameKey(p.username).includes(q));const serverResults=state.servers.filter(s=>s.name.toLowerCase().includes(q));const channelResults=Object.entries(state.channelMessages).flatMap(([k,arr])=>arr.map(m=>({...m,key:k,source:'server'}))).filter(m=>String(m.text).toLowerCase().includes(q)).slice(0,8);const dmResults=Object.entries(state.dmMessages).flatMap(([key,arr])=>arr.map(m=>({...m,key,source:'dm'}))).filter(m=>String(m.text||'').toLowerCase().includes(q)).slice(0,8);const msgResults=[...channelResults,...dmResults].slice(0,14);holder.innerHTML=[...userResults.map(p=>`<div class="result-item"><span class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc(p.username[0])}</span><div><strong>${esc(p.username)}</strong><p>${esc(p.handle)}</p></div><div class="spacer"></div><button class="home-mini-btn" data-g-user="${p.id}">Perfil</button></div>`),...serverResults.map(s=>`<div class="result-item"><span class="server">${esc(s.icon||'A')}</span><div><strong>${esc(s.name)}</strong><p>Servidor</p></div><div class="spacer"></div><button class="home-mini-btn" data-g-server="${s.id}">Abrir</button></div>`),...msgResults.map((m,i)=>`<div class="result-item" data-global-msg="${i}"><div><strong>${esc(getProfile(m.author)?.username||getProfile(m.senderId)?.username||'Usuário')}</strong><p>${esc(m.text)}</p></div><div class="spacer"></div><span class="pill">${m.source==='dm'?'DM':'Mensagem'}</span></div>`)].join('')||'<div class="home-empty compact"><span>Nenhum resultado.</span></div>';holder.querySelectorAll('[data-g-user]').forEach(b=>b.onclick=()=>{closeModal();openProfileModal(b.dataset.gUser)});holder.querySelectorAll('[data-g-server]').forEach(b=>b.onclick=()=>{closeModal();openServer(b.dataset.gServer)});holder.querySelectorAll('[data-global-msg]').forEach((b)=>b.onclick=()=>{const m=msgResults[Number(b.dataset.globalMsg)];closeModal();if(m?.source==='dm'){openDm(m.senderId===state.currentAccountId?m.recipientId:m.senderId);}else{const [serverId,channelId]=m.key.split('|');openServer(serverId);if(channelId)openChannel(channelId);}});}
   function openChannelSearch(){const msgs=getMessages();showModal('Buscar nesta conversa',`<div class="search-box"><input id="channelSearchInput" placeholder="Buscar mensagens..."><button class="btn btn-primary" id="channelSearchGo">Buscar</button></div><div id="channelResults" class="result-list"></div>`);$('channelSearchGo').onclick=()=>{const q=$('channelSearchInput').value.toLowerCase().trim();$('channelResults').innerHTML=msgs.filter(m=>m.text.toLowerCase().includes(q)).map(m=>`<div class="result-item"><div><strong>${esc(getProfile(m.author)?.username||'Usuário')}</strong><p>${esc(m.text)}</p></div><div class="spacer"></div><span class="pill">${formatTime(m.time)}</span></div>`).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem encontrada.</span></div>';}; }
 
-  function openCreateServer(){
-    showModal('Criar servidor',`<div class="modal-grid"><label>Nome<input id="newServerName" placeholder="Meu servidor" maxlength="80" autofocus></label><label>Ícone do servidor<div class="server-icon-picker"><input id="newServerIcon" type="file" accept="image/*"><span class="tiny-note">PNG, JPG, WEBP ou GIF. Opcional.</span></div></label></div><div id="newServerIconPreview" class="server-icon-preview" hidden></div><div class="onboarding-actions"><button type="button" class="btn btn-ghost" id="createServerCancel">Cancelar</button><button type="button" class="btn btn-primary" id="createServerConfirm">Criar servidor</button></div>`);
-    let iconData='';
-    $('newServerIcon').onchange=e=>readImage(e.target.files?.[0],u=>{ iconData=u; const preview=$('newServerIconPreview'); if(!preview)return; preview.hidden=false; preview.style.backgroundImage=`url('${safeUrl(u)}')`; });
-    $('createServerCancel').onclick=closeModal;
-    $('createServerConfirm').onclick=()=>{
-      const name=$('newServerName').value.trim()||'Novo servidor';
-      const localId=uid('server');
-      const localChannels=[
-        {id:uid('channel'),serverId:localId,name:'geral',type:'text',topic:'Canal principal.'},
-        {id:uid('channel'),serverId:localId,name:'Lounge',type:'voice',topic:'Sala de voz.'}
-      ];
-      const localServer={
-        id:localId,backendId:null,name,icon:name[0]||'S',iconUrl:iconData||'',owner:state.currentAccountId,myRole:'Admin',
-        invite:Math.random().toString(36).slice(2,10).toUpperCase(),description:'Comunidade do Azurecord.',channels:localChannels
-      };
-      state.servers=Array.isArray(state.servers)?state.servers:[];
-      state.servers.push(localServer);
-      state.roles[localId]=state.roles[localId]||{}; state.roles[localId][state.currentAccountId]='Admin';
-      view.mode='server'; view.serverId=localId; view.channelId=localChannels[0].id; view.dmUserId=null;
-      save();
-      persistServersNow();
-      closeModal();
-      renderShell();
-      showToast(`Servidor "${name}" criado.`);
-      addNotification('Servidor criado',`Seu servidor ${name} está pronto.`);
-
-      if(socialReady()){
-        void socialRequest('/api/servers',{method:'POST',body:JSON.stringify({name,icon:name[0]||'S',iconUrl:iconData||'',clientId:localId})})
-          .then(data=>{
-            if(!data?.server?.id)return;
-            localServer.backendId=data.server.id;
-            localServer.owner=data.server.owner||localServer.owner;
-            localServer.invite=data.server.invite||localServer.invite;
-            localServer.icon=data.server.icon||localServer.icon;
-            localServer.iconUrl=data.server.iconUrl||localServer.iconUrl;
-            const remoteChannels=(data.channels||[]).map(c=>({id:localServer.id+'-'+c.id,backendId:c.id,serverId:localServer.id,name:c.name,type:c.type,topic:c.topic||''}));
-            if(remoteChannels.length)localServer.channels=remoteChannels;
-            save();
-            persistServersNow();
-            if(view.mode==='server'&&view.serverId===localServer.id){
-              view.channelId=localServer.channels.find(c=>c.type==='text')?.id||view.channelId;
-              renderShell();
-            }else{
-              renderServerRail();
-            }
-          })
-          .catch(err=>console.warn('[Azurecord] Servidor salvo localmente; sincronização remota falhou:',err));
-      }
+  function normalizeRemoteServer(data){
+    const srv=data?.server||data;if(!srv?.id)return null;
+    return {...srv,id:srv.id,backendId:srv.id,owner:srv.owner||srv.ownerId||state.currentAccountId,channels:(data?.channels||srv.channels||[]).map(c=>({id:c.id,backendId:c.id,serverId:srv.id,name:c.name,type:c.type,topic:c.topic||''}))};
+  }
+  async function joinServerByInvite(value,{closeAfter=true,fromLink=false}={}){
+    const code=normalizeServerInvite(value);if(!code){showToast('Cole um link ou código de convite válido.');return false;}
+    if(!socialCloudReady()){showToast('Entre na conta Cloud para entrar em servidores.');return false;}
+    try{
+      const data=await socialRequest('/api/servers/join',{method:'POST',body:JSON.stringify({code})});
+      const remote=normalizeRemoteServer(data);if(!remote)throw new Error('O servidor não pôde ser carregado.');
+      state.servers=mergeServers(state.servers,[remote]).filter(s=>s?.id!=='server-azurecord');save();persistServersNow();
+      sendCloudRealtime({type:'account.commit',reason:'server.join'});sendCloudRealtime({type:'server.commit',serverId:remote.backendId||remote.id,reason:'member.join'});
+      pendingInviteCode='';
+      if(fromLink){try{const u=new URL(window.location.href);u.searchParams.delete('invite');history.replaceState({},'',u.toString());}catch{}}
+      if(closeAfter)closeModal();openServer(remote.id);showToast(data.alreadyMember?'Servidor aberto.':'Você entrou no servidor.');return true;
+    }catch(err){showToast(err.message||'Não foi possível entrar no servidor.');return false;}
+  }
+  async function consumePendingInviteLink(){if(inviteAutoJoinBusy||!pendingInviteCode||!socialCloudReady())return;inviteAutoJoinBusy=true;try{await joinServerByInvite(pendingInviteCode,{closeAfter:false,fromLink:true});}finally{inviteAutoJoinBusy=false;}}
+  function openCreateServer(mode='create'){
+    const joining=mode==='join';
+    showModal('Servidores',`<div class="server-entry-tabs"><button type="button" class="server-entry-tab ${joining?'':'active'}" id="serverCreateTab">Criar servidor</button><button type="button" class="server-entry-tab ${joining?'active':''}" id="serverJoinTab">Entrar com link</button></div>${joining?`<div class="server-join-card"><h4>Entrar em um servidor</h4><p>Cole um link de convite ou o código.</p><input id="serverJoinLink" placeholder="https://.../?invite=ABC123 ou ABC123" autofocus><div class="onboarding-actions"><button class="btn btn-ghost" id="serverJoinCancel">Cancelar</button><button class="btn btn-primary" id="serverJoinConfirm">Entrar no servidor</button></div></div>`:`<div class="modal-grid"><label>Nome<input id="newServerName" placeholder="Meu servidor" maxlength="80" autofocus></label><label>Ícone do servidor<div class="server-icon-picker"><input id="newServerIcon" type="file" accept="image/*"><span class="tiny-note">Sem limite artificial de MB. O arquivo é enviado ao R2.</span></div></label></div><div id="newServerIconPreview" class="server-icon-preview" hidden></div><div id="newServerUploadState" class="tiny-note"></div><div class="onboarding-actions"><button type="button" class="btn btn-ghost" id="createServerCancel">Cancelar</button><button type="button" class="btn btn-primary" id="createServerConfirm">Criar servidor</button></div>`}`);
+    $('serverCreateTab').onclick=()=>openCreateServer('create');$('serverJoinTab').onclick=()=>openCreateServer('join');
+    if(joining){
+      $('serverJoinCancel').onclick=closeModal;
+      $('serverJoinConfirm').onclick=async()=>{const b=$('serverJoinConfirm');b.disabled=true;try{await joinServerByInvite($('serverJoinLink').value,{closeAfter:true});}finally{if($('serverJoinConfirm'))$('serverJoinConfirm').disabled=false;}};
+      $('serverJoinLink').onkeydown=e=>{if(e.key==='Enter')$('serverJoinConfirm').click();};return;
+    }
+    let iconFile=null,previewUrl='';
+    $('newServerIcon').onchange=e=>{if(previewUrl)try{URL.revokeObjectURL(previewUrl);}catch{};iconFile=e.target.files?.[0]||null;previewUrl=iconFile?URL.createObjectURL(iconFile):'';const p=$('newServerIconPreview');if(p){p.hidden=!previewUrl;p.style.backgroundImage=previewUrl?`url('${previewUrl}')`:'';}if(iconFile)$('newServerUploadState').textContent=`${iconFile.name} • ${formatFileSize(iconFile.size)}`;};
+    $('createServerCancel').onclick=()=>{if(previewUrl)try{URL.revokeObjectURL(previewUrl);}catch{};closeModal();};
+    $('createServerConfirm').onclick=async()=>{
+      const b=$('createServerConfirm');if(b.disabled)return;const name=$('newServerName').value.trim()||'Novo servidor';
+      if(!socialCloudReady()){showToast('Entre na conta Cloud para criar um servidor sincronizado.');return;}
+      b.disabled=true;b.textContent='Criando...';
+      try{
+        let iconUrl='';
+        if(iconFile){$('newServerUploadState').textContent='Enviando ícone para o R2...';const up=await uploadAttachmentInChunks({id:uid('server-icon'),name:iconFile.name,size:iconFile.size,type:iconFile.type||'image/*',_file:iconFile,visual:{kind:'server-icon'}});iconUrl=up.url||'';}
+        const data=await socialRequest('/api/servers',{method:'POST',body:JSON.stringify({name,icon:name[0]||'S',iconUrl})});
+        const remote=normalizeRemoteServer(data);if(!remote)throw new Error('Resposta Cloud incompleta.');
+        state.servers=mergeServers(state.servers,[remote]);state.roles[remote.id]=state.roles[remote.id]||{};state.roles[remote.id][state.currentAccountId]='Admin';save();persistServersNow();
+        sendCloudRealtime({type:'account.commit',reason:'server.create'});sendCloudRealtime({type:'server.commit',serverId:remote.backendId||remote.id,reason:'server.create'});
+        if(previewUrl)try{URL.revokeObjectURL(previewUrl);}catch{};closeModal();openServer(remote.id);addNotification('Servidor criado',`Seu servidor ${name} está pronto.`);showToast(`Servidor "${name}" criado.`);
+      }catch(err){showToast(err.message||'Não foi possível criar o servidor.');b.disabled=false;b.textContent='Criar servidor';}
     };
   }
 
@@ -2715,7 +2746,7 @@
       if(socialReady()&&s.backendId){
         try{
           const data=await socialRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels`,{method:'POST',body:JSON.stringify({name,type,topic:channel.topic})});
-          if(data?.channel){channel.backendId=data.channel.id;save();persistServersNow();}
+          if(data?.channel){channel.backendId=data.channel.id;save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:s.backendId||s.id,reason:'channel.create'});}
         }catch(err){console.warn('[Azurecord] Canal salvo localmente; sincronização remota falhou:',err);}
       }
     };
@@ -2755,7 +2786,7 @@
       if(view.channelId===id){const next=s.channels.find(x=>x.type==='text');view.channelId=next?.id||null;}
       save();persistServersNow();renderShell();showToast(`#${c.name} excluído.`);
       if(socialReady()&&s.backendId&&c.backendId){
-        try{await socialRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});}
+        try{await socialRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});sendCloudRealtime({type:'server.commit',serverId:s.backendId||s.id,reason:'channel.delete'});}
         catch(err){showToast('Canal excluído localmente; sincronização falhou.');console.warn(err);}
       }
       return;
@@ -2769,7 +2800,7 @@
       await syncChannelOrder(s);
     }
   }
-  function openInvite(){const s=getServer(view.serverId);showModal('Convidar pessoas',`<p class="muted">Compartilhe este código de convite:</p><div class="result-item"><span class="invite-code">${esc(s.invite)}</span><div class="spacer"></div><button class="home-mini-btn" id="copyInvite">Copiar</button></div><p class="tiny-note">No futuro esse convite será um link público do servidor.</p>`);$('copyInvite').onclick=()=>{navigator.clipboard?.writeText(s.invite);showToast('Código copiado.');};}
+  function openInvite(){const s=getServer(view.serverId);if(!s)return;const link=serverInviteLink(s.invite);showModal('Convidar pessoas',`<p class="muted">Compartilhe o link. No Desktop, também dá para colar esse link na tela de servidores.</p><div class="invite-link-card"><a href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a><span>Código: <b class="mono">${esc(s.invite)}</b></span></div><div class="onboarding-actions"><button class="btn btn-ghost" id="copyInviteCode">Copiar código</button><button class="btn btn-primary" id="copyInviteLink">Copiar link</button></div>`);$('copyInviteCode').onclick=()=>{navigator.clipboard?.writeText(s.invite);showToast('Código copiado.');};$('copyInviteLink').onclick=()=>{navigator.clipboard?.writeText(link);showToast('Link de convite copiado.');};}
   function getServerRole(server,userId=state.currentAccountId){
     const s=typeof server==='string'?getServer(server):server;
     if(!s||!userId)return 'Membro';
@@ -2808,11 +2839,27 @@
   }
   function bindServerSettings(tab,s){
     const manager=canManageServer(s);const sid=s.backendId||s.id;
-    if(tab==='profile'&&manager){let nextIcon=s.iconUrl||'',nextBanner=s.bannerUrl||'';$('serverSettingsIconFile')?.addEventListener('change',e=>readImage(e.target.files?.[0],data=>{nextIcon=data;showToast('Ícone preparado. Clique em Salvar.');},{maxWidth:512,maxHeight:512,maxChars:450000}));$('serverSettingsBannerFile')?.addEventListener('change',e=>readImage(e.target.files?.[0],data=>{nextBanner=data;showToast('Faixa preparada. Clique em Salvar.');},{maxWidth:1400,maxHeight:500,maxChars:750000}));$('saveServerProfile')?.addEventListener('click',async()=>{const patch={name:$('serverSettingsName').value.trim(),description:$('serverSettingsDescription').value.trim(),accent:$('serverSettingsAccent').value,iconUrl:nextIcon,bannerUrl:nextBanner,icon:s.icon||s.name?.[0]||'S'};if(!patch.name){showToast('Digite um nome.');return;}try{if(socialCloudReady()){const data=await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data.server||patch);}else Object.assign(s,patch);save();persistServersNow();renderShell();renderServerRail();openServerSettings('profile');showToast('Servidor salvo.');}catch(err){showToast(err.message||'Falha ao salvar servidor.');}});}
+    if(tab==='profile'&&manager){
+      let iconFile=null,bannerFile=null,iconPreview='',bannerPreview='';
+      $('serverSettingsIconFile')?.addEventListener('change',e=>{if(iconPreview)try{URL.revokeObjectURL(iconPreview);}catch{};iconFile=e.target.files?.[0]||null;iconPreview=iconFile?URL.createObjectURL(iconFile):'';const n=$('.server-settings-icon');if(n&&iconPreview){n.style.backgroundImage=`url('${iconPreview}')`;n.textContent='';}if(iconFile)showToast(`Ícone preparado • ${formatFileSize(iconFile.size)}`);});
+      $('serverSettingsBannerFile')?.addEventListener('change',e=>{if(bannerPreview)try{URL.revokeObjectURL(bannerPreview);}catch{};bannerFile=e.target.files?.[0]||null;bannerPreview=bannerFile?URL.createObjectURL(bannerFile):'';const n=$('.server-settings-banner');if(n&&bannerPreview)n.style.backgroundImage=`url('${bannerPreview}')`;if(bannerFile)showToast(`Banner preparado • ${formatFileSize(bannerFile.size)}`);});
+      $('saveServerProfile')?.addEventListener('click',async()=>{
+        const b=$('saveServerProfile');b.disabled=true;b.textContent='Salvando...';
+        try{
+          let nextIcon=s.iconUrl||'',nextBanner=s.bannerUrl||'';
+          if(iconFile){const up=await uploadAttachmentInChunks({id:uid('server-icon'),name:iconFile.name,size:iconFile.size,type:iconFile.type||'image/*',_file:iconFile,visual:{kind:'server-icon'}});nextIcon=up.url||nextIcon;}
+          if(bannerFile){const up=await uploadAttachmentInChunks({id:uid('server-banner'),name:bannerFile.name,size:bannerFile.size,type:bannerFile.type||'image/*',_file:bannerFile,visual:{kind:'server-banner'}});nextBanner=up.url||nextBanner;}
+          const patch={name:$('serverSettingsName').value.trim(),description:$('serverSettingsDescription').value.trim(),accent:$('serverSettingsAccent').value,iconUrl:nextIcon,bannerUrl:nextBanner,icon:s.icon||s.name?.[0]||'S'};if(!patch.name){showToast('Digite um nome.');return;}
+          if(socialCloudReady()){const data=await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data.server||patch);}else Object.assign(s,patch);
+          save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'server.profile'});renderShell();renderServerRail();openServerSettings('profile');showToast('Servidor salvo.');
+        }catch(err){showToast(err.message||'Falha ao salvar servidor.');}
+        finally{if(iconPreview)try{URL.revokeObjectURL(iconPreview);}catch{};if(bannerPreview)try{URL.revokeObjectURL(bannerPreview);}catch{};}
+      });
+    }
     if(tab==='channels'){ $('serverAddText')?.addEventListener('click',()=>{closeModal();openCreateChannel('text');});$('serverAddVoice')?.addEventListener('click',()=>{closeModal();openCreateChannel('voice');});$$('[data-settings-delete-channel]').forEach(b=>b.onclick=async()=>{const id=b.dataset.settingsDeleteChannel;const c=getChannel(s.id,id);if(!c)return;if(c.type==='text'){await channelContextAction('delete',id);}else{if(!confirm(`Excluir o canal de voz ${c.name}?`))return;s.channels=s.channels.filter(x=>x.id!==id);save();persistServersNow();renderShell();if(socialCloudReady()&&s.backendId&&c.backendId){try{await cloudRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});}catch(err){showToast(err.message||'Falha ao excluir canal.');}}}setTimeout(()=>openServerSettings('channels'),80);});}
     if(tab==='members'||tab==='roles')loadServerSettingsMembers(s,tab==='roles');
-    if(tab==='invites'){loadServerSettingsInvites(s);$('createServerInviteV83')?.addEventListener('click',async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`,{method:'POST',body:'{}'});loadServerSettingsInvites(s);showToast('Convite criado.');}catch(err){showToast(err.message||'Falha ao criar convite.');}});}
-    $('deleteServerV83')?.addEventListener('click',async()=>{if($('deleteServerPhrase').value.trim()!==s.name){showToast('Digite o nome exato do servidor.');return;}try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'DELETE'});state.servers=state.servers.filter(x=>x.id!==s.id);save();persistServersNow();closeModal();openHome('friends');showToast('Servidor excluído.');}catch(err){showToast(err.message||'Falha ao excluir servidor.');}});
+    if(tab==='invites'){loadServerSettingsInvites(s);$('createServerInviteV83')?.addEventListener('click',async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`,{method:'POST',body:'{}'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.create'});loadServerSettingsInvites(s);showToast('Convite criado.');}catch(err){showToast(err.message||'Falha ao criar convite.');}});}
+    $('deleteServerV83')?.addEventListener('click',async()=>{if($('deleteServerPhrase').value.trim()!==s.name){showToast('Digite o nome exato do servidor.');return;}try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'DELETE'});sendCloudRealtime({type:'account.commit',reason:'server.delete'});state.servers=state.servers.filter(x=>x.id!==s.id);save();persistServersNow();closeModal();openHome('friends');showToast('Servidor excluído.');}catch(err){showToast(err.message||'Falha ao excluir servidor.');}});
   }
   async function loadServerSettingsMembers(s,rolesMode=false){
     const holder=$(rolesMode?'serverSettingsRoles':'serverSettingsMembers');if(!holder)return;const sid=s.backendId||s.id;
@@ -2823,7 +2870,14 @@
     }catch(err){holder.innerHTML=`<span class="danger-text">${esc(err.message||'Falha ao carregar membros.')}</span>`;}
   }
   async function loadServerSettingsInvites(s){
-    const holder=$('serverSettingsInvites');if(!holder)return;const sid=s.backendId||s.id;try{let invites=[];if(socialCloudReady()){const data=await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`);invites=data.invites||[];}else invites=s.invite?[{id:'local',code:s.invite,uses:0}]:[];holder.innerHTML=invites.map(i=>`<div class="settings-list-card"><div><strong class="mono">${esc(i.code)}</strong><span>${Number(i.uses||0)} uso(s)</span></div><div class="choice-row"><button class="home-mini-btn" data-copy-server-invite="${esc(i.code)}">Copiar</button>${i.id!=='local'&&canManageServer(s)?`<button class="home-mini-btn danger" data-revoke-server-invite="${esc(i.id)}">Revogar</button>`:''}</div></div>`).join('')||'<span class="muted">Nenhum convite.</span>';holder.querySelectorAll('[data-copy-server-invite]').forEach(b=>b.onclick=()=>{navigator.clipboard?.writeText(b.dataset.copyServerInvite);showToast('Convite copiado.');});holder.querySelectorAll('[data-revoke-server-invite]').forEach(b=>b.onclick=async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites/${encodeURIComponent(b.dataset.revokeServerInvite)}`,{method:'DELETE'});loadServerSettingsInvites(s);}catch(err){showToast(err.message||'Falha ao revogar convite.');}});}catch(err){holder.innerHTML=`<span class="danger-text">${esc(err.message||'Falha ao carregar convites.')}</span>`;}
+    const holder=$('serverSettingsInvites');if(!holder)return;const sid=s.backendId||s.id;
+    try{
+      let invites=[];if(socialCloudReady()){const data=await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`);invites=data.invites||[];}else invites=s.invite?[{id:'local',code:s.invite,uses:0}]:[];
+      holder.innerHTML=invites.map(i=>{const link=serverInviteLink(i.code);return `<div class="settings-list-card invite-settings-card"><div><strong class="mono">${esc(i.code)}</strong><span>${Number(i.uses||0)} uso(s)</span><a href="${esc(link)}" target="_blank" rel="noopener">${esc(link)}</a></div><div class="choice-row"><button class="home-mini-btn" data-copy-server-invite-link="${esc(i.code)}">Copiar link</button><button class="home-mini-btn ghost" data-copy-server-invite-code="${esc(i.code)}">Código</button>${i.id!=='local'&&canManageServer(s)?`<button class="home-mini-btn danger" data-revoke-server-invite="${esc(i.id)}">Revogar</button>`:''}</div></div>`;}).join('')||'<span class="muted">Nenhum convite.</span>';
+      holder.querySelectorAll('[data-copy-server-invite-link]').forEach(b=>b.onclick=()=>{navigator.clipboard?.writeText(serverInviteLink(b.dataset.copyServerInviteLink));showToast('Link copiado.');});
+      holder.querySelectorAll('[data-copy-server-invite-code]').forEach(b=>b.onclick=()=>{navigator.clipboard?.writeText(b.dataset.copyServerInviteCode);showToast('Código copiado.');});
+      holder.querySelectorAll('[data-revoke-server-invite]').forEach(b=>b.onclick=async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites/${encodeURIComponent(b.dataset.revokeServerInvite)}`,{method:'DELETE'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.revoke'});loadServerSettingsInvites(s);}catch(err){showToast(err.message||'Falha ao revogar convite.');}});
+    }catch(err){holder.innerHTML=`<span class="danger-text">${esc(err.message||'Falha ao carregar convites.')}</span>`;}
   }
   function openServerMenu(){openServerSettings('profile');}
 
@@ -2833,7 +2887,7 @@
     const aiLabel=cloudInfo?.capabilities?.lolaWorkersAI
       ? `Workers AI conectado • ${cloudInfo.version||'Worker Cloud'}`
       : 'Workers AI não detectado no Worker';
-    showModal('Apps do Azurecord',`<div class="modal-grid"><div class="app-card"><strong>🧠 Lola IA</strong><p>${esc(aiLabel)}</p><button class="home-mini-btn" id="lolaAiSetup">Configurar</button></div><div class="app-card"><strong>🪙 AzurePoints</strong><p>Carteira, histórico, loja e solicitações de resgate.</p><button class="home-mini-btn" id="pointsApps">Abrir</button></div><div class="app-card"><strong>📊 Enquete</strong><p>Crie uma votação rápida no canal.</p><button class="home-mini-btn" id="createPollApp">Criar</button></div><div class="app-card"><strong>🕹 Mini-jogos</strong><p>Atividades rápidas para comunidades.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔔 Lembretes</strong><p>Organize avisos dentro do servidor.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🧰 Utilidades</strong><p>Ferramentas básicas para moderadores.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔐 Códigos secretos</strong><p>Uma área escondida para experiências do beta.</p><button class="home-mini-btn" id="secretCodesApp" type="button">Abrir</button></div></div>`);
+    showModal('Apps do Azurecord',`<div class="modal-grid"><div class="app-card"><strong>🧠 Lola IA</strong><p>${esc(aiLabel)}</p><button class="home-mini-btn" id="lolaAiSetup">Configurar</button></div><div class="app-card"><strong>🪙 AzurePoints</strong><p>Carteira, histórico, loja e solicitações de resgate.</p><button class="home-mini-btn" id="pointsApps">Abrir</button></div><div class="app-card"><strong>📊 Enquete</strong><p>Crie uma votação rápida no canal.</p><button class="home-mini-btn" id="createPollApp">Criar</button></div><div class="app-card"><strong>🕹 Mini-jogos</strong><p>Atividades rápidas para comunidades.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔔 Lembretes</strong><p>Organize avisos dentro do servidor.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🧰 Utilidades</strong><p>Ferramentas básicas para moderadores.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔐 Códigos secretos</strong><p>Uma área escondida para experiências do app.</p><button class="home-mini-btn" id="secretCodesApp" type="button">Abrir</button></div></div>`);
     $('pointsApps')?.addEventListener('click',openAzurePoints);
     $('createPollApp')?.addEventListener('click',()=>{closeModal();openCreatePoll();});
     $('secretCodesApp')?.addEventListener('click',openSecretCodes);
@@ -2848,10 +2902,10 @@
       const w=result.wallet;
       const money=(cents)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100);
       const available=w.available,rate=result.pointsPerBRL;
-      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>🏪 Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta beta.</p></div>';
+      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>🏪 Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
       const requested=redemptions.redemptions||[];
       showModal('AzurePoints 🪙',`<div class="points-panel"><div class="points-top"><small>SALDO CLOUD</small><h2 id="pointsWalletBalance">${available.toLocaleString('pt-BR')} AP</h2><p>Acumulados: ${w.earned.toLocaleString('pt-BR')} • Reservados: ${w.reserved.toLocaleString('pt-BR')}</p></div><h3>🏪 Loja</h3>${shopContent}
-        <h3>💸 Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta beta. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
+        <h3>💸 Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta versão. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
         <h3>📋 Histórico</h3><div class="points-scroll">${history.entries?.length?history.entries.slice(0,12).map(e=>`<div class="setting-row"><span>${esc(e.reason)}<small> ${new Date(e.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${e.delta>0?'+':''}${e.delta} AP</strong></div>`).join(''):'<p>Sem movimentações.</p>'}</div>
         <h3>📨 Solicitações anteriores</h3><div>${requested.length?requested.slice(0,10).map(r=>`<div class="setting-row"><span>${r.points} AP → ${money(r.amountCentavos)}<small> ${new Date(r.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${{pending:'Pendente',paid:'Pago',rejected:'Recusado'}[r.status]||esc(r.status)}</strong></div>`).join(''):'<p>Nenhuma solicitação.</p>'}</div></div>`);
     }catch(err){showModal('AzurePoints 🪙',`<div class="app-card"><p>Não foi possível buscar sua carteira Cloud: ${esc(err.message)}</p></div>`);}

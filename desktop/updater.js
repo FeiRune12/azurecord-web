@@ -20,7 +20,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.allowPrerelease = true;
+  autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
 
   const notify = (title, body) => {

@@ -7,6 +7,15 @@
   <title>Azurecord</title>
   <link rel="icon" type="image/png" href="assets/azurecord-mark.png" />
   <link rel="stylesheet" href="styles.css" />
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d6efd">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Azurecord">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="assets/favicon.png">
 </head>
 <body>
 <div id="app" class="app-shell">
@@ -28,7 +37,7 @@
     <div class="login-card">
       <div class="brand-stack">
         <div class="brand-mark large logo-frame"><img src="assets/azurecord-mark.png" alt="Azurecord" /></div>
-        <div class="brand-name">Azurecord</div><div class="brand-version">APP • V52 BETA 8.4</div>
+        <div class="brand-name">Azurecord</div><div class="brand-version">APP • AZURECORD 1.0</div>
       </div>
       <p class="muted login-subtitle">Comunidades, conversa e presença. Do seu jeito.</p>
       <div class="auth-tabs"><button id="loginTab" class="auth-tab active">Entrar</button><button id="signupTab" class="auth-tab">Criar conta</button></div>
@@ -120,5 +129,6 @@
 <script src="lola-client.js"></script>
 <script src="auth-recovery.js"></script>
 <script src="app.js"></script>
+<script src="pwa.js"></script>
 </body>
 </html>
