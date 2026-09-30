@@ -659,3 +659,69 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .home-avatar{width:38px!important;height:38px!important;flex:0 0 38px!important}
   .chat-title-wrap p{max-width:40vw!important}
 }
+
+
+/* Beta 8.3.3: mobile Direct Messages is a first-class screen, not a drawer side effect. */
+@media (max-width:720px){
+  .mobile-dm-panel{
+    position:absolute!important;
+    z-index:68!important;
+    inset:0 0 58px 0!important;
+    display:flex!important;
+    flex-direction:column!important;
+    min-width:0!important;
+    min-height:0!important;
+    overflow:hidden!important;
+    background:var(--bg)!important;
+    color:var(--text)!important;
+  }
+  .mobile-dm-panel[hidden]{display:none!important}
+  .mobile-dm-header{
+    min-height:66px;
+    padding:max(12px,env(safe-area-inset-top)) 16px 10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    border-bottom:1px solid var(--line);
+    background:var(--panel);
+  }
+  .mobile-dm-header .eyebrow{display:block;margin-bottom:2px;font-size:8px;letter-spacing:.16em;color:var(--muted)}
+  .mobile-dm-header h2{margin:0;font-size:20px;line-height:1.1}
+  .mobile-dm-refresh{
+    width:38px;height:38px;border:0;border-radius:12px;
+    background:var(--panel-2);color:var(--text);font-size:20px
+  }
+  .mobile-dm-refresh:disabled{opacity:.45}
+  .mobile-dm-subtitle{
+    padding:13px 15px 8px;
+    color:var(--muted);
+    font-size:10px;
+    font-weight:800;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  .mobile-dm-list{
+    flex:1;min-height:0;overflow:auto;
+    padding:0 8px calc(14px + env(safe-area-inset-bottom));
+  }
+  .mobile-dm-list .dm-item{
+    margin:2px 0!important;
+    border-radius:14px!important;
+    overflow:hidden;
+  }
+  .mobile-dm-list .dm-open{
+    min-height:58px!important;
+    padding:8px 10px!important;
+  }
+  .mobile-dm-list .mini-avatar{width:42px!important;height:42px!important;flex:0 0 42px!important}
+  .mobile-dm-list .dm-item-main strong{font-size:13px!important}
+  .mobile-dm-list .dm-item-main span{font-size:10px!important;max-width:62vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mobile-dm-list .dm-close{width:38px!important;min-width:38px!important}
+  .mobile-dm-list .dm-empty,.mobile-dm-empty{
+    margin:18px 8px;padding:26px 16px;border:1px dashed var(--line);border-radius:16px;
+    color:var(--muted);text-align:center;font-size:12px
+  }
+  html[data-mobile-page="dms"] #homePanel,
+  html[data-mobile-page="dms"] #chatView{visibility:hidden!important;pointer-events:none!important}
+}

@@ -454,6 +454,7 @@
         state.servers=mergeServers([],remote).filter(s=>s?.id!=='server-azurecord');
       }
       save();renderDms();renderBadges();renderServerRail();if(view.mode==='home')renderHome();
+      if(isMobileLayout()&&!$('mobileDmPanel')?.hidden)renderMobileDms();
       return true;
     }catch(err){if(!quiet)showToast(err.message||'Não foi possível atualizar os dados do Azurecord Cloud.');console.warn('[Azurecord] Social Cloud:',err);return false;}
   }
@@ -786,10 +787,10 @@
       backdrop.id='mobileDrawerBackdrop';backdrop.className='mobile-drawer-backdrop';backdrop.hidden=true;backdrop.setAttribute('aria-label','Fechar navegação');
       $('appScreen')?.appendChild(backdrop);
       backdrop.onclick=()=>setMobileDrawer(false);
-      nav.querySelector('[data-mobile-home]').onclick=()=>{setMobileDrawer(false);openHome('friends');};
-      nav.querySelector('[data-mobile-servers]').onclick=()=>setMobileDrawer(true);
-      nav.querySelector('[data-mobile-dms]').onclick=()=>{setMobileDrawer(true);openHome('friends');const t=$('dmToggle');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();};
-      nav.querySelector('[data-mobile-you]').onclick=()=>{setMobileDrawer(false);openAppSettings('account');};
+      nav.querySelector('[data-mobile-home]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('home');openHome('friends');};
+      nav.querySelector('[data-mobile-servers]').onclick=()=>{closeMobileDms();setMobileNavActive('servers');setMobileDrawer(true);};
+      nav.querySelector('[data-mobile-dms]').onclick=()=>openMobileDms();
+      nav.querySelector('[data-mobile-you]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('you');openAppSettings('account');};
     }
     if(!$('mobileMenuBtn')){
       const btn=document.createElement('button');btn.id='mobileMenuBtn';btn.className='mobile-menu-btn';btn.type='button';btn.textContent='☰';btn.setAttribute('aria-label','Abrir navegação');
@@ -800,6 +801,70 @@
       if(e.target.closest('.server,.channel-item,.dm-item,.home-side-item'))setTimeout(()=>setMobileDrawer(false),0);
     });
     window.addEventListener('resize',()=>{if(!isMobileLayout())setMobileDrawer(false);});
+  }
+
+  function setMobileNavActive(section){
+    const nav=$('mobileNav');if(!nav)return;
+    nav.querySelectorAll('button').forEach(btn=>btn.classList.remove('active'));
+    const map={home:'[data-mobile-home]',servers:'[data-mobile-servers]',dms:'[data-mobile-dms]',you:'[data-mobile-you]'};
+    const target=nav.querySelector(map[section]||'');if(target)target.classList.add('active');
+  }
+
+  function closeMobileDms(){
+    const panel=$('mobileDmPanel');if(panel)panel.hidden=true;
+    document.documentElement.removeAttribute('data-mobile-page');
+  }
+
+  function ensureMobileDmPanel(){
+    let panel=$('mobileDmPanel');
+    if(panel)return panel;
+    panel=document.createElement('section');
+    panel.id='mobileDmPanel';
+    panel.className='mobile-dm-panel';
+    panel.hidden=true;
+    panel.innerHTML=`<header class="mobile-dm-header"><div><span class="eyebrow">AZURECORD</span><h2>Mensagens</h2></div><button type="button" class="mobile-dm-refresh" data-mobile-dm-refresh aria-label="Atualizar mensagens">↻</button></header><div class="mobile-dm-subtitle">Mensagens diretas</div><div id="mobileDmList" class="mobile-dm-list"></div>`;
+    $('appScreen')?.appendChild(panel);
+    panel.querySelector('[data-mobile-dm-refresh]').onclick=async()=>{
+      const btn=panel.querySelector('[data-mobile-dm-refresh]');btn.disabled=true;
+      try{if(socialCloudReady())await hydrateFromCloudSocial({quiet:true});renderMobileDms();}
+      finally{btn.disabled=false;}
+    };
+    return panel;
+  }
+
+  function renderMobileDms(){
+    const panel=ensureMobileDmPanel();
+    const list=$('mobileDmList');if(!list)return;
+    renderDms();
+    const source=$('dmList');
+    list.innerHTML=source?.innerHTML||'<div class="mobile-dm-empty">Nenhuma mensagem direta aberta.</div>';
+    if(!list.children.length)list.innerHTML='<div class="mobile-dm-empty">Nenhuma mensagem direta aberta.</div>';
+    list.querySelectorAll('[data-dm-open]').forEach(b=>b.onclick=()=>{
+      const id=b.dataset.dmOpen;closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');openDm(id);
+    });
+    list.querySelectorAll('[data-dm-close]').forEach(b=>b.onclick=e=>{
+      e.stopPropagation();closeDmTab(b.dataset.dmClose);renderMobileDms();
+    });
+  }
+
+  async function openMobileDms(){
+    if(!isMobileLayout()){
+      setMobileDrawer(true);
+      openHome('friends');
+      const t=$('dmToggle');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();
+      return;
+    }
+    setMobileDrawer(false);
+    const panel=ensureMobileDmPanel();
+    panel.hidden=false;
+    document.documentElement.dataset.mobilePage='dms';
+    setMobileNavActive('dms');
+    renderMobileDms();
+    if(socialCloudReady()){
+      try{await hydrateFromCloudSocial({quiet:true});}
+      catch{}
+      if(!panel.hidden)renderMobileDms();
+    }
   }
 
   function boot(){
@@ -1100,6 +1165,7 @@
   }
 
   function openHome(section='friends'){
+    if(isMobileLayout()){closeMobileDms();setMobileNavActive('home');}
     view.mode='home';
     view.home=section;
     view.homeTab=section==='requests'?'pending':section==='add'?'add':'all';
@@ -1110,6 +1176,7 @@
     if(socialCloudReady())hydrateFromCloudSocial({quiet:true}).catch(()=>{});
   }
   function openServer(id){
+    if(isMobileLayout()){closeMobileDms();setMobileNavActive('servers');}
     const s=getServer(id)||state.servers?.[0];
     if(!s){ showToast('Nenhum servidor disponível.'); return; }
     ensureServerChannels(s);
@@ -1361,6 +1428,7 @@
     }
   }
   async function openDm(id,options={}){
+    if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
     if(!getProfile(id))return;
     if(id!=='user-lola'&&isBlocked(id)){showToast('Desbloqueie este usuário antes de abrir uma DM.');openProfileModal(id);return;}
     const key=dmKey(id);
