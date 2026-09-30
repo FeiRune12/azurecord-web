@@ -1,0 +1,12 @@
+# Não distribuir segredos, sessões ou dados dos testadores
+node_modules/
+backend/.env
+backend/*.json
+backend/*.json.bak
+backend/*.json.tmp
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.DS_Store

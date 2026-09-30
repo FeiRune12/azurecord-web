@@ -1,0 +1,66 @@
+name: Azurecord Windows Auto Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'desktop/**'
+      - '.github/workflows/windows-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: azurecord-windows-release
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sincronizar Web com o renderer desktop
+        shell: pwsh
+        run: |
+          Copy-Item docs\index.html desktop\renderer\index.html -Force
+          Copy-Item docs\app.js desktop\renderer\app.js -Force
+          Copy-Item docs\styles.css desktop\renderer\styles.css -Force
+          Copy-Item docs\config.js desktop\renderer\config.js -Force
+          Copy-Item docs\web-shim.js desktop\renderer\web-shim.js -Force
+          Copy-Item docs\lola-client.js desktop\renderer\lola-client.js -Force
+          Copy-Item docs\auth-recovery.js desktop\renderer\auth-recovery.js -Force
+          Copy-Item docs\assets\* desktop\renderer\assets\ -Recurse -Force
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Gerar versão desta build
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          node -e "const fs=require('fs');const p=require('./package.json');p.version='0.52.0-beta.8.4.'+process.env.GITHUB_RUN_NUMBER;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('Versão:',p.version)"
+
+      - name: Instalar dependências
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Validar JavaScript
+        working-directory: desktop
+        run: npm run check
+
+      - name: Testes
+        working-directory: desktop
+        run: npm test
+
+      - name: Gerar e publicar instalador EXE
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release:win

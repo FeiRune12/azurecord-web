@@ -1,0 +1,24 @@
+Azurecord V52 Beta 8.3 Web + Settings
+Version: 0.52.0-beta.8.3
+Worker: 0.8.0
+
+Validated:
+- npm test: 50/50 passed
+- npm run check: passed
+- web-vercel npm run build: passed
+- Worker 0.8 integration test: settings, sessions, server profile, invites
+- ZIP integrity: run after packaging
+
+Main additions:
+- App settings workspace
+- Server settings workspace
+- Cloud user settings
+- Cloud session management
+- Cloud server profile settings
+- Cloud invite/member/role management
+- Web client ready for Vercel
+- Same Cloud auth, Social Cloud, DMs, servers, Lola Workers AI, AzurePoints, Block/Ignore
+
+Bindings:
+DB -> D1 azurecord-prod
+AI -> Workers AI

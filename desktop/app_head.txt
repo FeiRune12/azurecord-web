@@ -1,0 +1,380 @@
+(() => {
+  'use strict';
+
+  const KEY = 'azurecord_app_v8_state';
+  const THEME_KEY = 'azurecord_app_v8_theme';
+  const SERVER_KEY = 'azurecord_app_servers_v1';
+
+  const $ = (ref) => {
+    if (typeof ref !== 'string') return null;
+    const byId = document.getElementById(ref);
+    if (byId) return byId;
+    try { return document.querySelector(ref); } catch { return null; }
+  };
+  const $$ = (sel) => [...document.querySelectorAll(sel)];
+  const now = () => Date.now();
+  const uid = (prefix='id') => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
+  const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const safeUrl = (url) => {
+    const value = String(url || '').trim();
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return value;
+    try {
+      const parsed = new URL(value);
+      if (parsed.protocol === 'https:' && (parsed.hostname === 'gunvolt.com' || parsed.hostname.endsWith('.gunvolt.com'))) return value;
+    } catch {}
+    return '';
+  };
+
+  const LOLA_AVATAR_URL = 'https://gunvolt.com/en/X/system/img/system02_03Pic02.jpg';
+  const LOLA_BANNER_URL = 'https://gunvolt.com/GRC/en/special/img/grc_wallpaper_00_1920x1080en.jpg';
+
+  const DEMO_LOLA = {
+    id:'user-lola', username:'Lola', email:'lola@azurecord.local', handle:'@lola',
+    bio:'Designer, criativa e sempre pronta para conversar sobre arte, ideias e projetos.',
+    accent:'#35b6ff', status:'online', avatar:LOLA_AVATAR_URL, banner:LOLA_BANNER_URL,
+    personality:'Criativa, calorosa, curiosa e detalhista. Adora design, jogos e transformar ideias em coisas visuais.',
+    memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
+  };
+
+  const DEMO_USERS = [DEMO_LOLA];
+  const DEMO_SERVER = {
+    id:'server-azurecord', name:'Azurecord Hub', icon:'A', owner:'user-lola', invite:'AZ-LOLA-2026',
+    channels:[
+      {id:'general',name:'geral',type:'text',topic:'Conversa principal da comunidade.'},
+      {id:'design',name:'design',type:'text',topic:'Artes, identidade e UI.'},
+      {id:'games',name:'games',type:'text',topic:'Jogos, speedruns e conversa livre.'},
+      {id:'dev',name:'dev',type:'text',topic:'Código e desenvolvimento.'},
+      {id:'Lounge',name:'Lounge',type:'voice',topic:'Canal de voz da comunidade.'}
+    ]
+  };
+
+  const defaultState = {
+    accounts: [], currentAccountId:null, rememberedAccountId:null,
+    theme:'dark', accent:'#0066ff', notificationsEnabled:true, nativeNotifications:true,
+    friends:[], requests:[], servers:[structuredClone(DEMO_SERVER)],
+    dmMessages:{}, channelMessages:{}, pinned:{}, deleted:{}, drafts:{}, attachments:[],
+    unread:{}, profiles:{}, roles:{}, lastNotifications:[
+      {id:uid('notif'),type:'system',title:'Bem-vindo ao Azurecord',body:'A V16 reúne social, servidores, mensagens e personalização em um só lugar.',time:now(),unread:true}
+    ]
+  };
+
+  let state = loadState();
+  let authMode = 'login';
+  let view = {mode:'home', home:'friends', homeTab:'all', serverId:'server-azurecord', channelId:'general', dmUserId:null, showMembers:true, showProfile:false, contextMessageId:null, contextChannelId:null};
+  let replyTo = null;
+  let selectedProfile = null;
+  let currentSearch = '';
+  let ttsAvailable = false;
+  let backendBaseUrl = null;
+  let backendToken = state.backendToken || null;
+  let backendOnline = false;
+  let backendReadyPromise = Promise.resolve();
+  let backendEventSource = null;
+  let pendingAttachments = [];
+  let pendingAttachmentReads = 0;
+
+  async function initBackend(){
+    const getInfo = () => window.azurecordDesktop?.getBackendInfo?.();
+    try {
+      // The Electron window is intentionally opened before the local backend.
+      // Poll briefly so a fast renderer load does not miss the backend startup.
+      let info = null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        info = await getInfo?.();
+        backendBaseUrl = info?.baseUrl || null;
+        if (backendBaseUrl) break;
+        await new Promise(r => setTimeout(r, 250));
+      }
+      if (!backendBaseUrl) return false;
+      await backendRequest('/api/health', {auth:false});
+      backendOnline = true;
+      if (backendToken) {
+        try { await hydrateFromBackend(); }
+        catch (err) { backendToken=null; state.backendToken=null; save(); console.warn('[Azurecord] Sessão remota expirada; login local disponível.',err); }
+      }
+      return true;
+    } catch (err) {
+      backendOnline = false;
+      console.warn('[Azurecord] Backend offline:', err);
+      return false;
+    }
+  }
+
+  async function backendRequest(path, options = {}){
+    if (!backendBaseUrl) throw Object.assign(new Error('Backend indisponível.'), {code:'backend_offline'});
+    const {auth=true, ...fetchOptions} = options;
+    const headers = {'Content-Type':'application/json', ...(fetchOptions.headers||{})};
+    if (auth && backendToken) headers.Authorization = `Bearer ${backendToken}`;
+    const response = await fetch(`${backendBaseUrl}${path}`, {...fetchOptions, headers});
+    let data = {};
+    try { data = await response.json(); } catch {}
+    if (!response.ok) {
+      const error = new Error(data.message || data.error || `HTTP ${response.status}`);
+      error.status = response.status; error.code = data.error || 'http_error';
+      throw error;
+    }
+    return data;
+  }
+
+  function applyBackendUser(u){
+    if(!u) return null;
+    let local = state.accounts.find(a=>a.id===u.id) || state.accounts.find(a=>a.email===u.email);
+    if(!local){ local={id:u.id,email:u.email}; state.accounts.push(local); }
+    Object.assign(local, {id:u.id,email:u.email,username:u.username,handle:u.handle,bio:u.bio,accent:u.accent,status:u.status,avatar:u.avatar,banner:u.banner,personality:u.personality,memberSince:u.memberSince,role:u.role,badge:u.badge,backend:true,lastLogin:now()});
+    state.profiles[u.id] = {...u};
+    return local;
+  }
+  function hydrateRemoteUser(u){
+    if(!u?.id) return;
+    const demo = DEMO_USERS.find(p => p.id === u.id);
+    state.profiles[u.id] = demo ? {...demo, ...u, avatar: u.avatar || demo.avatar, banner: u.banner || demo.banner} : {...u};
+  }
+  async function hydrateFromBackend(){
+    if(!backendToken) return;
+    const me = await backendRequest('/api/me');
+    const local=applyBackendUser(me.user);
+    state.currentAccountId=local.id;
+    const friends=await backendRequest('/api/friends');
+    state.friends=(friends.friends||[]).map(p=>{hydrateRemoteUser(p);return {a:local.id,b:p.id,created:now()};});
+    const requests=await backendRequest('/api/friends/requests');
+    state.requests=(requests.requests||[]).map(r=>{hydrateRemoteUser(r.user);return {id:r.id,from:r.from,to:r.to,status:r.status,time:new Date(r.createdAt||Date.now()).getTime()};});
+    const dms=await backendRequest('/api/dms');
+    for(const item of (dms.dms||[])) hydrateRemoteUser(item.user);
+
+    // O backend agora entrega os canais junto com cada servidor. Assim a rail e
+    // o painel de canais usam a mesma fonte de verdade e não dependem de várias
+    // requisições encadeadas que podem deixar a UI momentaneamente vazia.
+    const servers=await backendRequest('/api/servers');
+    if(Array.isArray(servers.servers)){
+      for(const srv of servers.servers){
+        const normalizedChannels=Array.isArray(srv.channels)?srv.channels.map(c=>({
+          id:c.id, backendId:c.id, serverId:srv.id, name:c.name, type:c.type, topic:c.topic||''
+        })):[];
+        // Servidores criados nesta instalação mantêm o ID local para que a UI
+        // nunca perca a seleção enquanto o backend sincroniza.
+        const existing=state.servers.find(x=>x.id===srv.id || x.backendId===srv.id);
+        if(existing){
+          existing.backendId=srv.id;
+          existing.name=srv.name||existing.name;
+          existing.description=srv.description||existing.description||'Comunidade do Azurecord.';
+          existing.owner=srv.owner||existing.owner||state.currentAccountId;
+          existing.myRole=srv.myRole||existing.myRole||((srv.owner||existing.owner)===state.currentAccountId?'Admin':'Membro');
+          existing.invite=srv.invite||existing.invite;
+          existing.icon=srv.icon||existing.icon||existing.name?.[0]||'S';
+          existing.iconUrl=srv.iconUrl||existing.iconUrl||'';
+          existing.channels=normalizedChannels.length ? normalizedChannels.map(c=>({...c,serverId:existing.id})) : (existing.channels||[]);
+        }else{
+          state.servers.push({...srv,backendId:srv.id,channels:normalizedChannels.map(c=>({...c,serverId:srv.id}))});
+        }
+      }
+      state.servers.forEach(ensureServerChannels);
+    }
+    state.servers.forEach(ensureServerChannels);
+    save();
+    renderShell();
+    requestAnimationFrame(()=>renderServerRail());
+  }
+  function startBackendEvents(){
+    if(!backendBaseUrl||!backendToken||backendEventSource)return;
+    try{
+      backendEventSource=new EventSource(`${backendBaseUrl}/api/stream?token=${encodeURIComponent(backendToken)}`);
+      backendEventSource.addEventListener('friend.request',ev=>{try{const p=JSON.parse(ev.data),r=p.request;if(!r)return;hydrateRemoteUser(r.user);if(!state.requests.some(x=>x.id===r.id))state.requests.push({id:r.id,from:r.from,to:r.to,status:'pending',time:Date.now()});save();renderBadges();if(view.mode==='home')renderHome();addNotification('Nova solicitação',`${r.user?.username||'Alguém'} quer ser seu amigo.`);}catch{}});
+      backendEventSource.addEventListener('friend.accepted',ev=>{try{const p=JSON.parse(ev.data);if(p.user){hydrateRemoteUser(p.user);if(!isFriend(p.user.id))state.friends.push({a:state.currentAccountId,b:p.user.id,created:now()});save();renderHome();}}catch{}});
+      backendEventSource.addEventListener('server.created',ev=>{try{const p=JSON.parse(ev.data);if(!p.server)return;const srv={...p.server,channels:(p.channels||[]).map(c=>({...c,serverId:p.server.id}))};ensureServerChannels(srv);const i=state.servers.findIndex(x=>x.id===srv.id||x.backendId===srv.id||(srv.clientId&&x.id===srv.clientId));if(i>=0){const local=state.servers[i];state.servers[i]=Object.assign(local,srv,{id:local.id,backendId:srv.id,myRole:srv.myRole||local.myRole});}else state.servers.push(srv);save();persistServersNow();renderServerRail();renderServerChannels();}catch{}});
+      backendEventSource.addEventListener('dm.message',ev=>{try{const p=JSON.parse(ev.data),m=p.message;if(!m)return;const other=m.senderId===state.currentAccountId?m.recipientId:m.senderId;const key=dmKey(other);const arr=state.dmMessages[key]||[];if(!arr.some(x=>x.serverId===m.id||x.id===m.id)){arr.push({...m,author:m.senderId,serverId:m.id});arr.sort((a,b)=>(a.time||0)-(b.time||0));state.dmMessages[key]=arr;state.unread[key]=(view.mode==='dm'&&view.dmUserId===other)?0:1;save();renderDms();if(view.mode==='dm'&&view.dmUserId===other)renderMessages();addNotification('Nova mensagem',`${getProfile(other)?.username||'Alguém'} enviou uma mensagem.`);}}catch{}});
+    }catch{}
+  }
+
+  function loadPersistentServers(){
+    try{
+      const raw=localStorage.getItem(SERVER_KEY);
+      const parsed=raw?JSON.parse(raw):[];
+      return Array.isArray(parsed)?parsed.filter(s=>s&&s.id).map(ensureServerChannels):[];
+    }catch(e){ console.warn('[Azurecord] Falha ao ler servidores persistentes:',e); return []; }
+  }
+  function persistServersNow(){
+    try{
+      const snapshot=(Array.isArray(state.servers)?state.servers:[]).filter(s=>s&&s.id).map(s=>ensureServerChannels(s));
+      localStorage.setItem(SERVER_KEY,JSON.stringify(snapshot));
+    }catch(e){ console.warn('[Azurecord] Falha ao salvar servidores persistentes:',e); }
+  }
+  function mergeServers(base, incoming){
+    const out=Array.isArray(base)?base.slice():[];
+    for(const raw of (Array.isArray(incoming)?incoming:[])){
+      if(!raw?.id) continue;
+      const existing=out.find(s=>s.id===raw.id || (raw.backendId && s.backendId===raw.backendId));
+      if(existing){
+        const oldChannels=Array.isArray(existing.channels)?existing.channels:[];
+        const newChannels=Array.isArray(raw.channels)?raw.channels:[];
+        Object.assign(existing,raw);
+        existing.channels=newChannels.length?newChannels:oldChannels;
+        ensureServerChannels(existing);
+      }else{
+        const cloned=ensureServerChannels(structuredClone(raw)); if(cloned.owner===state.currentAccountId)cloned.myRole='Admin'; out.push(cloned);
+      }
+    }
+    return out;
+  }
+
+  function loadState(){
+    let merged=structuredClone(defaultState);
+    try {
+      const raw=localStorage.getItem(KEY);
+      if(raw){
+        const saved=JSON.parse(raw);
+        merged=Object.assign(merged, saved);
+      }
+    } catch(e) { console.warn('[Azurecord] Estado local inválido, usando base segura.', e); }
+    const persistentServers=loadPersistentServers();
+    merged.servers=mergeServers(Array.isArray(merged.servers)?merged.servers:[], persistentServers);
+    if(!merged.servers.some(s=>s && s.id==='server-azurecord')) merged.servers.unshift(structuredClone(DEMO_SERVER));
+    merged.servers=merged.servers.filter(s=>s && s.id).map(s=>ensureServerChannels(s));
+    return merged;
+  }
+  let saveTimer = null;
+  let savePending = false;
+  function saveNow(){
+    if(saveTimer){ clearTimeout(saveTimer); saveTimer=null; }
+    try{ localStorage.setItem(KEY, JSON.stringify(state)); persistServersNow(); savePending=false; }
+    catch(err){ console.warn('[Azurecord] Falha ao salvar estado local:',err); }
+  }
+  function save(){
+    savePending=true;
+    if(saveTimer) return;
+    saveTimer=setTimeout(()=>saveNow(),120);
+  }
+  window.addEventListener('beforeunload',saveNow,{capture:true});
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden' && savePending) saveNow(); });
+  function currentUser(){ return state.accounts.find(a => a.id===state.currentAccountId) || null; }
+  function getProfile(id){
+    const demo = DEMO_USERS.find(a=>a.id===id);
+    const stored = state.profiles[id] || state.accounts.find(a=>a.id===id) || null;
+    if (demo && stored) return {...demo, ...stored, avatar: stored.avatar || demo.avatar, banner: stored.banner || demo.banner};
+    return stored || demo || null;
+  }
+  function allPeople(){ const people=[...DEMO_USERS,...state.accounts.filter(a=>!DEMO_USERS.some(d=>d.id===a.id))]; return people.filter((p,i,self)=>self.findIndex(x=>x.id===p.id)===i); }
+  function usernameKey(name){ return String(name||'').trim().toLowerCase().replace(/^@/,''); }
+  function friendIds(){ return state.friends.filter(f=>f.a===state.currentAccountId || f.b===state.currentAccountId).map(f=>f.a===state.currentAccountId?f.b:f.a); }
+  function findFriend(id){ return state.friends.find(f=>(f.a===state.currentAccountId&&f.b===id)||(f.a===id&&f.b===state.currentAccountId)); }
+  function isFriend(id){ return !!findFriend(id); }
+  function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
+  function showToast(text){ const t=$('toast'); t.textContent=text; t.classList.add('show'); clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),2500); }
+  function logout(){
+    try{ if(backendEventSource){backendEventSource.close(); backendEventSource=null;} }catch{}
+    state.accounts=state.accounts.map(a=>a.id===state.currentAccountId?{...a,status:'offline',lastLogin:a.lastLogin||now()}:a);
+    state.currentAccountId=null;
+    state.backendToken=null;
+    backendToken=null;
+    state.rememberedAccountId=null;
+    save();
+    closeModal();
+    setScreen('loginScreen');
+    renderSavedAccounts();
+    showToast('Você saiu do Azurecord.');
+  }
+
+  function setScreen(screen){ $$('.screen').forEach(s=>s.classList.remove('active')); $(screen).classList.add('active'); }
+
+  function setAuthMode(mode){
+    authMode=mode; $('loginTab').classList.toggle('active',mode==='login'); $('signupTab').classList.toggle('active',mode==='signup'); $('confirmRow').hidden=mode==='login'; $('authSubmit').textContent=mode==='login'?'Entrar no Azurecord':'Criar conta e continuar';
+  }
+  function hashPassword(p){ let h=2166136261; for(let i=0;i<p.length;i++){ h^=p.charCodeAt(i); h=Math.imul(h,16777619);} return (h>>>0).toString(16); }
+
+  function renderSavedAccounts(){
+    const el=$('savedAccounts'); const accounts=state.accounts.slice().sort((a,b)=>(b.lastLogin||0)-(a.lastLogin||0));
+    if(!accounts.length){el.hidden=true;return;} el.hidden=false;
+    el.innerHTML=`<div class="section-title">CONTAS NESTE COMPUTADOR</div>${accounts.slice(0,5).map(a=>`<div class="result-item" data-saved="${a.id}"><div class="home-avatar avatar-img" style="background-image:url('${safeUrl(a.avatar)}')">${a.avatar?'':esc(a.username[0]||'F')}</div><div><strong>${esc(a.username)}</strong><p>${esc(a.email)}</p></div><div class="spacer"></div><button class="home-mini-btn">Entrar</button></div>`).join('')}`;
+    el.onclick=(e)=>{ const row=e.target.closest('[data-saved]'); if(!row)return; const a=state.accounts.find(x=>x.id===row.dataset.saved); if(a){ state.currentAccountId=a.id; a.lastLogin=now(); state.rememberedAccountId=a.id; save(); enterApp(); } };
+  }
+
+  function boot(){
+    window.__azurecordBootStarted=performance.now();
+    setScreen('loadingScreen');
+    $('loginTab').onclick=()=>setAuthMode('login'); $('signupTab').onclick=()=>setAuthMode('signup');
+    $('passwordToggle').onclick=()=>{ const p=$('passwordInput'); p.type=p.type==='password'?'text':'password'; };
+    $('authForm').onsubmit=(e)=>{ e.preventDefault(); submitAuth(); };
+    $('demoBtn').onclick=()=>demoLogin(); $('backLogin').onclick=()=>setScreen('loginScreen'); $('finishOnboarding').onclick=finishProfile;
+    ['usernameInput','bioInput','accentInput','statusInput'].forEach(id=>$(id).addEventListener('input',updatePreview));
+    $('bannerInput').addEventListener('change',e=>readImage(e.target.files?.[0],u=>{ state._onboardBanner=u; updatePreview(); }));
+    $('avatarInput').addEventListener('change',e=>readImage(e.target.files?.[0],u=>{ state._onboardAvatar=u; updatePreview(); }));
+    $('homeBtn').onclick=()=>openHome('friends'); $('addServer').onclick=openCreateServer;
+    $$('[data-home]').forEach(b=>b.onclick=()=>openHome(b.dataset.home));
+    $$('[data-home-tab]').forEach(b=>b.onclick=()=>{view.homeTab=b.dataset.homeTab; renderHome();});
+    $('homeAddBtn').onclick=()=>openHome('add'); $('dmToggle').onclick=toggleDms;
+    $('globalSearchBtn').onclick=openGlobalSearch; $('notifyBtn').onclick=openNotifications; $('themeBtn').onclick=toggleTheme; $('openSettings').onclick=openSettings;
+    $('logoutBtn').onclick=logout; $('userBar').onclick=(e)=>{if(e.target.closest('button'))return;e.stopPropagation();openProfilePeek(currentUser()?.id,e.currentTarget);};
+    $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b)return;pendingAttachments.splice(Number(b.dataset.removeAttachment),1);renderAttachmentPreview();});
+    $('emojiBtn').onclick=()=>insertAtCursor('🙂'); $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
+    $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm;
+    $('voiceBtn').onclick=openCallInfo; $('videoBtn').onclick=openCallInfo; $('screenBtn').onclick=openCallInfo; $('searchBtn').onclick=openChannelSearch; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys);
+    if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
+    backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
+    const finishTarget=()=>{
+      if(state.rememberedAccountId && state.accounts.some(a=>a.id===state.rememberedAccountId)){
+        state.currentAccountId=state.rememberedAccountId; save(); enterApp();
+      } else {
+        setScreen('loginScreen');
+      }
+    };
+    const loadingElapsed=performance.now()-(window.__azurecordBootStarted||performance.now());
+    setTimeout(finishTarget,Math.max(0,700-loadingElapsed));
+  }
+
+  async function waitForBackend(maxMs=2500){
+    if(!backendReadyPromise) return false;
+    try{
+      return await Promise.race([backendReadyPromise, new Promise(resolve=>setTimeout(()=>resolve(false),maxMs))]);
+    }catch{return false;}
+  }
+
+  function createLocalAccount(email, pass){
+    if(state.accounts.some(a=>a.email===email)) return null;
+    const base=email.split('@')[0].replace(/[^a-z0-9_]/gi,'').slice(0,20)||'usuario';
+    const username=uniqueUsername(base);
+    const a={id:uid('user'),email,passwordHash:hashPassword(pass),username,handle:'@'+username.toLowerCase(),bio:'Novo por aqui.',accent:'#0066ff',status:'online',avatar:'',banner:'',personality:'Usuário do Azurecord.',memberSince:new Intl.DateTimeFormat('pt-BR',{day:'numeric',month:'short',year:'numeric'}).format(new Date()),role:'Membro',lastLogin:now()};
+    state.accounts.push(a); state.currentAccountId=a.id; state.rememberedAccountId=$('rememberLogin').checked?a.id:null; saveNow();
+    return a;
+  }
+
+  async function submitAuth(){
+    const email=$('emailInput').value.trim().toLowerCase(), pass=$('passwordInput').value;
+    if(!email||!/^\S+@\S+\.\S+$/.test(email)||pass.length<6){showToast('Use um email válido e uma senha com pelo menos 6 caracteres.');return;}
+    await waitForBackend();
+
+    if(authMode==='signup'){
+      if(pass!==$('confirmInput').value){showToast('As senhas não conferem.');return;}
+      if(state.accounts.some(a=>a.email===email)){showToast('Essa conta já existe neste computador.');return;}
+      if(backendOnline){
+        try{
+          const base=email.split('@')[0].replace(/[^a-z0-9_.-]/gi,'').slice(0,24)||'usuario';
+          const data=await backendRequest('/api/auth/signup',{method:'POST',auth:false,body:JSON.stringify({email,password:pass,username:uniqueUsername(base)})});
+          backendToken=data.token; state.backendToken=backendToken;
+          const a=applyBackendUser(data.user); a.passwordHash=hashPassword(pass); a.lastLogin=now();
+          state.currentAccountId=a.id; state.rememberedAccountId=$('rememberLogin').checked?a.id:null; save(); startBackendEvents(); beginOnboarding(a); return;
+        }catch(err){
+          if(err.code==='email_exists'){showToast('Esse email já está cadastrado. Tente entrar.');return;}
+          if(err.code==='username_exists'){showToast('O nome de usuário sugerido já está em uso. Tente novamente.');return;}
+          console.warn('[Azurecord] Signup remoto falhou, usando conta local:',err);
+        }
+      }
+      const a=createLocalAccount(email,pass);
+      if(!a){showToast('Essa conta já existe neste computador.');return;}
+      beginOnboarding(a);
+      return;
+    }
+
+    const local=state.accounts.find(a=>a.email===email);
+    const localValid=!!(local && local.passwordHash===hashPassword(pass));
+
+    // Login local tem prioridade quando a conta já existe neste computador.
+    // Assim, uma falha temporária do backend não bloqueia o acesso à conta.
+    if(localValid){
+      local.lastLogin=now(); local.status='online'; state.currentAccountId=local.id; state.rememberedAccountId=$('rememberLogin').checked?local.id:null; saveNow(); enterApp();
+      if(backendOnline && !backendToken){
+        try{
+          const data=await backendRequest('/api/auth/login',{method:'POST',auth:false,body:JSON.stringify({email,password:pass})});
+          backendToken=data.token; state.backendToken=backendToken;
+          const a=applyBackendUser(data.user); a.passwordHash=hashPassword(pass); a.lastLogin=now(); a.status='online';
+          state.currentAccountId=a.id; save(); startBackendEvents(); hydrateFromBackend().catch(()=>{});
+        }catch(err){

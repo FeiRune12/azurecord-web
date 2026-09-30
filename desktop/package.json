@@ -1,0 +1,72 @@
+{
+  "name": "azurecord-desktop",
+  "version": "0.52.0-beta.8.4",
+  "private": true,
+  "description": "Azurecord V52 Beta 8.4: PWA companion, Windows EXE com ícone próprio e atualização automática via GitHub Releases.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check main.js && node --check updater.js && node --check launcher.js && node --check preload.js && node --check backend/server.js && node --check backend/ai-provider.js && node --check backend/v52-features.js && node --check backend/lola-dialogue.js && node --check backend/azure-points.js && node --check renderer/lola-client.js && node --check renderer/auth-recovery.js && node --check renderer/app.js && node --check renderer/server.js && node --check renderer/tts-edge.js && node --check tools/recover-account.js && node --check tests/beta4-recovery.test.js && node --check tests/beta5-account-delete.test.js && node --check tests/ui-smoke-cdp.js && node --check cloud/worker-v0.8.1.js && node --check tests/beta6-cloud-auth.test.js && node --check tests/beta7-cloud-account-fix.test.js && node --check tests/beta7-account-menu-hotfix.test.js && node --check tests/beta8-social-cloud.test.js && node --check tests/beta82-social-controls.test.js && node --check tests/beta821-profile-flow.test.js && node --check renderer/web-shim.js && node --check renderer/config.js && node --check web-vercel/build.mjs && node --check tests/beta83-settings-web.test.js && node --check tests/beta83-cloud-settings.test.js && node --check tests/beta831-friendsync-pages.test.js && node --check tests/beta832-mobile-friend-message.test.js",
+    "dist:win": "electron-builder --win nsis",
+    "release:win": "electron-builder --win nsis --publish always"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "build": {
+    "appId": "com.azurecord.app",
+    "productName": "Azurecord",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "**/*",
+      "!tests{,/**/*}",
+      "!cloud{,/**/*}",
+      "!docs{,/**/*}",
+      "!web-vercel{,/**/*}",
+      "!tools{,/**/*}",
+      "!dist{,/**/*}",
+      "!release{,/**/*}",
+      "!start-*.bat",
+      "!start-*.vbs",
+      "!*.md",
+      "!*.txt"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "azurecord.ico",
+      "artifactName": "Azurecord-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Azurecord",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "FeiRune12",
+        "repo": "azurecord-web",
+        "releaseType": "prerelease"
+      }
+    ]
+  }
+}

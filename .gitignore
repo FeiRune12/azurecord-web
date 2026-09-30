@@ -1,0 +1,8 @@
+node_modules/
+desktop/node_modules/
+desktop/release/
+desktop/dist/
+*.log
+.env
+backend/.env
+desktop/backend/.env

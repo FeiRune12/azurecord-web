@@ -46,7 +46,7 @@
     cloudSettings:{allowFriendRequests:true,allowDmsFromFriends:true,lolaEnabled:true,lolaMemoryEnabled:true,notificationsEnabled:true,nativeNotifications:true,compactMode:false,reducedMotion:false,mediaAutoplay:true,language:'pt-BR'},
     dmMessages:{}, channelMessages:{}, pinned:{}, deleted:{}, drafts:{}, attachments:[], closedDms:{},
     unread:{}, profiles:{}, roles:{}, lolaMemory:{}, lolaSecrets:{}, lolaInitiated:{}, lolaSessionInfo:{}, lolaGreetingHistory:{}, lastNotifications:[
-      {id:uid('notif'),type:'system',title:'Bem-vindo ao Azurecord',body:'A V52 Beta 8.4 corrige solicitações de amizade, remove o servidor de testes e prepara o Web para GitHub Pages.',time:now(),unread:true}
+      {id:uid('notif'),type:'system',title:'Bem-vindo ao Azurecord',body:'A V52 Beta 8.3.1 corrige solicitações de amizade, remove o servidor de testes e prepara o Web para GitHub Pages.',time:now(),unread:true}
     ]
   };
 
@@ -115,15 +115,10 @@
   function userControlsCloudReady(){
     return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.userControls && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
   }
-  function socialReady(){ return socialCloudReady(); }
+  function socialReady(){ return socialCloudReady() || !!(backendOnline && backendToken); }
   async function socialRequest(path, options={}){
-    if(!socialCloudReady()){
-      throw Object.assign(
-        new Error('Entre na sua conta Cloud do Azurecord para usar recursos sociais.'),
-        {status:401,code:'cloud_login_required'}
-      );
-    }
-    return cloudRequest(path,options);
+    if(socialCloudReady()) return cloudRequest(path,options);
+    return backendRequest(path,options);
   }
 
   function cloudUserToProfile(u){
@@ -454,7 +449,6 @@
         state.servers=mergeServers([],remote).filter(s=>s?.id!=='server-azurecord');
       }
       save();renderDms();renderBadges();renderServerRail();if(view.mode==='home')renderHome();
-      if(isMobileLayout()&&!$('mobileDmPanel')?.hidden)renderMobileDms();
       return true;
     }catch(err){if(!quiet)showToast(err.message||'Não foi possível atualizar os dados do Azurecord Cloud.');console.warn('[Azurecord] Social Cloud:',err);return false;}
   }
@@ -467,7 +461,7 @@
       if(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')await syncDmFromBackend(view.dmUserId);
       if(view.mode==='server'&&view.serverId&&view.channelId)await syncChannelMessages(view.serverId,view.channelId);
     };
-    cloudSocialPollTimer=setInterval(()=>tick().catch(()=>{}),3000);
+    cloudSocialPollTimer=setInterval(()=>tick().catch(()=>{}),5000);
   }
 
   async function hydrateFromBackend(){
@@ -593,7 +587,7 @@
     } catch(e) { console.warn('[Azurecord] Estado local inválido, usando base segura.', e); }
     const persistentServers=loadPersistentServers();
     merged.servers=mergeServers(Array.isArray(merged.servers)?merged.servers:[], persistentServers);
-    // Beta 8.4: remove o antigo servidor de demonstração de instalações anteriores.
+    // Beta 8.3.1: remove o antigo servidor de demonstração de instalações anteriores.
     merged.servers=merged.servers.filter(s=>s && s.id && s.id!=='server-azurecord').map(s=>ensureServerChannels(s));
     return merged;
   }
@@ -772,105 +766,9 @@
     el.onclick=(e)=>{const row=e.target.closest('[data-saved]');if(row)selectSavedAccount(state.accounts.find(x=>x.id===row.dataset.saved));};
   }
 
-  function isMobileLayout(){ return window.matchMedia('(max-width:720px)').matches; }
-  function setMobileDrawer(open){
-    document.documentElement.dataset.mobileDrawer=open?'1':'0';
-    const overlay=$('mobileDrawerBackdrop');if(overlay)overlay.hidden=!open;
-  }
-  function setupMobileUi(){
-    if(!$('mobileNav')){
-      const nav=document.createElement('nav');
-      nav.id='mobileNav';nav.className='mobile-bottom-nav';
-      nav.innerHTML=`<button data-mobile-home class="active"><span>⌂</span><b>Início</b></button><button data-mobile-servers><span>◫</span><b>Servidores</b></button><button data-mobile-dms><span>✉</span><b>Mensagens</b></button><button data-mobile-you><span>●</span><b>Você</b></button>`;
-      $('appScreen')?.appendChild(nav);
-      const backdrop=document.createElement('button');
-      backdrop.id='mobileDrawerBackdrop';backdrop.className='mobile-drawer-backdrop';backdrop.hidden=true;backdrop.setAttribute('aria-label','Fechar navegação');
-      $('appScreen')?.appendChild(backdrop);
-      backdrop.onclick=()=>setMobileDrawer(false);
-      nav.querySelector('[data-mobile-home]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('home');openHome('friends');};
-      nav.querySelector('[data-mobile-servers]').onclick=()=>{closeMobileDms();setMobileNavActive('servers');setMobileDrawer(true);};
-      nav.querySelector('[data-mobile-dms]').onclick=()=>openMobileDms();
-      nav.querySelector('[data-mobile-you]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('you');openAppSettings('account');};
-    }
-    if(!$('mobileMenuBtn')){
-      const btn=document.createElement('button');btn.id='mobileMenuBtn';btn.className='mobile-menu-btn';btn.type='button';btn.textContent='☰';btn.setAttribute('aria-label','Abrir navegação');
-      $('chatHeader')?.prepend(btn);btn.onclick=()=>setMobileDrawer(true);
-    }
-    document.addEventListener('click',e=>{
-      if(!isMobileLayout())return;
-      if(e.target.closest('.server,.channel-item,.dm-item,.home-side-item'))setTimeout(()=>setMobileDrawer(false),0);
-    });
-    window.addEventListener('resize',()=>{if(!isMobileLayout())setMobileDrawer(false);});
-  }
-
-  function setMobileNavActive(section){
-    const nav=$('mobileNav');if(!nav)return;
-    nav.querySelectorAll('button').forEach(btn=>btn.classList.remove('active'));
-    const map={home:'[data-mobile-home]',servers:'[data-mobile-servers]',dms:'[data-mobile-dms]',you:'[data-mobile-you]'};
-    const target=nav.querySelector(map[section]||'');if(target)target.classList.add('active');
-  }
-
-  function closeMobileDms(){
-    const panel=$('mobileDmPanel');if(panel)panel.hidden=true;
-    document.documentElement.removeAttribute('data-mobile-page');
-  }
-
-  function ensureMobileDmPanel(){
-    let panel=$('mobileDmPanel');
-    if(panel)return panel;
-    panel=document.createElement('section');
-    panel.id='mobileDmPanel';
-    panel.className='mobile-dm-panel';
-    panel.hidden=true;
-    panel.innerHTML=`<header class="mobile-dm-header"><div><span class="eyebrow">AZURECORD</span><h2>Mensagens</h2></div><button type="button" class="mobile-dm-refresh" data-mobile-dm-refresh aria-label="Atualizar mensagens">↻</button></header><div class="mobile-dm-subtitle">Mensagens diretas</div><div id="mobileDmList" class="mobile-dm-list"></div>`;
-    $('appScreen')?.appendChild(panel);
-    panel.querySelector('[data-mobile-dm-refresh]').onclick=async()=>{
-      const btn=panel.querySelector('[data-mobile-dm-refresh]');btn.disabled=true;
-      try{if(socialCloudReady())await hydrateFromCloudSocial({quiet:true});renderMobileDms();}
-      finally{btn.disabled=false;}
-    };
-    return panel;
-  }
-
-  function renderMobileDms(){
-    const panel=ensureMobileDmPanel();
-    const list=$('mobileDmList');if(!list)return;
-    renderDms();
-    const source=$('dmList');
-    list.innerHTML=source?.innerHTML||'<div class="mobile-dm-empty">Nenhuma mensagem direta aberta.</div>';
-    if(!list.children.length)list.innerHTML='<div class="mobile-dm-empty">Nenhuma mensagem direta aberta.</div>';
-    list.querySelectorAll('[data-dm-open]').forEach(b=>b.onclick=()=>{
-      const id=b.dataset.dmOpen;closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');openDm(id);
-    });
-    list.querySelectorAll('[data-dm-close]').forEach(b=>b.onclick=e=>{
-      e.stopPropagation();closeDmTab(b.dataset.dmClose);renderMobileDms();
-    });
-  }
-
-  async function openMobileDms(){
-    if(!isMobileLayout()){
-      setMobileDrawer(true);
-      openHome('friends');
-      const t=$('dmToggle');if(t&&t.getAttribute('aria-expanded')!=='true')t.click();
-      return;
-    }
-    setMobileDrawer(false);
-    const panel=ensureMobileDmPanel();
-    panel.hidden=false;
-    document.documentElement.dataset.mobilePage='dms';
-    setMobileNavActive('dms');
-    renderMobileDms();
-    if(socialCloudReady()){
-      try{await hydrateFromCloudSocial({quiet:true});}
-      catch{}
-      if(!panel.hidden)renderMobileDms();
-    }
-  }
-
   function boot(){
     window.__azurecordBootStarted=performance.now();
     setScreen('loadingScreen');
-    setupMobileUi();
     $('loginTab').onclick=()=>setAuthMode('login'); $('signupTab').onclick=()=>setAuthMode('signup');
     $('passwordToggle').onclick=()=>{ const p=$('passwordInput'); p.type=p.type==='password'?'text':'password'; };
     $('authForm').onsubmit=(e)=>{ e.preventDefault(); submitAuth(); };
@@ -1165,7 +1063,6 @@
   }
 
   function openHome(section='friends'){
-    if(isMobileLayout()){closeMobileDms();setMobileNavActive('home');}
     view.mode='home';
     view.home=section;
     view.homeTab=section==='requests'?'pending':section==='add'?'add':'all';
@@ -1176,7 +1073,6 @@
     if(socialCloudReady())hydrateFromCloudSocial({quiet:true}).catch(()=>{});
   }
   function openServer(id){
-    if(isMobileLayout()){closeMobileDms();setMobileNavActive('servers');}
     const s=getServer(id)||state.servers?.[0];
     if(!s){ showToast('Nenhum servidor disponível.'); return; }
     ensureServerChannels(s);
@@ -1218,93 +1114,70 @@
 
   function renderHome(){ if(view.mode!=='home') return; const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja quem quer adicionar você.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
   function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>p.status==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${allPeople().filter(p=>p.id!==currentUser()?.id&&!isFriend(p.id)).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
-  function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
+  function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><span>${incoming.length} pendente(s)</span></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
   function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=p.id==='user-lola'; const statusText=system?'Assistente do sistema':statusLabel(p.status); return `<div class="friend-row" data-user-row="${p.id}"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span></div><span class="presence-dot ${p.status==='online'?'online':''}"></span><div class="friend-actions">${system?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
-  function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} const refresh=$('refreshFriendRequests');if(refresh)refresh.onclick=async()=>{refresh.disabled=true;try{await hydrateFromCloudSocial({quiet:false});renderHome();}finally{refresh.disabled=false;}}; $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
+  function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
   async function renderSearchResults(){
     const holder=$('friendSearchResults');if(!holder)return;
     const q=usernameKey(currentSearch);const epoch=++cloudSearchEpoch;
     if(!q){holder.innerHTML='<div class="presence-legend">Digite um nome de usuário para pesquisar.</div>';return;}
-    if(!socialCloudReady()){
-      holder.innerHTML='<div class="home-empty compact"><span>Entre novamente na sua conta Cloud para pesquisar usuários.</span></div>';
-      return;
-    }
-    holder.innerHTML='<div class="presence-legend">Pesquisando no Azurecord Cloud...</div>';
-    try{
-      const data=await cloudRequest(`/api/users?search=${encodeURIComponent(q)}`);
-      if(epoch!==cloudSearchEpoch)return;
-      const remote=Array.isArray(data.users)?data.users:[];
-      for(const u of remote)hydrateRemoteUser(u);
-      const found=remote.map(u=>getProfile(u.id)).filter(Boolean).filter(p=>p.id!==state.currentAccountId);
-      if(epoch!==cloudSearchEpoch||!$('friendSearchResults'))return;
-      holder.innerHTML=found.length?found.map(p=>`<div class="result-item"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0])}</div><div><strong>${esc(p.username)}</strong><p>${esc(p.handle||'@'+p.username.toLowerCase())}</p></div><div class="spacer"></div>${isFriend(p.id)?'<span class="pill">Amigo</span>':state.requests.some(r=>r.status==='pending'&&r.from===state.currentAccountId&&r.to===p.id)?'<span class="pill">Enviado</span>':`<button class="home-mini-btn" data-find-add="${p.id}">Adicionar</button>`}</div>`).join(''):'<div class="home-empty compact"><span>Nenhum usuário Cloud encontrado com esse nome.</span></div>';
-      holder.querySelectorAll('[data-find-add]').forEach(b=>b.onclick=()=>sendFriendRequest(b.dataset.findAdd));
-    }catch(err){
-      console.warn('[Azurecord] Busca cloud:',err.message);
-      if(holder)holder.innerHTML=`<div class="home-empty compact"><span>${esc(err.message||'Não foi possível pesquisar no Azurecord Cloud agora.')}</span></div>`;
+    let found=allPeople().filter(p=>p.id!==state.currentAccountId&&usernameKey(p.username).includes(q));
+    const paint=()=>{if(epoch!==cloudSearchEpoch||!$('friendSearchResults'))return;holder.innerHTML=found.length?found.map(p=>`<div class="result-item"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc(p.username[0])}</div><div><strong>${esc(p.username)}</strong><p>${esc(p.handle||'@'+p.username.toLowerCase())}</p></div><div class="spacer"></div>${p.id==='user-lola'?`<button class="home-mini-btn" data-find-lola="${p.id}">Mensagem</button>`:isFriend(p.id)?'<span class="pill">Amigo</span>':state.requests.some(r=>r.status==='pending'&&r.from===state.currentAccountId&&r.to===p.id)?'<span class="pill">Enviado</span>':`<button class="home-mini-btn" data-find-add="${p.id}">Adicionar</button>`}</div>`).join(''):'<div class="home-empty compact"><span>Nenhum usuário encontrado.</span></div>';holder.querySelectorAll('[data-find-add]').forEach(b=>b.onclick=()=>sendFriendRequest(b.dataset.findAdd));holder.querySelectorAll('[data-find-lola]').forEach(b=>b.onclick=()=>openDm('user-lola',{suppressProfile:true}));};
+    paint();
+    if(cloudToken&&cloudVerifiedAccountId===state.currentAccountId&&q.length>=1){
+      try{
+        const data=await cloudRequest(`/api/users?search=${encodeURIComponent(q)}`);
+        if(epoch!==cloudSearchEpoch)return;
+        for(const u of data.users||[])hydrateRemoteUser(u);
+        const remoteIds=new Set((data.users||[]).map(u=>u.id));
+        found=allPeople().filter(p=>p.id!==state.currentAccountId&&(remoteIds.has(p.id)||usernameKey(p.username).includes(q)));
+        paint();
+      }catch(err){
+        console.warn('[Azurecord] Busca cloud:',err.message);
+        if(holder)holder.innerHTML='<div class="home-empty compact"><span>Não foi possível pesquisar no Azurecord Cloud agora.</span></div>';
+      }
     }
   }
   async function sendFriendRequest(id){
     const target=getProfile(id);
     if(!target||id===state.currentAccountId)return;
-    if(id==='user-lola'){
+    const isLola=id==='user-lola';
+    if(isLola){
+      state.requests=(state.requests||[]).filter(r=>r.from!=='user-lola'&&r.to!=='user-lola');
+      state.friends=(state.friends||[]).filter(f=>f.a!=='user-lola'&&f.b!=='user-lola');
+      save();renderHome();renderBadges();renderDms();
       showToast('Lola é uma assistente do sistema e não usa pedidos de amizade.');
       return;
     }
     if(isFriend(id)){showToast('Vocês já são amigos.');return;}
-    if(!socialCloudReady()){
-      showToast('Entre novamente na sua conta Cloud antes de enviar pedidos.');
-      return;
-    }
     const existing=state.requests.find(r=>r.status==='pending'&&((r.from===state.currentAccountId&&r.to===id)||(r.from===id&&r.to===state.currentAccountId)));
-    if(existing){
-      showToast(existing.from===state.currentAccountId?'Pedido já enviado.':'Esse usuário já enviou um pedido para você.');
-      return;
-    }
+    if(existing) existing.status=isLola?'accepted':'pending';
+    else state.requests.push({id:uid('req'),from:state.currentAccountId,to:id,status:isLola?'accepted':'pending',time:now(),secret:isLola&&!!state.lolaSecrets?.[state.currentAccountId]});
+    if(isLola&&!isFriend(id))state.friends.push({a:state.currentAccountId,b:id,created:now()});
+    save();renderHome();renderBadges();renderDms();
+    if(!socialReady())return;
     try{
-      showToast(`Enviando pedido para @${target.username}...`);
-      const result=await cloudRequest('/api/friends/requests',{method:'POST',body:JSON.stringify({toUserId:id})});
-      if(result?.accepted || result?.alreadyFriends){
+      const result=await socialRequest('/api/friends/requests',{method:'POST',body:JSON.stringify({toUserId:id})});
+      if(isLola){
         if(!isFriend(id))state.friends.push({a:state.currentAccountId,b:id,created:now()});
-        state.requests=(state.requests||[]).filter(r=>!((r.from===state.currentAccountId&&r.to===id)||(r.from===id&&r.to===state.currentAccountId)));
-        addNotification('Novo amigo',`${target.username} agora é seu amigo.`,'friend');
-      }else if(result?.request){
-        const req=result.request;
-        state.requests=(state.requests||[]).filter(r=>r.id!==req.id && !((r.from===state.currentAccountId&&r.to===id)||(r.from===id&&r.to===state.currentAccountId)));
-        state.requests.push({id:req.id,from:req.from,to:req.to,status:req.status||'pending',time:new Date(req.createdAt||Date.now()).getTime()});
-        showToast(`Pedido enviado para @${target.username}.`);
+        state.requests=state.requests.map(r=>((r.from===state.currentAccountId&&r.to===id)||(r.from===id&&r.to===state.currentAccountId))?{...r,status:'accepted'}:r);
+        addNotification('Novo amigo',`${target.username} aceitou você como amigo.`,'friend');
+        save();renderHome();renderBadges();renderDms();
+      } else if(result?.request){
+        const localReq=state.requests.find(r=>r.to===id&&r.from===state.currentAccountId);
+        if(localReq)Object.assign(localReq,{id:result.request.id,status:result.request.status,time:new Date(result.request.createdAt||Date.now()).getTime()});
+        save();renderHome();renderBadges();
       }
-      await hydrateFromCloudSocial({quiet:true});
-      save();renderHome();renderBadges();renderDms();
+      if(socialCloudReady())await hydrateFromCloudSocial({quiet:true});else await hydrateFromBackend();
     }catch(err){
-      showToast(err.message||'Não foi possível enviar a solicitação.');
+      const pending=state.requests.find(r=>r.to===id&&r.from===state.currentAccountId&&r.status==='pending');
+      if(pending)pending.status='cancelled';save();renderHome();renderBadges();showToast(err.message||'Não foi possível enviar a solicitação.');
     }
   }
-  async function acceptRequest(id){
-    const r=state.requests.find(x=>x.id===id);if(!r)return;
-    if(!socialCloudReady()){showToast('Entre na conta Cloud para aceitar pedidos.');return;}
-    try{
-      await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/accept`,{method:'POST'});
-      await hydrateFromCloudSocial({quiet:true});
-      const p=getProfile(r.from);if(p)addNotification('Novo amigo',`${p.username} agora é seu amigo.`,'friend');
-      renderHome();renderDms();renderBadges();
-    }catch(err){showToast(err.message||'Não foi possível aceitar o pedido.');}
-  }
-  async function declineRequest(id){
-    if(!socialCloudReady()){showToast('Entre na conta Cloud para recusar pedidos.');return;}
-    try{
-      await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/decline`,{method:'POST'});
-      await hydrateFromCloudSocial({quiet:true});renderHome();renderBadges();
-    }catch(err){showToast(err.message||'Não foi possível recusar o pedido.');}
-  }
-  async function cancelRequest(id){
-    if(!socialCloudReady()){showToast('Entre na conta Cloud para cancelar pedidos.');return;}
-    try{
-      await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/cancel`,{method:'POST'});
-      await hydrateFromCloudSocial({quiet:true});renderHome();renderBadges();
-    }catch(err){showToast(err.message||'Não foi possível cancelar o pedido.');}
-  }
+  function acceptRequest(id){const r=state.requests.find(x=>x.id===id);if(!r)return; r.status='accepted';if(!isFriend(r.from))state.friends.push({a:r.from,b:r.to,created:now()});addNotification('Novo amigo',`${getProfile(r.from).username} agora é seu amigo.`);save();renderHome();renderDms();if(socialReady()&&!String(id).startsWith('req-'))socialRequest(`/api/friends/requests/${encodeURIComponent(id)}/accept`,{method:'POST'}).then(()=>socialCloudReady()?hydrateFromCloudSocial({quiet:true}):hydrateFromBackend()).catch(()=>{});}
+  function declineRequest(id){const r=state.requests.find(x=>x.id===id);if(r)r.status='declined';save();renderHome();if(socialReady()&&!String(id).startsWith('req-'))socialRequest(`/api/friends/requests/${encodeURIComponent(id)}/decline`,{method:'POST'}).catch(()=>{});}
+  function cancelRequest(id){const r=state.requests.find(x=>x.id===id);if(r)r.status='cancelled';save();renderHome();if(socialReady()&&!String(id).startsWith('req-'))socialRequest(`/api/friends/requests/${encodeURIComponent(id)}/cancel`,{method:'POST'}).catch(()=>{});}
 
   function ensureLolaSecrets(){
     if(!state.lolaSecrets||typeof state.lolaSecrets!=='object')state.lolaSecrets={};
@@ -1428,7 +1301,6 @@
     }
   }
   async function openDm(id,options={}){
-    if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
     if(!getProfile(id))return;
     if(id!=='user-lola'&&isBlocked(id)){showToast('Desbloqueie este usuário antes de abrir uma DM.');openProfileModal(id);return;}
     const key=dmKey(id);
@@ -2468,7 +2340,7 @@
     const aiBound=!!cloudInfo?.capabilities?.lolaWorkersAI;
     const logged=!!(cloudToken&&cloudVerifiedAccountId===state.currentAccountId);
     const status=aiBound&&logged?'Conectada ao Workers AI ✅':aiBound?'Workers AI disponível; entre na conta Cloud.':'Binding AI não detectado no Worker.';
-    showModal('Lola IA',`<div class="app-card"><strong>🧠 Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ✅':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.8.1.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
+    showModal('Lola IA',`<div class="app-card"><strong>🧠 Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ✅':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.7.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
     $('aiSetupClose').onclick=closeModal;
   }
   function openCreatePoll(){if(view.mode!=='server'){showToast('Abra um canal de servidor para criar uma enquete.');return;}showModal('Nova enquete',`<label>Pergunta<input id="pollQuestion" placeholder="O que vamos fazer hoje?"></label><label>Opção 1<input id="pollA" placeholder="Opção A"></label><label>Opção 2<input id="pollB" placeholder="Opção B"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="pollCancel">Cancelar</button><button class="btn btn-primary" id="pollSend">Publicar</button></div>`);$('pollCancel').onclick=closeModal;$('pollSend').onclick=()=>{const q=$('pollQuestion').value.trim();const a=$('pollA').value.trim()||'Opção A';const b=$('pollB').value.trim()||'Opção B';if(!q){showToast('Digite uma pergunta.');return;}const arr=getMessages();arr.push({id:uid('poll'),author:state.currentAccountId,text:`📊 ${q}`,time:now(),poll:{question:q,options:[a,b],votes:[0,0]}});setMessages(arr);save();closeModal();renderMessages();showToast('Enquete publicada.');};}
