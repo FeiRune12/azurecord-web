@@ -9,7 +9,7 @@ test('Beta4: scripts do renderer carregam helper de recuperação antes do aplic
   const html=fs.readFileSync(path.join(root,'renderer','index.html'),'utf8');
   const required=['authNotice','savedAccounts','emailInput','passwordInput','authSubmit','rememberLogin','loginScreen','appScreen'];
   for(const id of required)assert.ok(html.includes(`id="${id}"`),`ID ausente: ${id}`);
-  assert.ok(html.indexOf('<script src="auth-recovery.js"></script>')>0);
+  assert.match(html, /<script src="auth-recovery\.js(?:\?v=[^"]+)?"><\/script>/);
   assert.ok(html.indexOf('<script src="app.js"></script>')>html.indexOf('<script src="auth-recovery.js"></script>'));
   for(const file of ['app.js','auth-recovery.js','lola-client.js','styles.css'])assert.ok(fs.existsSync(path.join(root,'renderer',file)));
 });
