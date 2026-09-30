@@ -5,6 +5,7 @@
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
+  const CLOUD_REALTIME_URL = String(window.AZURECORD_CONFIG?.realtimeBaseUrl || 'https://azurecord-realtime.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
 
   const $ = (ref) => {
     if (typeof ref !== 'string') return null;
@@ -84,6 +85,12 @@
   let cloudSocialSnapshotAt = 0;
   let cloudRealtimeFailures = 0;
   let cloudRealtimeWakeRequested = false;
+  let cloudRealtimeSocket = null;
+  let cloudRealtimeSocketReady = false;
+  let cloudRealtimeReconnectTimer = null;
+  let cloudRealtimeHeartbeatTimer = null;
+  let cloudRealtimeReconnectAttempt = 0;
+  const cloudRealtimeSeenEvents = new Set();
   let cloudSearchEpoch = 0;
   let backendReadyPromise = Promise.resolve();
   let backendEventSource = null;
@@ -462,12 +469,151 @@
       return true;
     }catch(err){if(!quiet)showToast(err.message||'Não foi possível atualizar os dados do Azurecord Cloud.');console.warn('[Azurecord] Social Cloud:',err);return false;}
   }
+  function cloudRealtimeConnected(){
+    return !!(cloudRealtimeSocket && cloudRealtimeSocket.readyState===WebSocket.OPEN && cloudRealtimeSocketReady);
+  }
+
+  function rememberRealtimeEvent(id){
+    const key=String(id||'');
+    if(!key)return false;
+    if(cloudRealtimeSeenEvents.has(key))return true;
+    cloudRealtimeSeenEvents.add(key);
+    if(cloudRealtimeSeenEvents.size>120){
+      const first=cloudRealtimeSeenEvents.values().next().value;
+      cloudRealtimeSeenEvents.delete(first);
+    }
+    return false;
+  }
+
+  function stopCloudRealtimeSocket(){
+    clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
+    clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+    cloudRealtimeSocketReady=false;
+    const ws=cloudRealtimeSocket;cloudRealtimeSocket=null;
+    if(ws){
+      try{ws.onopen=ws.onmessage=ws.onerror=ws.onclose=null;ws.close(1000,'Azurecord logout');}catch{}
+    }
+  }
+
+  function scheduleCloudRealtimeReconnect(){
+    clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
+    if(!socialCloudReady() || (typeof navigator!=='undefined'&&navigator.onLine===false))return;
+    const attempt=Math.min(cloudRealtimeReconnectAttempt++,6);
+    const wait=Math.min(30000,1000*Math.pow(1.8,attempt));
+    cloudRealtimeReconnectTimer=setTimeout(()=>startCloudRealtimeSocket(true),wait);
+  }
+
+  async function handleCloudRealtimeEvent(event){
+    if(!event||rememberRealtimeEvent(event.eventId))return;
+    if(event.type==='ready'){
+      cloudRealtimeSocketReady=true;
+      cloudRealtimeReconnectAttempt=0;
+      cloudRealtimeFailures=0;
+      wakeCloudRealtimeSync({snapshot:true});
+      return;
+    }
+    if(event.type==='pong')return;
+
+    if(event.type==='dm.changed'){
+      const peerId=String(event.peerId||'');
+      if(!peerId||peerId==='user-lola')return;
+      if(view.mode==='dm'&&view.dmUserId===peerId){
+        await syncDmFromBackend(peerId);
+      }else{
+        await hydrateFromCloudSocial({quiet:true});
+      }
+      return;
+    }
+
+    if(event.type==='channel.changed'){
+      const remoteServerId=String(event.serverId||'');
+      const remoteChannelId=String(event.channelId||'');
+      const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId);
+      const ch=srv?.channels?.find(x=>(x.backendId||x.id)===remoteChannelId);
+      if(!srv||!ch){
+        await hydrateFromCloudSocial({quiet:true});
+        return;
+      }
+      if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id){
+        await syncChannelMessages(srv.id,ch.id);
+      }else{
+        state.unread[`${srv.id}|${ch.id}`]=1;
+        save();
+        renderServerRail();
+      }
+    }
+  }
+
+  function startCloudRealtimeSocket(force=false){
+    if(!socialCloudReady()||!cloudToken)return;
+    if(typeof WebSocket==='undefined')return;
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return;
+    if(!force && cloudRealtimeSocket && (cloudRealtimeSocket.readyState===WebSocket.OPEN||cloudRealtimeSocket.readyState===WebSocket.CONNECTING))return;
+
+    clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
+    clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+    if(cloudRealtimeSocket){
+      try{cloudRealtimeSocket.onopen=cloudRealtimeSocket.onmessage=cloudRealtimeSocket.onerror=cloudRealtimeSocket.onclose=null;cloudRealtimeSocket.close();}catch{}
+    }
+
+    const wsUrl=CLOUD_REALTIME_URL.replace(/^http:/i,'ws:').replace(/^https:/i,'wss:')+'/ws';
+    let ws;
+    try{
+      ws=new WebSocket(wsUrl,['azurecord-v1',cloudToken]);
+    }catch(err){
+      console.warn('[Azurecord] WebSocket não pôde iniciar:',err?.message||err);
+      scheduleCloudRealtimeReconnect();
+      return;
+    }
+
+    cloudRealtimeSocket=ws;
+    cloudRealtimeSocketReady=false;
+
+    ws.onopen=()=>{
+      cloudRealtimeReconnectAttempt=0;
+      clearInterval(cloudRealtimeHeartbeatTimer);
+      cloudRealtimeHeartbeatTimer=setInterval(()=>{
+        if(ws.readyState===WebSocket.OPEN){
+          try{ws.send(JSON.stringify({type:'ping',at:Date.now()}));}catch{}
+        }
+      },25000);
+    };
+
+    ws.onmessage=(ev)=>{
+      let event=null;
+      try{event=JSON.parse(String(ev.data||''));}catch{return;}
+      handleCloudRealtimeEvent(event).catch(err=>console.warn('[Azurecord] Realtime event:',err?.message||err));
+    };
+
+    ws.onerror=()=>{cloudRealtimeSocketReady=false;};
+
+    ws.onclose=()=>{
+      if(cloudRealtimeSocket===ws)cloudRealtimeSocket=null;
+      cloudRealtimeSocketReady=false;
+      clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+      scheduleCloudRealtimeReconnect();
+      wakeCloudRealtimeSync();
+    };
+  }
+
+  function sendCloudRealtime(event){
+    if(!cloudRealtimeConnected())return false;
+    try{
+      cloudRealtimeSocket.send(JSON.stringify(event));
+      return true;
+    }catch{
+      return false;
+    }
+  }
+
   function cloudRealtimeDelay(){
     if(typeof navigator!=='undefined' && navigator.onLine===false)return 4000;
     if(document.hidden)return 5000;
     const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
       (view.mode==='server'&&view.serverId&&view.channelId);
-    const base=activeConversation?450:1400;
+    const base=cloudRealtimeConnected()
+      ? (activeConversation?8000:15000)
+      : (activeConversation?700:1800);
     if(!cloudRealtimeFailures)return base;
     return Math.min(8000,base*Math.pow(1.8,Math.min(cloudRealtimeFailures,5)));
   }
@@ -538,6 +684,7 @@
     if(!socialCloudReady())return;
     cloudRealtimeFailures=0;
     cloudSocialSnapshotAt=0;
+    startCloudRealtimeSocket();
     wakeCloudRealtimeSync({snapshot:true});
   }
 
@@ -705,7 +852,8 @@
   function showToast(text){ const t=$('toast'); t.textContent=text; t.classList.add('show'); clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),2500); }
   function logout(){
     try{ if(backendEventSource){backendEventSource.close(); backendEventSource=null;} }catch{}
-    clearInterval(cloudSocialPollTimer);cloudSocialPollTimer=null;
+    stopCloudRealtimeSocket();
+    clearTimeout(cloudSocialPollTimer);cloudSocialPollTimer=null;
     if(cloudToken)cloudRequest('/auth/logout',{method:'POST'}).catch(()=>{});
     state.accounts=state.accounts.map(a=>a.id===state.currentAccountId?{...a,status:'offline',lastLogin:a.lastLogin||now()}:a);
     state.currentAccountId=null;
@@ -743,6 +891,7 @@
     state.currentAccountId=null;state.rememberedAccountId=null;state.backendToken=null;state.backendAccountId=null;state.cloudAccountId=null;
     backendToken=null;verifiedBackendAccountId=null;cloudToken=null;cloudVerifiedAccountId=null;
     cloudInfo={version:null,capabilities:{}};
+    stopCloudRealtimeSocket();
     try{if(backendEventSource){backendEventSource.close();backendEventSource=null;}}catch{}
     try{window.azurecordDesktop?.deleteSecureSession?.();}catch{}
     // A conta excluída não pode continuar pré-preenchida nem renderizada no login.
@@ -966,7 +1115,7 @@
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=openCallInfo; $('videoBtn').onclick=openCallInfo; $('screenBtn').onclick=openCallInfo; $('searchBtn').onclick=openChannelSearch; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady())wakeCloudRealtimeSync({snapshot:true});}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady())wakeCloudRealtimeSync({snapshot:true});}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady())wakeCloudRealtimeSync({snapshot:true});showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:true});}}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:true});}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -1027,6 +1176,7 @@
   }
 
   function authenticateWithCloud(data){
+    stopCloudRealtimeSocket();
     const token=data?.session?.token||data?.token;
     if(!token||!data?.user?.id)throw new Error('O Azurecord Cloud não retornou uma sessão válida.');
     cloudToken=token; cloudVerifiedAccountId=data.user.id;
@@ -2055,6 +2205,7 @@
         :await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options);
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+      if(id!=='user-lola')sendCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id});
       wakeCloudRealtimeSync();
       return true;
     }catch(err){
@@ -2129,7 +2280,7 @@
           const controller=new AbortController();
           const timeout=setTimeout(()=>controller.abort(),12000);
           socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',signal:controller.signal,body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})})
-            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();wakeCloudRealtimeSync();}})
+            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id});wakeCloudRealtimeSync();}})
             .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);})
             .finally(()=>clearTimeout(timeout));
         }else{
