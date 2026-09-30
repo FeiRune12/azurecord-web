@@ -2607,9 +2607,31 @@
   function settingsToggleRow(id,title,desc,on){return `<div class="settings-option"><div><strong>${esc(title)}</strong><span>${esc(desc)}</span></div><button type="button" class="toggle ${on?'on':''}" id="${id}" aria-pressed="${on?'true':'false'}"><span></span></button></div>`;}
   function settingsWorkspace(title,nav,active,content,kind='app'){
     const layer=$('modalLayer');if(!layer)return;
+    const user=currentUser();
+    const avatarStyle=user?.avatar?`background-image:url('${safeUrl(user.avatar)}')`:'';
     layer.hidden=false;
-    layer.innerHTML=`<div class="modal settings-modal settings-${kind}" role="dialog" aria-modal="true"><aside class="settings-sidebar"><div class="settings-sidebar-title">${esc(title)}</div><nav>${nav.map(item=>`<button type="button" class="settings-nav-item ${item.id===active?'active':''} ${item.danger?'danger':''}" data-settings-tab="${item.id}">${item.icon||''}<span>${esc(item.label)}</span></button>`).join('')}</nav></aside><section class="settings-main"><header class="settings-main-head"><div><h2>${esc(nav.find(x=>x.id===active)?.label||title)}</h2><p>${esc(nav.find(x=>x.id===active)?.hint||'')}</p></div><button type="button" class="settings-close" id="modalClose" aria-label="Fechar">×</button></header><div class="settings-scroll">${content}</div></section></div>`;
-    $('modalClose').onclick=closeModal;layer.onclick=e=>{if(e.target===layer)closeModal();};
+    layer.innerHTML=`<div class="modal settings-modal settings-${kind}" role="dialog" aria-modal="true">
+      <aside class="settings-sidebar">
+        <div class="settings-account-card">
+          <div class="settings-account-avatar avatar-img" style="${avatarStyle}">${user?.avatar?'':esc((user?.username||'A')[0])}</div>
+          <div class="settings-account-copy"><strong>${esc(user?.username||'Azurecord')}</strong><span>${esc(user?.handle||'Configurações')}</span></div>
+        </div>
+        <label class="settings-search"><span>⌕</span><input id="settingsNavSearch" type="search" placeholder="Buscar" autocomplete="off"></label>
+        <div class="settings-sidebar-title">${esc(title)}</div>
+        <nav>${nav.map(item=>`<button type="button" class="settings-nav-item ${item.id===active?'active':''} ${item.danger?'danger':''}" data-settings-tab="${item.id}" data-settings-label="${esc(item.label.toLowerCase())}"><span class="settings-nav-icon">${item.icon||''}</span><span>${esc(item.label)}</span></button>`).join('')}</nav>
+      </aside>
+      <section class="settings-main">
+        <header class="settings-main-head"><div><h2>${esc(nav.find(x=>x.id===active)?.label||title)}</h2><p>${esc(nav.find(x=>x.id===active)?.hint||'')}</p></div><button type="button" class="settings-close" id="modalClose" aria-label="Fechar">×</button></header>
+        <div class="settings-scroll">${content}</div>
+      </section>
+    </div>`;
+    $('modalClose').onclick=closeModal;
+    layer.onclick=e=>{if(e.target===layer)closeModal();};
+    const search=$('settingsNavSearch');
+    if(search)search.oninput=()=>{
+      const q=search.value.trim().toLowerCase();
+      $('.settings-nav-item').forEach(btn=>btn.hidden=!!q&&!String(btn.dataset.settingsLabel||'').includes(q));
+    };
   }
   const APP_SETTINGS_NAV=[
     {id:'account',label:'Minha conta',icon:'👤',hint:'Conta, identidade e acesso ao Azurecord.'},
