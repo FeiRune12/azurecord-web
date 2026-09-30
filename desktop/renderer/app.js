@@ -82,6 +82,8 @@
   let cloudSocialPollTimer = null;
   let cloudRealtimeSyncBusy = false;
   let cloudSocialSnapshotAt = 0;
+  let cloudRealtimeFailures = 0;
+  let cloudRealtimeWakeRequested = false;
   let cloudSearchEpoch = 0;
   let backendReadyPromise = Promise.resolve();
   let backendEventSource = null;
@@ -460,33 +462,83 @@
       return true;
     }catch(err){if(!quiet)showToast(err.message||'Não foi possível atualizar os dados do Azurecord Cloud.');console.warn('[Azurecord] Social Cloud:',err);return false;}
   }
-  function startCloudSocialPolling(){
-    clearInterval(cloudSocialPollTimer);cloudSocialPollTimer=null;
+  function cloudRealtimeDelay(){
+    if(typeof navigator!=='undefined' && navigator.onLine===false)return 4000;
+    if(document.hidden)return 5000;
+    const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
+      (view.mode==='server'&&view.serverId&&view.channelId);
+    const base=activeConversation?450:1400;
+    if(!cloudRealtimeFailures)return base;
+    return Math.min(8000,base*Math.pow(1.8,Math.min(cloudRealtimeFailures,5)));
+  }
+
+  function scheduleCloudRealtimeSync(delay=null){
+    clearTimeout(cloudSocialPollTimer);cloudSocialPollTimer=null;
     if(!socialCloudReady())return;
-    cloudSocialSnapshotAt=0;
-    const tick=async()=>{
-      if(!socialCloudReady()||document.hidden||cloudRealtimeSyncBusy)return;
-      cloudRealtimeSyncBusy=true;
-      try{
-        const stamp=Date.now();
-        // Conversas abertas sincronizam quase em tempo real. O snapshot social
-        // completo é mais pesado, então roda em uma cadência separada.
-        if(stamp-cloudSocialSnapshotAt>=3500){
-          await hydrateFromCloudSocial({quiet:true});
-          cloudSocialSnapshotAt=stamp;
-        }
-        if(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola'){
-          await syncDmFromBackend(view.dmUserId);
-        }
-        if(view.mode==='server'&&view.serverId&&view.channelId){
-          await syncChannelMessages(view.serverId,view.channelId);
-        }
-      }finally{
-        cloudRealtimeSyncBusy=false;
+    const wait=delay==null?cloudRealtimeDelay():Math.max(0,Number(delay)||0);
+    cloudSocialPollTimer=setTimeout(()=>runCloudRealtimeSync().catch(()=>{}),wait);
+  }
+
+  function wakeCloudRealtimeSync({snapshot=false}={}){
+    if(snapshot)cloudSocialSnapshotAt=0;
+    cloudRealtimeWakeRequested=true;
+    if(!cloudRealtimeSyncBusy)scheduleCloudRealtimeSync(0);
+  }
+
+  async function runCloudRealtimeSync(){
+    if(!socialCloudReady())return;
+    if(typeof navigator!=='undefined' && navigator.onLine===false){
+      cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);
+      scheduleCloudRealtimeSync();
+      return;
+    }
+    if(cloudRealtimeSyncBusy){
+      cloudRealtimeWakeRequested=true;
+      return;
+    }
+    cloudRealtimeSyncBusy=true;
+    cloudRealtimeWakeRequested=false;
+    let ok=true;
+    try{
+      const stamp=Date.now();
+      // O snapshot social mantém amigos, DMs recentes, servidores e badges em sincronia,
+      // mas não precisa rodar na mesma velocidade da conversa aberta.
+      if(stamp-cloudSocialSnapshotAt>=3000){
+        const snapshotOk=await hydrateFromCloudSocial({quiet:true});
+        if(snapshotOk)cloudSocialSnapshotAt=Date.now();
+        else ok=false;
       }
-    };
-    tick().catch(()=>{});
-    cloudSocialPollTimer=setInterval(()=>tick().catch(()=>{}),700);
+
+      if(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola'){
+        const dmOk=await syncDmFromBackend(view.dmUserId);
+        if(dmOk===false)ok=false;
+      }else if(view.mode==='server'&&view.serverId&&view.channelId){
+        const channelOk=await syncChannelMessages(view.serverId,view.channelId);
+        if(channelOk===false)ok=false;
+      }
+
+      if(ok){
+        cloudRealtimeFailures=0;
+        cloudOnline=true;
+      }else{
+        cloudRealtimeFailures=Math.min(cloudRealtimeFailures+1,6);
+      }
+    }catch(err){
+      cloudRealtimeFailures=Math.min(cloudRealtimeFailures+1,6);
+      console.warn('[Azurecord] Realtime Sync:',err?.message||err);
+    }finally{
+      cloudRealtimeSyncBusy=false;
+      if(cloudRealtimeWakeRequested)scheduleCloudRealtimeSync(0);
+      else scheduleCloudRealtimeSync();
+    }
+  }
+
+  function startCloudSocialPolling(){
+    clearTimeout(cloudSocialPollTimer);cloudSocialPollTimer=null;
+    if(!socialCloudReady())return;
+    cloudRealtimeFailures=0;
+    cloudSocialSnapshotAt=0;
+    wakeCloudRealtimeSync({snapshot:true});
   }
 
   async function hydrateFromBackend(){
@@ -914,7 +966,7 @@
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=openCallInfo; $('videoBtn').onclick=openCallInfo; $('screenBtn').onclick=openCallInfo; $('searchBtn').onclick=openChannelSearch; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady())hydrateFromCloudSocial({quiet:true}).catch(()=>{});}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady())hydrateFromCloudSocial({quiet:true}).catch(()=>{});});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady())wakeCloudRealtimeSync({snapshot:true});}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady())wakeCloudRealtimeSync({snapshot:true});}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady())wakeCloudRealtimeSync({snapshot:true});showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -1220,7 +1272,11 @@
       for(const m of (result.messages||[])){if(m.author)hydrateRemoteUser(m.author);}
       state.channelMessages[key]=[...(result.messages||[]).map(m=>({...m,author:m.senderId,serverId:m.id})),...local];
       save();if(view.mode==='server'&&view.serverId===serverId&&view.channelId===channelId)renderMessages();
-    }catch(err){console.warn('[Azurecord] Falha ao sincronizar canal:',err.message);}
+      return true;
+    }catch(err){
+      console.warn('[Azurecord] Falha ao sincronizar canal:',err.message);
+      return false;
+    }
   }
   function openChannel(channelId){
     const c=getChannel(view.serverId,channelId);
@@ -1412,7 +1468,11 @@
       save();
       if(view.mode==='dm'&&view.dmUserId===id){renderDms();renderChat();}
       flushPendingDms(id).catch(err=>console.warn('[Azurecord] Fila DM:',err));
-    }catch(err){console.warn('[Azurecord] DM sync failed:',err.message);}
+      return true;
+    }catch(err){
+      console.warn('[Azurecord] DM sync failed:',err.message);
+      return false;
+    }
   }
   function resetLolaRecentContext(){
     const mem=getLolaMemory();
@@ -1995,6 +2055,7 @@
         :await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options);
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+      wakeCloudRealtimeSync();
       return true;
     }catch(err){
       const reason=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha de conexão');
@@ -2068,7 +2129,7 @@
           const controller=new AbortController();
           const timeout=setTimeout(()=>controller.abort(),12000);
           socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',signal:controller.signal,body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})})
-            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();}})
+            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();wakeCloudRealtimeSync();}})
             .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);})
             .finally(()=>clearTimeout(timeout));
         }else{
