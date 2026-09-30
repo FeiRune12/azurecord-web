@@ -86,6 +86,10 @@
   let cloudRealtimeFailures = 0;
   let cloudRealtimeWakeRequested = false;
   let cloudRealtimeSocket = null;
+  let cloudRealtimeReconnectTimer = null;
+  let cloudRealtimeHeartbeatTimer = null;
+  let cloudRealtimeConnectAttempt = 0;
+  let cloudRealtimeSocket = null;
   let cloudRealtimeSocketReady = false;
   let cloudRealtimeReconnectTimer = null;
   let cloudRealtimeHeartbeatTimer = null;
@@ -649,7 +653,7 @@
       const stamp=Date.now();
       // O snapshot social mantém amigos, DMs recentes, servidores e badges em sincronia,
       // mas não precisa rodar na mesma velocidade da conversa aberta.
-      if(stamp-cloudSocialSnapshotAt>=3000){
+      if(stamp-cloudSocialSnapshotAt>=(cloudRealtimeConnected()?7000:3000)){
         const snapshotOk=await hydrateFromCloudSocial({quiet:true});
         if(snapshotOk)cloudSocialSnapshotAt=Date.now();
         else ok=false;
