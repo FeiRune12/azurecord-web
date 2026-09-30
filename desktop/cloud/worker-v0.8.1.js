@@ -1,7 +1,7 @@
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
 };
 
 const PASSWORD_ITERATIONS = 100000;
@@ -332,14 +332,17 @@ ${avoid}`;
 
 function lolaContentFromTextAndImages(text, attachments) {
   const images = (Array.isArray(attachments) ? attachments : [])
-    .filter(x => String(x?.type || "").startsWith("image/") && /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(x?.dataUrl || "")))
+    .filter(x => String(x?.type || "").startsWith("image/") && (
+      /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(x?.dataUrl || "")) ||
+      /^https:\/\//i.test(String(x?.url || ""))
+    ))
     .slice(0, 2);
   if (!images.length) return text || "Analise o contexto e responda naturalmente.";
   const parts = [];
   if (text) parts.push({ type: "text", text });
   else parts.push({ type: "text", text: "Analise a imagem enviada e responda ao usuário." });
   for (const image of images) {
-    parts.push({ type: "image_url", image_url: { url: String(image.dataUrl) } });
+    parts.push({ type: "image_url", image_url: { url: String(image.dataUrl || image.url) } });
   }
   return parts;
 }
@@ -835,12 +838,17 @@ function cleanText(value, max = 6000) {
 
 function cleanFiles(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 3).map(file => ({
-    name: String(file?.name || "arquivo").slice(0, 120),
-    type: String(file?.type || "").slice(0, 80),
-    size: Math.max(0, Number(file?.size) || 0),
-    dataUrl: String(file?.dataUrl || "").slice(0, 750000),
-  }));
+  return value.slice(0, 3).map(file => {
+    const url = String(file?.url || "").slice(0, 1400);
+    return {
+      name: String(file?.name || "arquivo").slice(0, 180),
+      type: String(file?.type || "").slice(0, 120),
+      size: Math.max(0, Number(file?.size) || 0),
+      dataUrl: String(file?.dataUrl || "").slice(0, 750000),
+      url: /^https:\/\//i.test(url) ? url : "",
+      key: String(file?.key || "").slice(0, 500),
+    };
+  });
 }
 
 function socialUser(user) {
@@ -2110,6 +2118,97 @@ async function deleteAccount(request, env) {
   return json({ ok: true, deleted: true, emailReusable: true });
 }
 
+function sanitizeAttachmentName(value) {
+  return String(value || "arquivo").replace(/[\\/\0\r\n]/g, "_").slice(0, 180) || "arquivo";
+}
+
+function attachmentKeyAllowed(key, userId) {
+  return String(key || "").startsWith(`attachments/${userId}/`);
+}
+
+async function handleAttachmentUploads(request, env, url, path) {
+  if (!path.startsWith("/api/uploads/")) return null;
+  const authResult = await requireSocialAuth(request, env);
+  if (authResult.response) return authResult.response;
+  if (!env.ATTACHMENTS) {
+    return json({ ok: false, error: "ATTACHMENTS_NOT_CONFIGURED", message: "O bucket R2 ATTACHMENTS ainda não está configurado no Worker." }, 503);
+  }
+  const userId = authResult.auth.user.id;
+
+  if (request.method === "POST" && path === "/api/uploads/init") {
+    const body = await readJson(request);
+    if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+    const name = sanitizeAttachmentName(body.name);
+    const type = String(body.type || "application/octet-stream").slice(0, 120);
+    const size = Math.max(0, Number(body.size) || 0);
+    const key = `attachments/${userId}/${crypto.randomUUID()}/${encodeURIComponent(name)}`;
+    const multipart = await env.ATTACHMENTS.createMultipartUpload(key, {
+      httpMetadata: { contentType: type },
+      customMetadata: { name, owner: userId, size: String(size) },
+    });
+    return json({ ok: true, key, uploadId: multipart.uploadId, partSize: 8 * 1024 * 1024 });
+  }
+
+  if (request.method === "PUT" && path === "/api/uploads/part") {
+    const key = String(url.searchParams.get("key") || "");
+    const uploadId = String(url.searchParams.get("uploadId") || "");
+    const partNumber = Number(url.searchParams.get("partNumber") || 0);
+    if (!attachmentKeyAllowed(key, userId) || !uploadId || !Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+      return json({ ok: false, error: "invalid_upload_part" }, 400);
+    }
+    const multipart = env.ATTACHMENTS.resumeMultipartUpload(key, uploadId);
+    const part = await multipart.uploadPart(partNumber, request.body);
+    return json({ ok: true, partNumber: part.partNumber, etag: part.etag });
+  }
+
+  if (request.method === "POST" && path === "/api/uploads/complete") {
+    const body = await readJson(request);
+    const key = String(body?.key || "");
+    const uploadId = String(body?.uploadId || "");
+    if (!attachmentKeyAllowed(key, userId) || !uploadId) return json({ ok: false, error: "invalid_upload" }, 400);
+    const parts = Array.isArray(body.parts) ? body.parts.map(x => ({
+      partNumber: Number(x.partNumber),
+      etag: String(x.etag || ""),
+    })).filter(x => Number.isInteger(x.partNumber) && x.partNumber > 0 && x.etag) : [];
+    if (!parts.length) return json({ ok: false, error: "missing_parts" }, 400);
+    const multipart = env.ATTACHMENTS.resumeMultipartUpload(key, uploadId);
+    await multipart.complete(parts);
+    const name = sanitizeAttachmentName(body.name);
+    const type = String(body.type || "application/octet-stream").slice(0, 120);
+    const size = Math.max(0, Number(body.size) || 0);
+    const fileUrl = new URL(`/files/${encodeURIComponent(key)}`, request.url).toString();
+    return json({ ok: true, file: { name, type, size, key, url: fileUrl } }, 201);
+  }
+
+  if (request.method === "POST" && path === "/api/uploads/abort") {
+    const body = await readJson(request);
+    const key = String(body?.key || "");
+    const uploadId = String(body?.uploadId || "");
+    if (!attachmentKeyAllowed(key, userId) || !uploadId) return json({ ok: false, error: "invalid_upload" }, 400);
+    try { await env.ATTACHMENTS.resumeMultipartUpload(key, uploadId).abort(); } catch {}
+    return json({ ok: true });
+  }
+
+  return null;
+}
+
+async function serveAttachment(request, env, path) {
+  if (request.method !== "GET" || !path.startsWith("/files/")) return null;
+  if (!env.ATTACHMENTS) return new Response("Attachment storage unavailable", { status: 503 });
+  let key = "";
+  try { key = decodeURIComponent(path.slice("/files/".length)); } catch { return new Response("Bad attachment key", { status: 400 }); }
+  if (!key.startsWith("attachments/")) return new Response("Not found", { status: 404 });
+  const object = await env.ATTACHMENTS.get(key);
+  if (!object) return new Response("Not found", { status: 404 });
+  const headers = new Headers(CORS_HEADERS);
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  const name = object.customMetadata?.name || "arquivo";
+  headers.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(name)}`);
+  return new Response(object.body, { headers });
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
@@ -2124,7 +2223,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "0.8.1",
+          version: "0.8.2",
         });
       }
 
@@ -2134,7 +2233,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "0.8.1",
+          version: "0.8.2",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
@@ -2153,6 +2252,8 @@ export default {
             webClient: true,
         friendSearchV2: true,
         reliableMessaging: true,
+        largeAttachments: Boolean(env.ATTACHMENTS),
+        attachmentStorage: env.ATTACHMENTS ? "r2-multipart" : "disabled",
           },
         });
       }
@@ -2169,7 +2270,13 @@ export default {
       if (request.method === "POST" && path === "/auth/delete") return await deleteAccount(request, env);
       if (request.method === "DELETE" && path === "/auth/me") return await deleteAccount(request, env);
 
+      const attachmentResponse = await serveAttachment(request, env, path);
+      if (attachmentResponse) return attachmentResponse;
+
       if (path.startsWith("/api/")) {
+        const uploadResponse = await handleAttachmentUploads(request, env, url, path);
+        if (uploadResponse) return uploadResponse;
+
         const lolaResponse = await handleLola(request, env, url, path);
         if (lolaResponse) return lolaResponse;
 

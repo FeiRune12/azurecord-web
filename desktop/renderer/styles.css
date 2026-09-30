@@ -754,3 +754,12 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .message-row.message-delivered .message-avatar{
   opacity:1;
 }
+
+
+/* Azurecord V52 Beta 8.7: lighter realtime UI + R2 attachments */
+.home-side-item[hidden],#friendBadge[hidden],#requestBadge[hidden]{display:none!important}
+.attachment-link{display:block;width:max-content;max-width:100%;color:inherit;text-decoration:none}
+.attachment-link:hover .file-attachment{border-color:rgba(0,102,255,.42);background:rgba(0,102,255,.08)}
+.attachment-open{margin-left:auto;color:var(--muted);font-size:13px}
+.pending-remove:disabled{opacity:.45;cursor:not-allowed}
+.pending-attachment:has(.pending-remove:disabled){box-shadow:inset 0 0 0 1px rgba(0,102,255,.22)}

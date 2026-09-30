@@ -19,10 +19,16 @@
   const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const safeUrl = (url) => {
     const value = String(url || '').trim();
-    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value)) return value;
+    if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(value) || /^blob:/i.test(value)) return value;
     try {
-      const parsed = new URL(value);
-      if (parsed.protocol === 'https:' && (parsed.hostname === 'gunvolt.com' || parsed.hostname.endsWith('.gunvolt.com'))) return value;
+      const parsed = new URL(value, window.location.href);
+      const cloudHost = new URL(CLOUD_API_URL).hostname;
+      if (parsed.protocol === 'https:' && (
+        parsed.hostname === 'gunvolt.com' ||
+        parsed.hostname.endsWith('.gunvolt.com') ||
+        parsed.hostname === cloudHost ||
+        parsed.origin === window.location.origin
+      )) return parsed.href;
     } catch {}
     return '';
   };
@@ -83,6 +89,7 @@
   let cloudSocialPollTimer = null;
   let cloudRealtimeSyncBusy = false;
   let cloudSocialSnapshotAt = 0;
+  let cloudSocialSnapshotSignature = '';
   let cloudRealtimeFailures = 0;
   let cloudRealtimeWakeRequested = false;
   let cloudRealtimeSocket = null;
@@ -107,6 +114,20 @@
     if(!response.ok){
       const error = new Error(data.message || data.error || `HTTP ${response.status}`);
       error.status=response.status; error.code=data.error || 'http_error'; error.debug=data.debug || null;
+      throw error;
+    }
+    return data;
+  }
+
+  async function cloudBinaryRequest(path,{method='PUT',body=null,headers={},auth=true,signal}={}){
+    const finalHeaders={...headers};
+    if(auth&&cloudToken)finalHeaders.Authorization=`Bearer ${cloudToken}`;
+    const response=await fetch(`${CLOUD_API_URL}${path}`,{method,body,headers:finalHeaders,signal});
+    let data={};
+    try{data=await response.json();}catch{}
+    if(!response.ok){
+      const error=new Error(data.message||data.error||`HTTP ${response.status}`);
+      error.status=response.status;error.code=data.error||'http_error';
       throw error;
     }
     return data;
@@ -361,7 +382,7 @@
       const recent=Array.isArray(recentMessages)?recentMessages.slice(-48).map(m=>({
         role:m?.author==='user-lola'?'assistant':'user',
         text:String(m?.text||'').slice(0,5000),
-        images:(Array.isArray(m?.files)?m.files:[]).filter(f=>String(f?.type||'').startsWith('image/')&&f?.dataUrl).slice(0,2).map(f=>({dataUrl:f.dataUrl,name:f.name,type:f.type}))
+        images:(Array.isArray(m?.files)?m.files:[]).filter(f=>String(f?.type||'').startsWith('image/')&&(f?.dataUrl||f?.url)).slice(0,2).map(f=>({dataUrl:f.dataUrl||'',url:f.url||'',name:f.name,type:f.type}))
       })).filter(m=>m.text||m.images.length):[];
       const sessionId=state.lolaSessionInfo?.[state.currentAccountId]?.id||'legacy';
       const data=await cloudRequest('/api/ai/chat',{method:'POST',signal:controller.signal,body:JSON.stringify({
@@ -369,7 +390,7 @@
         userText:String(userText||'').slice(0,7000),
         recent,
         attachments:(attachments||[]).slice(0,3).map(f=>({
-          dataUrl:f?.dataUrl||'',name:f?.name||'',type:f?.type||'',visual:f?.visual||null
+          dataUrl:f?.dataUrl||'',url:f?.url||'',name:f?.name||'',type:f?.type||'',visual:f?.visual||null
         })),
         memory:memoryContext(getLolaMemory())
       })});
@@ -429,11 +450,29 @@
     const demo = DEMO_USERS.find(p => p.id === u.id);
     state.profiles[u.id] = demo ? {...demo, ...normalized, avatar: normalized.avatar || demo.avatar, banner: normalized.banner || demo.banner} : {...normalized};
   }
+  function socialSnapshotSignature(data={}){
+    const compact={
+      friends:(data.friends||[]).map(x=>[x.id,x.status,x.updatedAt||'']),
+      requests:(data.requests||[]).map(x=>[x.id,x.from,x.to,x.status,x.updatedAt||x.createdAt||'']),
+      dms:(data.dms||[]).map(x=>[x.user?.id,x.lastMessage?.id,x.lastMessage?.createdAt||x.lastMessage?.time||'']),
+      servers:(data.servers||[]).map(s=>[s.id,s.name,s.updatedAt||'',(s.channels||[]).map(c=>[c.id,c.name,c.type,c.updatedAt||''])]),
+      blocked:(data.blockedUsers||[]).map(x=>x.id),
+      ignored:(data.ignoredUsers||[]).map(x=>x.id)
+    };
+    return JSON.stringify(compact);
+  }
+
   async function hydrateFromCloudSocial({quiet=false}={}){
     if(!socialCloudReady())return false;
     try{
       const data=await cloudRequest('/api/social/snapshot');
       const local=currentUser(); if(!local)return false;
+      const signature=socialSnapshotSignature(data);
+      if(quiet&&signature===cloudSocialSnapshotSignature){
+        cloudSocialSnapshotAt=Date.now();
+        return true;
+      }
+      cloudSocialSnapshotSignature=signature;
       const previousIncoming=new Set((state.requests||[]).filter(r=>r.to===local.id&&r.status==='pending').map(r=>r.id));
       state.friends=(data.friends||[]).map(p=>{hydrateRemoteUser(p);return {a:local.id,b:p.id,created:now()};});
       state.requests=(data.requests||[]).map(r=>{if(r.user)hydrateRemoteUser(r.user);return {id:r.id,from:r.from,to:r.to,status:r.status,time:new Date(r.createdAt||Date.now()).getTime()};});
@@ -607,15 +646,16 @@
   }
 
   function cloudRealtimeDelay(){
-    if(typeof navigator!=='undefined' && navigator.onLine===false)return 4000;
-    if(document.hidden)return 5000;
+    if(typeof navigator!=='undefined' && navigator.onLine===false)return 8000;
+    const connected=cloudRealtimeConnected();
+    if(document.hidden)return connected?90000:12000;
     const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
       (view.mode==='server'&&view.serverId&&view.channelId);
-    const base=cloudRealtimeConnected()
-      ? (activeConversation?8000:15000)
-      : (activeConversation?700:1800);
+    const base=connected
+      ? (activeConversation?30000:60000)
+      : (activeConversation?900:2500);
     if(!cloudRealtimeFailures)return base;
-    return Math.min(8000,base*Math.pow(1.8,Math.min(cloudRealtimeFailures,5)));
+    return Math.min(15000,base*Math.pow(1.7,Math.min(cloudRealtimeFailures,5)));
   }
 
   function scheduleCloudRealtimeSync(delay=null){
@@ -649,7 +689,7 @@
       const stamp=Date.now();
       // O snapshot social mantém amigos, DMs recentes, servidores e badges em sincronia,
       // mas não precisa rodar na mesma velocidade da conversa aberta.
-      if(stamp-cloudSocialSnapshotAt>=3000){
+      if(stamp-cloudSocialSnapshotAt>=(cloudRealtimeConnected()?60000:5000)){
         const snapshotOk=await hydrateFromCloudSocial({quiet:true});
         if(snapshotOk)cloudSocialSnapshotAt=Date.now();
         else ok=false;
@@ -1108,14 +1148,14 @@
     $('pointsBtn').onclick=openAzurePoints; $('railPointsBtn').onclick=openAzurePoints; $('lolaStatusBtn').onclick=openLolaAiSetup;
     $('globalSearchBtn').onclick=openGlobalSearch; $('notifyBtn').onclick=openNotifications; $('themeBtn').onclick=toggleTheme; $('openSettings').onclick=openSettings;
     $('logoutBtn').onclick=logout; $('userBar').onclick=(e)=>{if(e.target.closest('button'))return;e.stopPropagation();openProfilePeek(currentUser()?.id,e.currentTarget);};
-    $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b)return;pendingAttachments.splice(Number(b.dataset.removeAttachment),1);renderAttachmentPreview();});
+    $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b||b.disabled)return;const [removed]=pendingAttachments.splice(Number(b.dataset.removeAttachment),1);releasePendingAttachment(removed);renderAttachmentPreview();});
     $('gifBtn').dataset.composerType='gif'; $('stickerBtn').dataset.composerType='sticker'; $('emojiBtn').dataset.composerType='emoji'; $('appsBtn').dataset.composerType='apps';
     $('gifBtn').onclick=()=>openComposerPopover('gif'); $('stickerBtn').onclick=()=>openComposerPopover('sticker'); $('emojiBtn').onclick=()=>openComposerPopover('emoji'); $('appsBtn').onclick=()=>openComposerPopover('apps');
     $('composer').addEventListener('click',e=>e.stopPropagation()); $('composerPopover')?.addEventListener('click',e=>e.stopPropagation());
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=openCallInfo; $('videoBtn').onclick=openCallInfo; $('screenBtn').onclick=openCallInfo; $('searchBtn').onclick=openChannelSearch; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:true});}}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:true});}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -1387,14 +1427,15 @@
 
   function openHome(section='friends'){
     if(isMobileLayout()){closeMobileDms();setMobileNavActive('home');}
+    const hasRequests=(state.requests||[]).some(r=>r.status==='pending'&&(r.from===state.currentAccountId||r.to===state.currentAccountId));
+    if(section==='requests'&&!hasRequests)section='friends';
     view.mode='home';
     view.home=section;
     view.homeTab=section==='requests'?'pending':section==='add'?'add':'all';
     view.dmUserId=null;
     hideContext();
-    renderShell();
-    // Sempre atualiza Social Cloud ao abrir amigos, solicitações ou busca.
-    if(socialCloudReady())hydrateFromCloudSocial({quiet:true}).catch(()=>{});
+    requestRenderShell();
+    if(socialCloudReady())wakeCloudRealtimeSync({snapshot:false});
   }
   function openServer(id){
     if(isMobileLayout()){closeMobileDms();setMobileNavActive('servers');}
@@ -1441,7 +1482,7 @@
   }
   function toggleDms(){ const list=$('dmList'); const hidden=list.hidden;list.hidden=!hidden;$('dmToggle').setAttribute('aria-expanded',String(hidden));$('dmToggle').querySelector('.dm-chevron').textContent=hidden?'⌄':'›'; }
 
-  function renderHome(){ if(view.mode!=='home') return; const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja quem quer adicionar você.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
+  function renderHome(){ if(view.mode!=='home') return; const content=$('homeContent'); const hasRequests=(state.requests||[]).some(r=>r.status==='pending'&&(r.from===state.currentAccountId||r.to===state.currentAccountId)); if((view.home==='requests'||view.homeTab==='pending')&&hasRequests){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(!hasRequests&&(view.home==='requests'||view.homeTab==='pending')){view.home='friends';view.homeTab='all';} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
   function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>p.status==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${allPeople().filter(p=>p.id!==currentUser()?.id&&!isFriend(p.id)).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
@@ -1773,31 +1814,77 @@
     if(e.key==='Enter' && !e.shiftKey){e.preventDefault();$('composer')?.requestSubmit?.();}
     if(e.key==='Escape')closeComposerPopover();
   }
+  function releasePendingAttachment(item){
+    if(item?._previewUrl){try{URL.revokeObjectURL(item._previewUrl);}catch{}}
+  }
+
+  async function uploadAttachmentInChunks(item){
+    const file=item?._file;
+    if(!file)return {id:item.id,name:item.name,size:item.size,type:item.type,url:item.url||'',key:item.key||'',visual:item.visual||null};
+    if(!socialCloudReady())throw new Error('Entre na sua conta Cloud para enviar arquivos.');
+
+    const init=await cloudRequest('/api/uploads/init',{method:'POST',body:JSON.stringify({
+      name:file.name,type:file.type||'application/octet-stream',size:file.size
+    })});
+    const chunkSize=Math.max(5*1024*1024,Number(init.partSize)||8*1024*1024);
+    const parts=[];
+    item.uploading=true;item.progress=0;renderAttachmentPreview();
+    try{
+      let partNumber=1;
+      for(let offset=0;offset<file.size||partNumber===1;offset+=chunkSize,partNumber++){
+        const end=Math.min(file.size,offset+chunkSize);
+        const chunk=file.slice(offset,end);
+        const result=await cloudBinaryRequest(
+          `/api/uploads/part?key=${encodeURIComponent(init.key)}&uploadId=${encodeURIComponent(init.uploadId)}&partNumber=${partNumber}`,
+          {method:'PUT',body:chunk,headers:{'Content-Type':'application/octet-stream'}}
+        );
+        parts.push({partNumber,etag:result.etag});
+        item.progress=file.size?Math.round((end/file.size)*100):100;
+        renderAttachmentPreview();
+        if(end>=file.size)break;
+      }
+      const done=await cloudRequest('/api/uploads/complete',{method:'POST',body:JSON.stringify({
+        key:init.key,uploadId:init.uploadId,parts,name:file.name,type:file.type||'application/octet-stream',size:file.size
+      })});
+      item.uploading=false;item.progress=100;
+      return {...done.file,visual:item.visual||null};
+    }catch(err){
+      item.uploading=false;item.progress=0;
+      try{await cloudRequest('/api/uploads/abort',{method:'POST',body:JSON.stringify({key:init.key,uploadId:init.uploadId})});}catch{}
+      throw err;
+    }finally{
+      renderAttachmentPreview();
+    }
+  }
+
+  async function preparePendingAttachmentsForSend(){
+    const uploaded=[];
+    for(const item of pendingAttachments)uploaded.push(await uploadAttachmentInChunks(item));
+    return uploaded;
+  }
+
   async function handleFiles(e){
     const files=[...(e.target.files||[])];
     if(!files.length)return;
-    const maxSingle=1500*1024;
-    const allowed=[];
+    pendingAttachmentReads+=files.length;
     for(const file of files){
-      if(file.size>maxSingle){showToast(`${file.name} é maior que 1,5 MB e não foi anexado.`);continue;}
-      allowed.push(file);
-    }
-    if(!allowed.length){e.target.value='';return;}
-    pendingAttachmentReads += allowed.length;
-    const tasks=allowed.map(async file=>{
-      const base={id:uid('file'),name:file.name,size:file.size,type:file.type||'application/octet-stream',dataUrl:'',visual:null};
-      if(file.type.startsWith('image/')){
-        const dataUrl=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result||''));r.onerror=reject;r.readAsDataURL(file);});
-        base.dataUrl=dataUrl;
-        base.visual=await analyzeImageFile(file,dataUrl);
-      }else{
-        base.visual={kind:guessAttachmentKind(file.name,file.type||'')};
+      try{
+        const image=String(file.type||'').startsWith('image/');
+        const previewable=image&&file.size<=24*1024*1024;
+        const previewUrl=previewable?URL.createObjectURL(file):'';
+        const visual=previewable
+          ? await analyzeImageFile(file,previewUrl)
+          : {kind:guessAttachmentKind(file.name,file.type||'')};
+        pendingAttachments.push({
+          id:uid('file'),name:file.name,size:file.size,type:file.type||'application/octet-stream',
+          visual,_file:file,_previewUrl:previewUrl,uploading:false,progress:0
+        });
+      }catch(err){
+        console.warn('[Azurecord] Falha ao preparar anexo:',err);
+        showToast(`Não foi possível preparar ${file.name}.`);
+      }finally{
+        pendingAttachmentReads=Math.max(0,pendingAttachmentReads-1);
       }
-      return base;
-    });
-    for(const task of tasks){
-      try{pendingAttachments.push(await task);}catch{}
-      pendingAttachmentReads=Math.max(0,pendingAttachmentReads-1);
     }
     e.target.value='';
     renderAttachmentPreview();
@@ -2146,11 +2233,13 @@
   function renderAttachmentCards(files=[]){
     return files.map(f=>{
       const type=String(f.type||'');
-      const image=type.startsWith('image/') && f.dataUrl;
+      const source=safeUrl(f.url||f.dataUrl||'');
+      const image=type.startsWith('image/')&&source;
       if(image){
-        return `<figure class="message-attachment image-attachment"><img src="${safeUrl(f.dataUrl)}" alt="${esc(f.name||'Imagem')}" loading="lazy"><figcaption><span>${esc(f.name||'Imagem')}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        return `<figure class="message-attachment image-attachment"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(f.name||'Imagem')}" loading="lazy"></a><figcaption><span>${esc(f.name||'Imagem')}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
-      return `<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(f.name||'Arquivo')}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div></div>`;
+      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(f.name||'Arquivo')}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
+      return source?`<a class="attachment-link" href="${source}" target="_blank" rel="noopener">${card}</a>`:card;
     }).join('');
   }
   function renderAttachmentPreview(){
@@ -2158,11 +2247,13 @@
     if(!pendingAttachments.length){box.hidden=true;box.innerHTML='';return;}
     box.hidden=false;
     box.innerHTML=`<div class="attachment-preview-head"><span>Anexos (${pendingAttachments.length})</span><button type="button" class="attachment-clear" id="clearPendingAttachments">Limpar</button></div><div class="attachment-preview-grid">${pendingAttachments.map((f,i)=>{
-      const image=String(f.type||'').startsWith('image/') && f.dataUrl;
+      const preview=safeUrl(f._previewUrl||f.url||f.dataUrl||'');
+      const image=String(f.type||'').startsWith('image/')&&preview;
       const visual=f.visual?.width&&f.visual?.height?`${f.visual.width}×${f.visual.height}`:'';
-      return `<div class="pending-attachment">${image?`<img src="${safeUrl(f.dataUrl)}" alt="${esc(f.name)}">`:`<div class="pending-file-icon">${fileIcon(f.type)}</div>`}<div class="pending-attachment-name" title="${esc(f.name)}">${esc(f.name)}</div>${visual?`<div class="pending-attachment-meta">${visual} • ${esc(f.visual?.dominantColor||'imagem')}</div>`:''}<button type="button" class="pending-remove" data-remove-attachment="${i}" aria-label="Remover ${esc(f.name)}">×</button></div>`;
+      const progress=f.uploading?` • enviando ${Number(f.progress||0)}%`:'';
+      return `<div class="pending-attachment">${image?`<img src="${preview}" alt="${esc(f.name)}">`:`<div class="pending-file-icon">${fileIcon(f.type)}</div>`}<div class="pending-attachment-name" title="${esc(f.name)}">${esc(f.name)}</div><div class="pending-attachment-meta">${visual?`${visual} • `:''}${formatFileSize(f.size)}${progress}</div><button type="button" class="pending-remove" data-remove-attachment="${i}" aria-label="Remover ${esc(f.name)}" ${f.uploading?'disabled':''}>×</button></div>`;
     }).join('')}</div>`;
-    $('clearPendingAttachments').onclick=()=>{pendingAttachments=[];renderAttachmentPreview();};
+    $('clearPendingAttachments').onclick=()=>{pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();};
   }
   function renderMessage(m){
     const p=getProfile(m.author)||{username:'Usuário'};
@@ -2247,10 +2338,20 @@
       }
     }
     const p=currentUser();if(!p)return;
+    let outgoingFiles=[];
+    if(pendingAttachments.length){
+      try{
+        outgoingFiles=await preparePendingAttachmentsForSend();
+      }catch(err){
+        console.warn('[Azurecord] Upload de anexo:',err);
+        showToast(err.message||'Não foi possível enviar os anexos.');
+        return;
+      }
+    }
     const m={id:uid('msg'),author:p.id,text,time:now(),...(mode==='dm'?{clientId:null}:{}),
       ...(mode==='dm'&&dmId==='user-lola'?{lolaSessionId:state.lolaSessionInfo?.[p.id]?.id||'legacy'}:{})};
     if(replyTo){m.replyTo={authorName:getProfile(replyTo.author)?.username||'Usuário',text:replyTo.text};replyTo=null;}
-    if(pendingAttachments.length){m.files=pendingAttachments.map(f=>({...f}));if(m.files.length===1)m.file=m.files[0];}
+    if(outgoingFiles.length){m.files=outgoingFiles;if(m.files.length===1)m.file=m.files[0];}
     learnFromUserText(text);
     if(m.files?.length)m.files.forEach(f=>{if(String(f.type||'').startsWith('image/'))rememberDesign(f);});
     if(mode==='dm'){
@@ -2261,7 +2362,7 @@
     }else{
       const key=`${serverId}|${channelId}`;state.channelMessages[key]=state.channelMessages[key]||[];state.channelMessages[key].push(m);
     }
-    input.value='';$('fileInput').value='';pendingAttachments=[];renderAttachmentPreview();saveNow();renderMessages();renderDms();
+    input.value='';$('fileInput').value='';pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();saveNow();renderMessages();renderDms();
     if(mode==='dm'){
       if((dmId==='user-lola'&&lolaCloudReady())||(dmId!=='user-lola'&&socialReady())){
         const persisted=await sendDmToBackend(m,dmId);
@@ -2437,7 +2538,19 @@
   }
 
   function openNotifications(){ showModal('Notificações',`<div class="notification-center">${state.lastNotifications.length?state.lastNotifications.map(n=>`<div class="notification-item ${n.unread?'unread':''}" data-notif="${n.id}"><strong>${esc(n.title)}</strong><p>${esc(n.body)}</p><p>${formatTime(n.time)}</p></div>`).join(''):'<div class="home-empty compact"><span>Sem notificações.</span></div>'}</div><div class="onboarding-actions"><button class="btn btn-ghost" id="markNotificationsRead">Marcar todas como lidas</button></div>`);state.lastNotifications.forEach(n=>n.unread=false);save();renderBadges();$('markNotificationsRead').onclick=()=>closeModal(); }
-  function renderBadges(){ const req=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending').length;$('requestBadge').hidden=req===0;$('requestBadge').textContent=req;const friendCount=friendIds().length;$('friendBadge').hidden=friendCount===0;$('friendBadge').textContent=friendCount; }
+  function renderBadges(){
+    const incoming=(state.requests||[]).filter(r=>r.to===state.currentAccountId&&r.status==='pending').length;
+    const pending=(state.requests||[]).filter(r=>r.status==='pending'&&(r.to===state.currentAccountId||r.from===state.currentAccountId)).length;
+    const requestBadge=$('requestBadge');
+    if(requestBadge){requestBadge.hidden=incoming===0;requestBadge.textContent=incoming||'';}
+    const requestNav=$('[data-home="requests"]');
+    if(requestNav)requestNav.hidden=pending===0;
+    const friendBadge=$('friendBadge');
+    if(friendBadge){friendBadge.hidden=true;friendBadge.textContent='';}
+    if(pending===0&&view.mode==='home'&&(view.home==='requests'||view.homeTab==='pending')){
+      view.home='friends';view.homeTab='all';
+    }
+  }
 
   async function sendBetaFeedback(){if(!backendOnline||!backendToken){showToast('Conecte-se ao backend para enviar feedback.');return;}const category=prompt('Categoria: bug, suggestion, design, performance ou other','bug');if(!category)return;const description=prompt('Descreva o que aconteceu (mínimo 10 caracteres):');if(!description)return;try{const result=await backendRequest('/api/beta/feedback',{method:'POST',body:JSON.stringify({category:category.trim().toLowerCase(),description,appVersion:'0.52.0-beta.8.3'})});showToast('Feedback registrado: '+result.feedback.id);}catch(err){showToast(err.message||'Não foi possível enviar feedback.');}}
   async function fetchCloudSettings({rerender=false,tab='account'}={}){
