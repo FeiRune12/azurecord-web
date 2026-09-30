@@ -1,0 +1,11 @@
+name = "azurecord-realtime"
+main = "worker.js"
+compatibility_date = "2026-09-30"
+
+[[durable_objects.bindings]]
+name = "USER_HUB"
+class_name = "UserHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserHub"]
