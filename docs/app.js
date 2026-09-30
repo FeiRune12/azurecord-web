@@ -1388,20 +1388,23 @@
         button.dataset.server=s.id;
         button.title=s.name||'Servidor';
         button.setAttribute('aria-label',s.name||'Servidor');
+        const iconFrame=document.createElement('span');
+        iconFrame.className='server-icon-frame';
         const iconUrl=s.iconUrl||(typeof s.icon==='string'&&/^data:image\//i.test(s.icon)?s.icon:'');
         if(iconUrl){
           const img=document.createElement('img');
           img.src=safeUrl(iconUrl);
           img.alt='';
           img.draggable=false;
-          img.onerror=()=>{img.remove();const g=document.createElement('span');g.className='server-glyph';g.textContent=String(s.name?.[0]||s.icon||'S').slice(0,2).toUpperCase();button.appendChild(g);};
-          button.appendChild(img);
+          img.onerror=()=>{img.remove();const g=document.createElement('span');g.className='server-glyph';g.textContent=String(s.name?.[0]||s.icon||'S').slice(0,2).toUpperCase();iconFrame.appendChild(g);};
+          iconFrame.appendChild(img);
         }else{
           const glyph=document.createElement('span');
           glyph.className='server-glyph';
           glyph.textContent=String(s.icon||s.name?.[0]||'S').slice(0,2).toUpperCase();
-          button.appendChild(glyph);
+          iconFrame.appendChild(glyph);
         }
+        button.appendChild(iconFrame);
         if(state.unread?.[`server:${s.id}`]){
           const marker=document.createElement('span');
           marker.className='server-unread-marker';
@@ -2609,6 +2612,7 @@
     const layer=$('modalLayer');if(!layer)return;
     const user=currentUser();
     const avatarStyle=user?.avatar?`background-image:url('${safeUrl(user.avatar)}')`:'';
+    layer.classList.add('settings-layer');
     layer.hidden=false;
     layer.innerHTML=`<div class="modal settings-modal settings-${kind}" role="dialog" aria-modal="true">
       <aside class="settings-sidebar">
@@ -2945,6 +2949,7 @@
   function showModal(title,body){
     const layer=$('modalLayer');
     if(!layer)return;
+    layer.classList.remove('settings-layer');
     layer.hidden=false;
     layer.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" class="icon-btn" id="modalClose" aria-label="Fechar">×</button></div><div class="modal-body">${body}</div></div>`;
     const closeBtn=$('modalClose');
@@ -2959,6 +2964,7 @@
     const layer=$('modalLayer');
     if(!layer)return;
     layer.hidden=true;
+    layer.classList.remove('settings-layer');
     layer.innerHTML='';
   }
 
