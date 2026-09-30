@@ -725,3 +725,32 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   html[data-mobile-page="dms"] #homePanel,
   html[data-mobile-page="dms"] #chatView{visibility:hidden!important;pointer-events:none!important}
 }
+
+
+/* V52 Beta 8.5: realtime delivery states */
+.message-row.message-pending .message-content,
+.message-row.message-pending .message-avatar{
+  opacity:.58;
+}
+.message-row.message-pending .message-text,
+.message-row.message-pending .message-meta,
+.message-row.message-pending .reply-preview{
+  color:#8f99a8!important;
+}
+.message-row.message-failed .message-content,
+.message-row.message-failed .message-avatar{
+  opacity:1;
+}
+.message-row.message-failed .message-text,
+.message-row.message-failed .message-meta,
+.message-row.message-failed .reply-preview,
+.message-row.message-failed .dm-delivery{
+  color:#ff626f!important;
+}
+.message-row.message-failed .message-avatar{
+  box-shadow:0 0 0 2px rgba(255,98,111,.28);
+}
+.message-row.message-delivered .message-content,
+.message-row.message-delivered .message-avatar{
+  opacity:1;
+}
