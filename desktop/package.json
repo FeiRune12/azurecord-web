@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "0.52.0-beta.8.5",
+  "version": "0.52.0-beta.8.6",
   "private": true,
-  "description": "Azurecord V52 Beta 8.5: WebSocket realtime, PWA, Windows EXE com ícone próprio e atualização automática.",
+  "description": "Azurecord V52 Beta 8.6: WebSocket realtime, fallback HTTP, PWA, Windows EXE e atualização automática.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
