@@ -80,6 +80,8 @@
   let cloudInfo = {version:null, capabilities:{}};
   let cloudProfileSyncTimer = null;
   let cloudSocialPollTimer = null;
+  let cloudRealtimeSyncBusy = false;
+  let cloudSocialSnapshotAt = 0;
   let cloudSearchEpoch = 0;
   let backendReadyPromise = Promise.resolve();
   let backendEventSource = null;
@@ -461,13 +463,30 @@
   function startCloudSocialPolling(){
     clearInterval(cloudSocialPollTimer);cloudSocialPollTimer=null;
     if(!socialCloudReady())return;
+    cloudSocialSnapshotAt=0;
     const tick=async()=>{
-      if(!socialCloudReady()||document.hidden)return;
-      await hydrateFromCloudSocial({quiet:true});
-      if(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')await syncDmFromBackend(view.dmUserId);
-      if(view.mode==='server'&&view.serverId&&view.channelId)await syncChannelMessages(view.serverId,view.channelId);
+      if(!socialCloudReady()||document.hidden||cloudRealtimeSyncBusy)return;
+      cloudRealtimeSyncBusy=true;
+      try{
+        const stamp=Date.now();
+        // Conversas abertas sincronizam quase em tempo real. O snapshot social
+        // completo é mais pesado, então roda em uma cadência separada.
+        if(stamp-cloudSocialSnapshotAt>=3500){
+          await hydrateFromCloudSocial({quiet:true});
+          cloudSocialSnapshotAt=stamp;
+        }
+        if(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola'){
+          await syncDmFromBackend(view.dmUserId);
+        }
+        if(view.mode==='server'&&view.serverId&&view.channelId){
+          await syncChannelMessages(view.serverId,view.channelId);
+        }
+      }finally{
+        cloudRealtimeSyncBusy=false;
+      }
     };
-    cloudSocialPollTimer=setInterval(()=>tick().catch(()=>{}),3000);
+    tick().catch(()=>{});
+    cloudSocialPollTimer=setInterval(()=>tick().catch(()=>{}),700);
   }
 
   async function hydrateFromBackend(){
@@ -1935,23 +1954,57 @@
     }).join('')}</div>`;
     $('clearPendingAttachments').onclick=()=>{pendingAttachments=[];renderAttachmentPreview();};
   }
-  function renderMessage(m){ const p=getProfile(m.author)||{username:'Usuário'}; const own=m.author===state.currentAccountId; const action=/^\*.*\*$/.test(m.text?.trim()||'')&&!m.actionTextOnly; const formatted=formatText(m.text||'',p.username); const reactions=Object.entries(m.reactions||{}).filter(([,v])=>v>0).map(([k,v])=>`<button class="reaction-chip ${m.myReaction===k?'active':''}" data-react="${m.id}" data-emoji="${k}">${k} ${v}</button>`).join(''); const attachments=renderAttachmentCards(attachmentListForMessage(m)); return `<article class="message-row" data-msg="${m.id}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">↩ ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?'⚠ Não enviada':'◌ Enviando / aguardando conexão'} ${m.failed?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`; }
+  function renderMessage(m){
+    const p=getProfile(m.author)||{username:'Usuário'};
+    const own=m.author===state.currentAccountId;
+    const action=/^\*.*\*$/.test(m.text?.trim()||'')&&!m.actionTextOnly;
+    const formatted=formatText(m.text||'',p.username);
+    const reactions=Object.entries(m.reactions||{}).filter(([,v])=>v>0).map(([k,v])=>`<button class="reaction-chip ${m.myReaction===k?'active':''}" data-react="${m.id}" data-emoji="${k}">${k} ${v}</button>`).join('');
+    const attachments=renderAttachmentCards(attachmentListForMessage(m));
+    const deliveryClass=own&&m.failed?'message-failed':own&&m.pending?'message-pending':'message-delivered';
+    const deliveryLabel=own&&m.failed?'Falha no envio':own&&m.pending?'Enviando':'Enviada';
+    return `<article class="message-row ${deliveryClass}" data-msg="${m.id}" data-delivery="${deliveryLabel}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">↩ ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${own&&m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?'⚠ Não enviada':'◌ Enviando'} ${m.failed&&view.mode==='dm'?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`;
+  }
   function formatText(text,username){ let s=esc(text);s=s.replace(/@([\w\d_]+)/g,(m,n)=>`<span class="mention">@${esc(n)}</span>`); if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`; return s; }
   async function sendDmToBackend(m,id){
     if(!m || m.sending || m.serverId || !id)return !!m?.serverId;
-    if(id==='user-lola' ? !lolaCloudReady() : !socialReady()){m.pending=true;m.failed=true;saveNow();if(view.mode==='dm'&&view.dmUserId===id)renderMessages();return false;}
-    if(id==='user-lola' && m.lolaSessionId && m.lolaSessionId!==(state.lolaSessionInfo?.[state.currentAccountId]?.id||'legacy'))return false;
-    m.sending=true;m.pending=true;m.failed=false;save();
-    try{
-      const response=id==='user-lola'?await cloudRequest(`/api/dms/${encodeURIComponent(id)}/messages`,{method:'POST',body:JSON.stringify({clientId:m.id,text:m.text,
-        files:m.files||[],replyTo:m.replyTo||null,...(id==='user-lola'?{sessionId:m.lolaSessionId||'legacy'}:{})})}):await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,{method:'POST',body:JSON.stringify({clientId:m.id,text:m.text,files:m.files||[],replyTo:m.replyTo||null})});
-      m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
-      if(view.mode==='dm'&&view.dmUserId===id)renderMessages();return true;
-    }catch(err){
-      m.pending=true;m.failed=true;m.lastError=err.message||'Falha de conexão';saveNow();
+    const fail=(reason)=>{
+      m.pending=true;m.failed=true;m.lastError=reason||'Falha de conexão';saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
-      showToast(`DM não enviada: ${m.lastError}`);return false;
-    }finally{m.sending=false;}
+      return false;
+    };
+    if(typeof navigator!=='undefined'&&navigator.onLine===false){
+      const failed=fail('Sem conexão com a internet.');
+      showToast('DM não enviada: sem conexão com a internet.');
+      return failed;
+    }
+    if(id==='user-lola' ? !lolaCloudReady() : !socialReady()){
+      const failed=fail('Azurecord Cloud indisponível.');
+      return failed;
+    }
+    if(id==='user-lola' && m.lolaSessionId && m.lolaSessionId!==(state.lolaSessionInfo?.[state.currentAccountId]?.id||'legacy'))return false;
+    m.sending=true;m.pending=true;m.failed=false;delete m.lastError;saveNow();
+    if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),12000);
+    try{
+      const options={method:'POST',signal:controller.signal,body:JSON.stringify({clientId:m.id,text:m.text,
+        files:m.files||[],replyTo:m.replyTo||null,...(id==='user-lola'?{sessionId:m.lolaSessionId||'legacy'}:{})})};
+      const response=id==='user-lola'
+        ?await cloudRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options)
+        :await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options);
+      m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
+      if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+      return true;
+    }catch(err){
+      const reason=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha de conexão');
+      fail(reason);
+      showToast(`DM não enviada: ${reason}`);
+      return false;
+    }finally{
+      clearTimeout(timeout);
+      m.sending=false;
+    }
   }
   async function flushPendingDms(onlyId=null){
     if((!socialReady()&&!lolaCloudReady())||!state.currentAccountId)return;
@@ -1960,7 +2013,7 @@
       const users=key.split('|'); if(!users.includes(me))continue;
       const other=users.find(x=>x!==me);if(!other||(onlyId&&other!==onlyId))continue;
       for(const message of messages){
-        if(message.author!==me||!message.pending||message.serverId||message.sending)continue;
+        if(message.author!==me||!message.pending||message.failed||message.serverId||message.sending)continue;
         if(other==='user-lola' && message.lolaSessionId!==(state.lolaSessionInfo?.[me]?.id||'legacy'))continue;
         await sendDmToBackend(message,other);
       }
@@ -2005,9 +2058,23 @@
       }else if(dmId==='user-lola'){
         m.pending=false;save();simulateLolaReply(m).catch(()=>{});
       }else{m.pending=true;m.failed=true;saveNow();renderMessages();showToast('DM guardada localmente; faça login para enviá-la.');}
-    }else if(mode==='server'&&socialReady()){
+    }else if(mode==='server'){
       const srv=getServer(serverId),ch=getChannel(serverId,channelId);
-      if(srv&&ch){m.pending=true;socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})}).then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;save();}}).catch(err=>showToast('Canal: '+(err.message||'Falha no envio')));}
+      if(srv&&ch){
+        m.pending=true;m.failed=false;saveNow();renderMessages();
+        if(typeof navigator!=='undefined'&&navigator.onLine===false){
+          m.failed=true;m.lastError='Sem conexão com a internet.';saveNow();renderMessages();
+        }else if(socialReady()){
+          const controller=new AbortController();
+          const timeout=setTimeout(()=>controller.abort(),12000);
+          socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',signal:controller.signal,body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})})
+            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();}})
+            .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);})
+            .finally(()=>clearTimeout(timeout));
+        }else{
+          m.failed=true;m.lastError='Azurecord Cloud indisponível.';saveNow();renderMessages();
+        }
+      }
     }
   }
   function insertAtCursor(txt){ const i=$('messageInput');const s=i.selectionStart??i.value.length; i.value=i.value.slice(0,s)+txt+i.value.slice(i.selectionEnd);i.focus();i.selectionStart=i.selectionEnd=s+txt.length; }
