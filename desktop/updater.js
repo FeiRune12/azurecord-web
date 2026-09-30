@@ -3,7 +3,7 @@
 const { app, Notification } = require('electron');
 
 function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
-  const noop = { checkNow: async () => false };
+  const noop = { checkNow: async () => false, isReady: () => false, installNow: () => false };
 
   if (!app.isPackaged) {
     log('[updater] Ignorado em modo de desenvolvimento.');
@@ -22,6 +22,8 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
+  let updateReady = false;
+  let downloadedVersion = null;
 
   const notify = (title, body) => {
     try {
@@ -39,8 +41,10 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     log('[updater] Download:', `${Math.round(Number(progress?.percent || 0))}%`);
   });
   autoUpdater.on('update-downloaded', (info) => {
-    log('[updater] Atualização baixada:', info?.version || 'desconhecida');
-    notify('Azurecord atualizado', 'A nova versão foi baixada e será instalada automaticamente quando você fechar o Azurecord.');
+    updateReady = true;
+    downloadedVersion = info?.version || null;
+    log('[updater] Atualização baixada:', downloadedVersion || 'desconhecida');
+    notify('Atualização pronta', 'Feche a janela do Azurecord para reiniciar e instalar a nova versão.');
     try {
       const win = getMainWindow?.();
       if (win && !win.isDestroyed()) {
@@ -64,12 +68,26 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     }
   };
 
+  const isReady = () => updateReady;
+
+  const installNow = () => {
+    if (!updateReady) return false;
+    try {
+      log('[updater] Instalando atualização:', downloadedVersion || 'desconhecida');
+      setImmediate(() => autoUpdater.quitAndInstall(false, true));
+      return true;
+    } catch (error) {
+      log('[updater] Falha ao instalar atualização:', error?.stack || error);
+      return false;
+    }
+  };
+
   const startupTimer = setTimeout(checkNow, 8000);
   startupTimer.unref?.();
   const interval = setInterval(checkNow, 15 * 60 * 1000);
   interval.unref?.();
 
-  return { checkNow };
+  return { checkNow, isReady, installNow };
 }
 
 module.exports = { setupAutoUpdater };

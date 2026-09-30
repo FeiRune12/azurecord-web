@@ -22,6 +22,7 @@ if (!gotSingleInstanceLock) {
 // Safe startup: avoid GPU-driver initialization issues on older/unstable systems.
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('disable-http-cache');
 
 const LOG_FILE = path.join(app.getPath('temp'), 'azurecord-startup.log');
 function log(...args) {
@@ -77,8 +78,14 @@ function createWindow() {
     if (!mainWindow.isDestroyed()) mainWindow.show();
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
-    .catch((err) => log('[loadFile]', err?.stack || err));
+  const rendererEntry = path.join(__dirname, 'renderer', 'index.html');
+  mainWindow.webContents.session.clearCache()
+    .catch((err) => log('[renderer-cache-clear]', err?.message || err))
+    .finally(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.loadFile(rendererEntry, { query: { build: app.getVersion() } })
+        .catch((err) => log('[loadFile]', err?.stack || err));
+    });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.webContents.once('did-finish-load', () => {
@@ -86,6 +93,13 @@ function createWindow() {
   });
 
   mainWindow.on('close', (event) => {
+    if (!app.isQuitting && updaterController?.isReady?.()) {
+      event.preventDefault();
+      app.isQuitting = true;
+      log('[updater] Fechando para instalar atualização pronta.');
+      updaterController.installNow?.();
+      return;
+    }
     if (!app.isQuitting) {
       event.preventDefault();
       mainWindow.hide();
@@ -104,7 +118,7 @@ function buildMenu() {
         submenu: [
           { label: 'Mostrar janela', click: () => mainWindow?.show() },
           { type: 'separator' },
-          { label: 'Sair do Azurecord', click: () => { app.isQuitting = true; app.quit(); } }
+          { label: 'Sair do Azurecord', click: () => { if (updaterController?.isReady?.()) updaterController.installNow?.(); else { app.isQuitting = true; app.quit(); } } }
         ]
       },
       {
@@ -141,7 +155,7 @@ function setupTray() {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Abrir Azurecord', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
       { type: 'separator' },
-      { label: 'Sair', click: () => { app.isQuitting = true; app.quit(); } }
+      { label: 'Sair', click: () => { if (updaterController?.isReady?.()) updaterController.installNow?.(); else { app.isQuitting = true; app.quit(); } } }
     ]));
     tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
   } catch (err) {

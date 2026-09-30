@@ -30,3 +30,15 @@ test('Beta 8.4 verifica e baixa atualizações automaticamente', () => {
   assert.match(updater, /autoInstallOnAppQuit = true/);
   assert.match(updater, /15 \* 60 \* 1000/);
 });
+
+
+test('desktop updater aplica update baixado e limpa cache do renderer', () => {
+  const main = fs.readFileSync(path.join(root,'main.js'),'utf8');
+  const updater = fs.readFileSync(path.join(root,'updater.js'),'utf8');
+  assert.match(main,/disable-http-cache/);
+  assert.match(main,/webContents\.session\.clearCache/);
+  assert.match(main,/updaterController\?\.isReady/);
+  assert.match(updater,/updateReady = true/);
+  assert.match(updater,/quitAndInstall\(false, true\)/);
+  assert.match(updater,/return \{ checkNow, isReady, installNow \}/);
+});
