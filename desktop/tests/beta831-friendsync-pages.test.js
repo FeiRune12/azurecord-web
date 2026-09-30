@@ -7,10 +7,25 @@ const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'renderer', 'app.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 
-test('Beta 8.3.1 força atualização Cloud em amigos e busca remota', () => {
-  assert.match(app, /if\(socialCloudReady\(\)\)hydrateFromCloudSocial\(\{quiet:true\}\)/);
+test('Social Cloud usa realtime sem forçar snapshot pesado ao abrir Amigos', () => {
+  assert.match(app, /if\(socialCloudReady\(\)\)wakeCloudRealtimeSync\(\{snapshot:false\}\)/);
+  assert.match(app, /cloudRealtimeConnected\(\)\?60000:5000/);
+  assert.match(app, /socialSnapshotSignature/);
   assert.match(app, /if\(!socialCloudReady\(\)\)/);
   assert.match(app, /return cloudRequest\(path,options\)/);
+});
+
+test('Solicitações somem sem pendências e badge de Amigos permanece oculto', () => {
+  assert.match(app, /requestNav\.hidden=pending===0/);
+  assert.match(app, /friendBadge\.hidden=true/);
+  assert.match(app, /section==='requests'&&!hasRequests/);
+});
+
+test('Anexos grandes usam upload multipart sem limite artificial de 1,5 MB', () => {
+  assert.doesNotMatch(app, /maxSingle=1500\*1024/);
+  assert.match(app, /uploadAttachmentInChunks/);
+  assert.match(app, /\/api\/uploads\/part/);
+  assert.match(app, /preparePendingAttachmentsForSend/);
 });
 
 test('Beta 8.3.1 remove botão inicial da Lola e servidor de demonstração', () => {
