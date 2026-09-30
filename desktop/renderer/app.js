@@ -1176,6 +1176,7 @@
   }
 
   function authenticateWithCloud(data){
+    stopCloudRealtimeSocket();
     const token=data?.session?.token||data?.token;
     if(!token||!data?.user?.id)throw new Error('O Azurecord Cloud não retornou uma sessão válida.');
     cloudToken=token; cloudVerifiedAccountId=data.user.id;
