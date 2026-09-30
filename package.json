@@ -1,7 +1,0 @@
-{
-  "name": "azurecord-repo",
-  "private": true,
-  "scripts": {
-    "cloud:deploy": "node tools/cloud-deploy.mjs"
-  }
-}
