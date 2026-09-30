@@ -45,7 +45,10 @@ jobs:
         working-directory: desktop
         shell: pwsh
         run: |
-          node -e "const fs=require('fs');const p=require('./package.json');p.version='0.52.0-beta.8.4.'+process.env.GITHUB_RUN_NUMBER;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('Versão:',p.version)"
+          $version = "0.52.0-beta.8.5.$env:GITHUB_RUN_NUMBER"
+          node -e "const fs=require('fs');const p=require('./package.json');p.version=process.argv[1];fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('Versão:',p.version)" "$version"
+          "AZURECORD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AZURECORD_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Instalar dependências
         working-directory: desktop
@@ -58,6 +61,14 @@ jobs:
       - name: Testes
         working-directory: desktop
         run: npm test
+
+      - name: Criar tag da versão
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$env:AZURECORD_TAG" "$env:GITHUB_SHA"
+          git push origin "$env:AZURECORD_TAG"
 
       - name: Gerar e publicar instalador EXE
         working-directory: desktop
