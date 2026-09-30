@@ -10,7 +10,10 @@ test('Beta4: scripts do renderer carregam helper de recuperação antes do aplic
   const required=['authNotice','savedAccounts','emailInput','passwordInput','authSubmit','rememberLogin','loginScreen','appScreen'];
   for(const id of required)assert.ok(html.includes(`id="${id}"`),`ID ausente: ${id}`);
   assert.match(html, /<script src="auth-recovery\.js(?:\?v=[^"]+)?"><\/script>/);
-  assert.ok(html.indexOf('<script src="app.js"></script>')>html.indexOf('<script src="auth-recovery.js"></script>'));
+  const authIndex=html.search(/<script src="auth-recovery\.js(?:\?v=[^"]+)?"><\/script>/);
+  const appIndex=html.search(/<script src="app\.js(?:\?v=[^"]+)?"><\/script>/);
+  assert.ok(authIndex>=0,'auth-recovery.js ausente');
+  assert.ok(appIndex>authIndex,'app.js deve carregar depois de auth-recovery.js');
   for(const file of ['app.js','auth-recovery.js','lola-client.js','styles.css'])assert.ok(fs.existsSync(path.join(root,'renderer',file)));
 });
 
