@@ -857,15 +857,45 @@
     }
   }
 
+  async function postCloudRealtimeCommit(event){
+    if(!cloudToken||!event||!CLOUD_REALTIME_URL)return false;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),4500);
+    try{
+      const response=await fetch(`${CLOUD_REALTIME_URL}/commit`,{
+        method:'POST',
+        cache:'no-store',
+        credentials:'omit',
+        signal:controller.signal,
+        headers:{'content-type':'application/json','authorization':`Bearer ${cloudToken}`},
+        body:JSON.stringify(event),
+      });
+      if(!response.ok)throw new Error(`Realtime commit HTTP ${response.status}`);
+      return true;
+    }catch(err){
+      console.warn('[Azurecord] Realtime commit fallback:',err?.message||err);
+      return false;
+    }finally{clearTimeout(timer);}
+  }
+
+  function commitCloudRealtime(event){
+    const socketAccepted=sendCloudRealtime(event);
+    // O POST é deliberadamente enviado junto do WebSocket. Se um proxy, NAT ou
+    // socket zumbi aceitar send() mas perder o frame, o Durable Object recebe
+    // o mesmo commit pelo caminho HTTP e publica a mensagem imediatamente.
+    void postCloudRealtimeCommit(event).then(ok=>{if(!ok&&!socketAccepted)wakeCloudRealtimeSync({snapshot:true});});
+    return socketAccepted;
+  }
+
   function cloudRealtimeDelay(){
     if(typeof navigator!=='undefined' && navigator.onLine===false)return 8000;
     const connected=cloudRealtimeConnected();
-    if(document.hidden)return connected?90000:12000;
+    if(document.hidden)return connected?10000:4000;
     const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
       (view.mode==='server'&&view.serverId&&view.channelId);
     const base=connected
-      ? (activeConversation?1800:8000)
-      : (activeConversation?900:2500);
+      ? (activeConversation?700:2500)
+      : (activeConversation?500:1500);
     if(!cloudRealtimeFailures)return base;
     return Math.min(15000,base*Math.pow(1.7,Math.min(cloudRealtimeFailures,5)));
   }
@@ -2603,7 +2633,7 @@
         :await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options);
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
-      if(id!=='user-lola')sendCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id});
+      if(id!=='user-lola')commitCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id,commitId:uid('dm-commit')});
       wakeCloudRealtimeSync();
       return true;
     }catch(err){
@@ -2688,7 +2718,7 @@
           const controller=new AbortController();
           const timeout=setTimeout(()=>controller.abort(),12000);
           socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',signal:controller.signal,body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})})
-            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id});wakeCloudRealtimeSync();}})
+            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();commitCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id,commitId:uid('channel-commit')});wakeCloudRealtimeSync();}})
             .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);})
             .finally(()=>clearTimeout(timeout));
         }else{
