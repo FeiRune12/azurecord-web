@@ -39,7 +39,7 @@ async function call(w,env,method,p,body,token){const h={};if(body!==undefined)h[
 
 test('Beta8 renderer usa Social Cloud',()=>{assert.match(appSource,/socialCloudReady/);assert.match(appSource,/hydrateFromCloudSocial/);assert.match(appSource,/\/api\/social\/snapshot/);assert.match(appSource,/socialRequest/);});
 
-test('Worker 0.8.2 anuncia busca, mensagens confiáveis e anexos R2',async()=>{const d=new DB();schema(d);const w=await worker();const r=await call(w,{DB:d},'GET','/health');assert.equal(r.status,200);assert.equal(r.data.version,'0.8.2');assert.equal(r.data.capabilities.socialCloud,true);assert.equal(r.data.capabilities.friendSearchV2,true);assert.equal(r.data.capabilities.reliableMessaging,true);assert.equal(r.data.capabilities.largeAttachments,false);assert.equal(r.data.capabilities.attachmentStorage,'disabled');});
+test('Worker 0.8.3 anuncia realtime fallback, presença, membros, enquetes e anexos R2',async()=>{const d=new DB();schema(d);const w=await worker();const r=await call(w,{DB:d},'GET','/health');assert.equal(r.status,200);assert.equal(r.data.version,'0.8.3');assert.equal(r.data.capabilities.socialCloud,true);assert.equal(r.data.capabilities.friendSearchV2,true);assert.equal(r.data.capabilities.reliableMessaging,true);assert.equal(r.data.capabilities.realtimeHttpFallback,true);assert.equal(r.data.capabilities.livePresence,true);assert.equal(r.data.capabilities.serverMemberList,true);assert.equal(r.data.capabilities.cloudPolls,true);assert.equal(r.data.capabilities.largeAttachments,false);assert.equal(r.data.capabilities.attachmentStorage,'disabled');});
 
 test('duas contas viram amigas, trocam DM e compartilham servidor',async()=>{const d=new DB();schema(d);const w=await worker(),env={DB:d};
  const a=await call(w,env,'POST','/auth/register',{username:'Alice',email:'alice@test.dev',password:'SenhaAlice123!'});
@@ -54,7 +54,10 @@ test('duas contas viram amigas, trocam DM e compartilham servidor',async()=>{con
  const srv=await call(w,env,'POST','/api/servers',{name:'Sala Azul'},ta);assert.equal(srv.status,201);assert.ok(srv.data.server.invite);
  const join=await call(w,env,'POST','/api/servers/join',{code:srv.data.server.invite},tb);assert.equal(join.status,201);
  const ch=srv.data.channels.find(x=>x.type==='text');const msg=await call(w,env,'POST',`/api/servers/${srv.data.server.id}/channels/${ch.id}/messages`,{text:'salve geral'},tb);assert.equal(msg.status,201);
- const history=await call(w,env,'GET',`/api/servers/${srv.data.server.id}/channels/${ch.id}/messages?limit=100`,undefined,ta);assert.equal(history.data.messages[0].text,'salve geral');
+ const history=await call(w,env,'GET',`/api/servers/${srv.data.server.id}/channels/${ch.id}/messages?limit=100`,undefined,ta);
+ assert.ok(history.data.messages.some(x=>x.system?.type==='member_join'&&x.system?.userId===b.data.user.id));
+ assert.ok(history.data.messages.some(x=>x.text==='salve geral'));
+ const members=await call(w,env,'GET',`/api/servers/${srv.data.server.id}/members`,undefined,ta);assert.equal(members.status,200);assert.equal(members.data.members.length,2);
 });
 
 

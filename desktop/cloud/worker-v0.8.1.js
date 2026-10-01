@@ -2506,7 +2506,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "0.8.2",
+          version: "0.8.3",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
