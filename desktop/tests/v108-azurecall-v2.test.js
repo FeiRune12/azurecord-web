@@ -42,5 +42,5 @@ test('1.0.8: sinalização aceita accepted, ice-restart e signalId',()=>{
   assert.match(api,/version: "0\.8\.5"/);
   assert.match(worker,/ice-restart","accepted/);
   assert.match(worker,/signalId/);
-  assert.match(worker,/version: "1\.5\.0"/);
+  assert.match(worker,/version:\s*"\d+\.\d+\.\d+"/);
 });

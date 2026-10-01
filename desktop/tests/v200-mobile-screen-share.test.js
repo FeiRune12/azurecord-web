@@ -63,7 +63,7 @@ test('2.0.1: aviso remoto continua clicável e abre a live',()=>{
 
 test('2.0.2: versão segue rollover .9 para próxima geração',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.match(pkg.version,/^\\d+\\.\\d+\\.\\d+$/);
+  assert.match(pkg.version,/^\d+\.\d+\.\d+$/);
   const parts=String(pkg.version).split('.').map(Number);
   assert.ok(parts.every(Number.isInteger));
   assert.ok(parts[2]>=0&&parts[2]<=9);

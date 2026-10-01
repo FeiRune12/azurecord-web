@@ -16,7 +16,8 @@ test('2.0.3: websocket tem watchdog e reconexao de socket zumbi',()=>{
 
 test('2.0.3: conversa aberta faz fallback rapido mesmo com websocket conectado',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
-  assert.match(app,/activeConversation\?1800:8000/);
+  assert.match(app,/activeConversation\?700:2500/);
+  assert.match(app,/activeConversation\?500:1500/);
   assert.match(app,/cloudRealtimeConnected\(\)\?12000:5000/);
 });
 

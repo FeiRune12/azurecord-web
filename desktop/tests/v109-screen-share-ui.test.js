@@ -41,7 +41,7 @@ test('2.0: renderização e seletor desktop/mobile foram otimizados',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
   assert.match(app,/requestAnimationFrame/);
-  assert.match(app,/const delay=activeCall\?900:3000/);
+  assert.match(app,/const delay=activeCall\?\(cloudRealtimeConnected\(\)\?1200:500\):3000/);
   assert.match(app,/maxBitrate:mobile\?1800000:2800000/);
   assert.match(main,/AZURECORD_DISABLE_GPU/);
   assert.match(main,/width: 224, height: 126/);
