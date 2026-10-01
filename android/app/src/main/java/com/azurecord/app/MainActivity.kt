@@ -25,6 +25,7 @@ import android.webkit.WebView
 import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import android.view.WindowManager
+import android.widget.Toast
 import org.json.JSONObject
 
 class MainActivity : Activity() {
@@ -51,6 +52,8 @@ class MainActivity : Activity() {
     private var pendingWebResources: Array<String> = emptyArray()
     private var pendingCallPermissions: Array<String> = emptyArray()
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
+    private var launchUpdatePolls = 0
+    private var startupPermissionsRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,7 +64,16 @@ class MainActivity : Activity() {
         setContentView(webView)
         configureWebView()
         AzurecordUpdater.schedule(this)
-        requestStartupMediaPermissions()
+
+        AzurecordUpdater.consumeUpdatedVersion(this)?.let { version ->
+            Toast.makeText(this, "Azurecord atualizado para $version.", Toast.LENGTH_LONG).show()
+        }
+
+        val installingReadyUpdate = AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
+        if (!installingReadyUpdate) {
+            requestStartupMediaPermissionsOnce()
+            scheduleLaunchUpdateInstall()
+        }
 
         AzurecordNativeEvents.sink = { json ->
             runOnUiThread {
@@ -82,6 +94,25 @@ class MainActivity : Activity() {
         if (intent?.action == AzurecordUpdater.ACTION_INSTALL_READY) {
             webView.post { AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false) }
         }
+    }
+
+    private fun scheduleLaunchUpdateInstall() {
+        if (launchUpdatePolls >= 30) return
+        launchUpdatePolls += 1
+        webView.postDelayed({
+            if (isFinishing || isDestroyed || nativeCallActive) {
+                if (!isFinishing && !isDestroyed) scheduleLaunchUpdateInstall()
+                return@postDelayed
+            }
+            val started = AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
+            if (!started) scheduleLaunchUpdateInstall()
+        }, 1000L)
+    }
+
+    private fun requestStartupMediaPermissionsOnce() {
+        if (startupPermissionsRequested) return
+        startupPermissionsRequested = true
+        requestStartupMediaPermissions()
     }
 
     private fun requestStartupMediaPermissions() {
@@ -114,6 +145,8 @@ class MainActivity : Activity() {
         setIntent(intent)
         if (intent.action == AzurecordUpdater.ACTION_INSTALL_READY) {
             AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
+        } else {
+            scheduleLaunchUpdateInstall()
         }
     }
 
@@ -121,6 +154,7 @@ class MainActivity : Activity() {
         super.onResume()
         if (::webView.isInitialized) webView.onResume()
         AzurecordUpdater.resumePendingInstall(this)
+        if (!nativeCallActive) scheduleLaunchUpdateInstall()
     }
 
     override fun onPause() {
