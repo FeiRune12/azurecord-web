@@ -74,6 +74,8 @@ class AzureCallScreenEngine(
     private var surfaceTextureHelper: SurfaceTextureHelper? = null
     private var videoSource: VideoSource? = null
     private var videoTrack: VideoTrack? = null
+    private val pendingRemoteIce = mutableListOf<IceCandidate>()
+    @Volatile private var remoteDescriptionReady = false
 
     fun start() {
         executor.execute {
@@ -396,8 +398,20 @@ class AzureCallScreenEngine(
                 val description = signal.optJSONObject("description") ?: return
                 val sdp = description.optString("sdp")
                 if (sdp.isBlank()) return
-                peerConnection?.setRemoteDescription(
+                val pc = peerConnection ?: return
+                pc.setRemoteDescription(
                     object : SimpleSdpObserver() {
+                        override fun onSetSuccess() {
+                            executor.execute {
+                                remoteDescriptionReady = true
+                                val queued = pendingRemoteIce.toList()
+                                pendingRemoteIce.clear()
+                                for (candidate in queued) {
+                                    try { pc.addIceCandidate(candidate) } catch (_: Exception) {}
+                                }
+                            }
+                        }
+
                         override fun onSetFailure(error: String) {
                             fail("A resposta da transmissão foi rejeitada: " + error)
                         }
@@ -410,13 +424,19 @@ class AzureCallScreenEngine(
                 val raw = signal.optJSONObject("candidate") ?: return
                 val sdp = raw.optString("candidate")
                 if (sdp.isBlank()) return
-                peerConnection?.addIceCandidate(
-                    IceCandidate(
-                        raw.optString("sdpMid", ""),
-                        raw.optInt("sdpMLineIndex", 0),
-                        sdp
-                    )
+                val candidate = IceCandidate(
+                    raw.optString("sdpMid", ""),
+                    raw.optInt("sdpMLineIndex", 0),
+                    sdp
                 )
+                val pc = peerConnection ?: return
+                if (!remoteDescriptionReady || pc.remoteDescription == null) {
+                    pendingRemoteIce += candidate
+                    return
+                }
+                try { pc.addIceCandidate(candidate) } catch (_: Exception) {
+                    pendingRemoteIce += candidate
+                }
             }
 
             "hangup", "native-screen-stop", "screen-share-stop" -> stop("remote-stop")
@@ -470,6 +490,8 @@ class AzureCallScreenEngine(
         try { surfaceTextureHelper?.dispose() } catch (_: Exception) {}
         surfaceTextureHelper = null
 
+        pendingRemoteIce.clear()
+        remoteDescriptionReady = false
         try { peerConnection?.close() } catch (_: Exception) {}
         try { peerConnection?.dispose() } catch (_: Exception) {}
         peerConnection = null
