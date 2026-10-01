@@ -3141,6 +3141,12 @@
       <div class="edit-avatar-row"><div class="profile-avatar-large avatar-img" id="editAvatarPreview" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><label class="btn btn-ghost">Trocar avatar<input id="editAvatarFile" type="file" accept="image/*" hidden></label></div>
       <label>Nome de usuário<input id="editUsername" value="${esc(p.username)}" maxlength="24"></label>
       <label>Bio<input id="editBio" value="${esc(p.bio||'')}" maxlength="160"></label>
+      <label>Status<select id="editPresenceStatus">
+        <option value="online" ${(p.status||'online')==='online'?'selected':''}>Online</option>
+        <option value="idle" ${p.status==='idle'?'selected':''}>Ausente</option>
+        <option value="dnd" ${p.status==='dnd'?'selected':''}>Não perturbe</option>
+        <option value="offline" ${p.status==='offline'?'selected':''}>Offline</option>
+      </select></label>
       <label>Mensagem de status<input id="editCustomStatus" value="${esc(p.customStatus||'')}" maxlength="120" placeholder="O que você está fazendo?"></label>
       <label>Pronomes<input id="editPronouns" value="${esc(p.pronouns||'')}" maxlength="48" placeholder="Ex.: Ela/Dela ou Ele/Dele"></label>
       <label class="span-2">Personalidade<textarea id="editPersonality" maxlength="240" placeholder="Conte um pouco sobre sua personalidade">${esc(p.personality||'')}</textarea></label>
@@ -3155,10 +3161,10 @@
       if(!nu){showToast('Escolha um nome de usuário.');return;}
       if(allPeople().some(x=>x.id!==p.id&&usernameKey(x.username)===usernameKey(nu))){showToast('Esse nome de usuário já está em uso.');return;}
       p.username=nu;p.handle='@'+nu.toLowerCase();p.bio=$('editBio').value.trim();p.accent=$('editAccent').value;
-      p.customStatus=$('editCustomStatus').value.trim().slice(0,120);p.pronouns=$('editPronouns').value.trim().slice(0,48);p.personality=$('editPersonality').value.trim().slice(0,240)||'Usuário do Azurecord.';p.statusUpdatedAt=new Date().toISOString();
+      p.status=['online','idle','dnd','offline'].includes($('editPresenceStatus').value)?$('editPresenceStatus').value:'online';p.customStatus=$('editCustomStatus').value.trim().slice(0,120);p.pronouns=$('editPronouns').value.trim().slice(0,48);p.personality=$('editPersonality').value.trim().slice(0,240)||'Usuário do Azurecord.';p.statusUpdatedAt=new Date().toISOString();
       p.avatar=avatar;p.banner=banner;p.profileComplete=true;
       const account=state.accounts.find(a=>a.id===p.id);
-      if(account)Object.assign(account,{username:p.username,handle:p.handle,bio:p.bio,accent:p.accent,customStatus:p.customStatus,pronouns:p.pronouns,personality:p.personality,statusUpdatedAt:p.statusUpdatedAt,avatar:p.avatar,banner:p.banner,profileComplete:true});
+      if(account)Object.assign(account,{username:p.username,handle:p.handle,bio:p.bio,accent:p.accent,status:p.status,customStatus:p.customStatus,pronouns:p.pronouns,personality:p.personality,statusUpdatedAt:p.statusUpdatedAt,avatar:p.avatar,banner:p.banner,profileComplete:true});
       state.profiles[p.id]={...p};saveNow();
       if(p.cloud){
         await syncCloudProfile(p,{profileComplete:true});
