@@ -11,8 +11,8 @@ android {
         applicationId = "com.azurecord.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 306
-        versionName = "3.0.6"
+        versionCode = 307
+        versionName = "3.0.7"
     }
 
     signingConfigs {
