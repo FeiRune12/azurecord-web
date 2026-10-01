@@ -1291,7 +1291,7 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  const APP_CORRECTION_NOTICE={id:'3.0.8-android-screen-share-clean-ui-20261001',title:'Azurecord 3.0.8',body:'A transmissão de tela no Android foi estabilizada e o aviso foi simplificado para mostrar apenas o nome de quem está transmitindo.'};
+  const APP_CORRECTION_NOTICE={id:'3.0.9-screen-share-update-flow-20261001',title:'Azurecord 3.0.9',body:'A transmissão mobile ficou maior, o desktop recebeu recuperação extra para lives do Android e o fluxo de atualização foi simplificado.'};
   function announceAppCorrection(){
     if(!currentUser())return;
     const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
@@ -3705,6 +3705,10 @@
         const was=!!call.remoteScreenSharing;
         call.remoteScreenSharing=!!state.active;
         if(call.remoteScreenSharing&&!was)showRemoteShareNotice(call);
+        if(call.remoteScreenSharing&&!call.remoteScreenTrack&&Date.now()-(call.nativeScreenLastResyncAt||0)>1800){
+          call.nativeScreenLastResyncAt=Date.now();
+          sendCallSignal('native-screen-resync');
+        }
         if(!call.remoteScreenSharing){clearRemoteShareNotice(call);if(call.nativeScreenPc)clearNativeScreenReceiver(call);if(call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});}
         updateCallUi();
       }
@@ -3941,7 +3945,8 @@
     updateCallUi();
   }
   async function ensureNativeScreenReceiver(call){
-    if(call.nativeScreenPc)return call.nativeScreenPc;
+    if(call.nativeScreenPc&& !['failed','closed'].includes(call.nativeScreenPc.connectionState))return call.nativeScreenPc;
+    if(call.nativeScreenPc)clearNativeScreenReceiver(call);
     await ensureAzureCallIceConfig();
     const pc=new RTCPeerConnection(azureCallRtcConfig);
     call.nativeScreenPc=pc;call.nativeScreenPendingIce=call.nativeScreenPendingIce||[];
@@ -3949,7 +3954,8 @@
     pc.ontrack=e=>{
       const track=e.track;if(!track||track.kind!=='video')return;
       call.nativeRemoteScreenTrack=track;call.remoteScreenTrack=track;call.remoteScreenStream=new MediaStream([track]);
-      const was=!!call.remoteScreenSharing;call.remoteScreenSharing=true;if(!was)showRemoteShareNotice(call);
+      call.nativeScreenOfferAt=0;call.nativeScreenResyncAttempts=0;
+      const was=!!call.remoteScreenSharing;call.remoteScreenSharing=true;markCallConnected(call);if(!was)showRemoteShareNotice(call);
       track.onunmute=()=>{call.remoteScreenSharing=true;showRemoteShareNotice(call);updateCallUi();$('remoteCallVideo')?.play?.().catch(()=>{});};
       track.onmute=()=>{updateCallUi();};
       track.onended=()=>{if(call.nativeRemoteScreenTrack===track)clearNativeScreenReceiver(call);};
@@ -3965,8 +3971,16 @@
     await pc.setRemoteDescription(description);
     for(const candidate of call.nativeScreenPendingIce||[]){try{await pc.addIceCandidate(candidate);}catch{}}
     call.nativeScreenPendingIce=[];
+    call.remoteScreenSharing=true;
+    call.nativeScreenOfferAt=Date.now();
+    updateCallUi();
     const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
-    sendCallSignal('native-screen-answer',{description:pc.localDescription});
+    directCallSignal(call.peerId,{kind:'native-screen-answer',callId:call.id,callType:'screen',description:pc.localDescription});
+    setTimeout(()=>{
+      if(activeCall!==call||call.nativeRemoteScreenTrack?.readyState==='live')return;
+      call.nativeScreenResyncAttempts=(call.nativeScreenResyncAttempts||0)+1;
+      if(call.nativeScreenResyncAttempts<=3)sendCallSignal('native-screen-resync');
+    },1800);
   }
   async function handleNativeScreenIce(call,candidate){
     if(!call||!candidate)return;
