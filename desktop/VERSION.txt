@@ -1,1 +1,1 @@
-Azurecord 3.0.7 AzureCall Echo Control
+Azurecord 3.0.8 Android Screen Share Clean UI
