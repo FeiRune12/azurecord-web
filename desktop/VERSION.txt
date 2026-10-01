@@ -1,1 +1,1 @@
-Azurecord 3.0.5 Presence Settings Wiring Fix
+Azurecord 3.0.6 Clean AzureCall Microphone Fix
