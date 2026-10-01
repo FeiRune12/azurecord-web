@@ -22,6 +22,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.ValueCallback
 import android.webkit.WebViewClient
 import android.view.WindowManager
 import org.json.JSONObject
@@ -34,6 +35,7 @@ class MainActivity : Activity() {
         private const val REQ_WEB_MEDIA = 901
         private const val REQ_MEDIA_PROJECTION = 902
         private const val REQ_CALL_PERMISSIONS = 904
+        private const val REQ_FILE_CHOOSER = 905
         private const val CALL_CHANNEL = "azurecord_calls"
         private const val CALL_NOTIFICATION_ID = 3107
     }
@@ -46,6 +48,7 @@ class MainActivity : Activity() {
     private var pendingWebPermissionRequest: PermissionRequest? = null
     private var pendingWebResources: Array<String> = emptyArray()
     private var pendingCallPermissions: Array<String> = emptyArray()
+    private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -138,6 +141,34 @@ class MainActivity : Activity() {
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread { handleWebMediaPermission(request) }
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView?,
+                filePathCallback: ValueCallback<Array<Uri>>?,
+                fileChooserParams: FileChooserParams?
+            ): Boolean {
+                pendingFileChooser?.onReceiveValue(null)
+                pendingFileChooser = filePathCallback
+                val chooserIntent = try {
+                    fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "image/*"
+                    }
+                } catch (_: Exception) {
+                    Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "image/*"
+                    }
+                }
+                return try {
+                    startActivityForResult(chooserIntent, REQ_FILE_CHOOSER)
+                    true
+                } catch (_: ActivityNotFoundException) {
+                    pendingFileChooser?.onReceiveValue(null)
+                    pendingFileChooser = null
+                    false
+                }
             }
         }
     }
@@ -345,6 +376,13 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_FILE_CHOOSER) {
+            val callback = pendingFileChooser
+            pendingFileChooser = null
+            val uris = if (resultCode == RESULT_OK) WebChromeClient.FileChooserParams.parseResult(resultCode, data) else null
+            callback?.onReceiveValue(uris)
+            return
+        }
         if (requestCode != REQ_MEDIA_PROJECTION) return
 
         val payload = pendingProjectionPayload
@@ -418,6 +456,8 @@ class MainActivity : Activity() {
         if (AzurecordNativeEvents.sink != null) AzurecordNativeEvents.sink = null
         pendingWebPermissionRequest?.deny()
         pendingWebPermissionRequest = null
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
         super.onDestroy()
     }
 }
