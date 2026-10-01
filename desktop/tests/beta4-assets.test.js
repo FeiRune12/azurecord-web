@@ -19,7 +19,7 @@ test('Beta4: scripts do renderer carregam helper de recuperação antes do aplic
 
 test('Beta4: documento de recuperação e utilitário fazem parte do código-fonte',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.match(pkg.version,/^1\.0\.\d+$/);
+  assert.match(pkg.version,/^\d+\.0\.[0-9]$/);
   for(const name of ['RECUPERAR-CONTA-AZURE.md','TESTE-BETA4.md','tools/recover-account.js','backend/.env.example']){
     assert.ok(fs.existsSync(path.join(root,name)),`${name} ausente`);
   }

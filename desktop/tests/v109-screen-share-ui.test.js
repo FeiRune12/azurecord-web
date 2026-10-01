@@ -33,12 +33,12 @@ test('1.0.9: layout de compartilhamento é maior e mostra o nome',()=>{
   assert.match(css,/\.local-screen-share \.azure-call-local\.screen-main/);
 });
 
-test('1.0.9: renderização e seletor desktop foram otimizados',()=>{
+test('2.0: renderização e seletor desktop/mobile foram otimizados',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
   assert.match(app,/requestAnimationFrame/);
   assert.match(app,/cloudRealtimeConnected\(\)\?2200:650/);
-  assert.match(app,/maxBitrate:2800000/);
+  assert.match(app,/maxBitrate:mobile\?1800000:2800000/);
   assert.match(main,/AZURECORD_DISABLE_GPU/);
   assert.match(main,/width: 224, height: 126/);
   assert.match(main,/sources\.slice\(0, 30\)/);
