@@ -41,3 +41,15 @@ test('2.0.4: protocolo aceita ponte de tela nativa Android',()=>{
   assert.match(api,/native-screen-ice/);
   assert.match(realtime,/native-screen-stop/);
 });
+
+
+test('3.0.9: desktop pede ressincronização quando a live nativa Android fica sem trilha',()=>{
+  const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
+  const engine=fs.readFileSync(path.resolve(root,'..','android','app','src','main','java','com','azurecord','app','AzureCallScreenEngine.kt'),'utf8');
+  assert.match(app,/native-screen-resync/);
+  assert.match(app,/nativeScreenResyncAttempts/);
+  assert.match(app,/nativeScreenLastResyncAt/);
+  assert.match(engine,/"native-screen-resync"/);
+  assert.match(engine,/localIceCandidates/);
+  assert.match(engine,/repeat\(2\)/);
+});
