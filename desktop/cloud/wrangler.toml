@@ -9,3 +9,7 @@ database_id = "597184ae-2c7b-423c-a4a4-b79721f95fe6"
 
 [ai]
 binding = "AI"
+
+[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "azurecord-attachments"
