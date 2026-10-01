@@ -1291,6 +1291,14 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
+  const APP_CORRECTION_NOTICE={id:'3.0.5-hotfix-profile-status-layout-20261001',title:'Correção rápida aplicada',body:'O balão de status do perfil agora possui uma linha própria e não cobre mais o nome do usuário.'};
+  function announceAppCorrection(){
+    if(!currentUser())return;
+    const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
+    try{if(localStorage.getItem(key)==='1')return;}catch{}
+    addNotification(APP_CORRECTION_NOTICE.title,APP_CORRECTION_NOTICE.body,'system');
+    try{localStorage.setItem(key,'1');}catch{}
+  }
   function hideToast(key=''){
     const t=$('toast');if(!t)return;
     if(key&&t.dataset.toastKey&&t.dataset.toastKey!==String(key))return;
@@ -1734,6 +1742,7 @@
 
   function enterApp(){ const u=currentUser(); if(!u){setScreen('loginScreen');return;} ensureLolaSecretRequest(); if(socialCloudReady()){hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});} setScreen('appScreen'); view.mode='home'; view.home='friends'; view.serverId=null; view.channelId=null; view.dmUserId=null; view.showMembers=true; $('homePanel').hidden=false; $('chatView').hidden=true; $('serverSide').hidden=true; $('homeSide').hidden=false; $('profilePeek').hidden=true; document.documentElement.style.setProperty('--accent',u.accent||state.accent); renderShell(); renderSavedAccounts(); save(); if(pendingInviteCode)setTimeout(()=>consumePendingInviteLink(),220); }
   function renderShell(){
+    announceAppCorrection();
     const u=currentUser();
     if(!u){ return; }
     const isHome=view.mode==='home';
@@ -3020,8 +3029,11 @@
       return `<div class="profile-detail profile-preview-compact">
         <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
         <div class="profile-main-head">
-          <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>${customStatusOf(p)?`<div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span>${esc(customStatusOf(p))}</span></div>`:''}</div>
-          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}${p.pronouns?` <span class="profile-bullet">•</span> ${esc(p.pronouns)}`:''}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
+          <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div></div>
+          <div class="profile-head-copy">
+            ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
+            <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}${p.pronouns?` <span class="profile-bullet">•</span> ${esc(p.pronouns)}`:''}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
+          </div>
         </div>
         <div class="profile-preview-bio">${esc(p.bio||'Sem bio.')}</div>
         <div class="profile-actions profile-preview-actions"><button class="btn btn-primary wide" data-profile-full="${p.id}">Exibir perfil completo</button></div>
@@ -3030,8 +3042,11 @@
     return `<div class="profile-detail profile-full-detail">
       <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
       <div class="profile-main-head">
-        <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>${customStatusOf(p)?`<div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span>${esc(customStatusOf(p))}</span></div>`:''}</div>
-        <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
+        <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div></div>
+        <div class="profile-head-copy">
+          ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
+          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
+        </div>
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
       </div>
       <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'✦')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
