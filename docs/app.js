@@ -3968,11 +3968,12 @@
   }
   function handleAzurecordNativeEvent(raw){
     let payload=raw;try{if(typeof raw==='string')payload=JSON.parse(raw);}catch{return;}
-    const call=activeCall;if(!call||!payload||typeof payload!=='object')return;
-    if(payload.callId&&String(payload.callId)!==String(call.id))return;
+    if(!payload||typeof payload!=='object')return;
     if(payload.type==='callPermissions.result'){
       const waiters=[...nativeCallPermissionWaiters];nativeCallPermissionWaiters=[];for(const done of waiters)try{done(!!payload.granted);}catch{};return;
     }
+    const call=activeCall;if(!call)return;
+    if(payload.callId&&String(payload.callId)!==String(call.id))return;
     if(payload.type==='screenShare.state'){
       call.nativeScreenRequested=false;call.nativeScreenSharing=!!payload.active;
       if(!payload.active)call.nativeScreenAutoStart=false;
