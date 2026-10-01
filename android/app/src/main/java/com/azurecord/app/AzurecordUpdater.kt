@@ -35,6 +35,7 @@ object AzurecordUpdater {
     private const val KEY_FINISH_AFTER_PERMISSION = "finish_after_permission"
     private const val KEY_INSTALL_IN_PROGRESS = "install_in_progress"
     private const val KEY_REJECTED_VERSION = "rejected_version"
+    private const val KEY_LAST_LAUNCHED_VERSION = "last_launched_version"
 
     private const val UPDATE_CHANNEL = "azurecord-updates"
     private const val UPDATE_NOTIFICATION_ID = 205
@@ -82,7 +83,7 @@ object AzurecordUpdater {
             .remove(KEY_REJECTED_VERSION)
             .putBoolean(KEY_INSTALL_IN_PROGRESS, false)
             .apply()
-        showReadyNotification(context, version)
+        cancelReadyNotification(context)
     }
 
     fun rejectedVersion(context: Context): String? =
@@ -200,12 +201,32 @@ object AzurecordUpdater {
         if (!path.isNullOrBlank()) {
             try { File(path).delete() } catch (_: Exception) {}
         }
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .remove(KEY_VERSION)
+            .remove(KEY_PATH)
+            .remove(KEY_PENDING_PERMISSION)
+            .remove(KEY_FINISH_AFTER_PERMISSION)
+            .remove(KEY_INSTALL_IN_PROGRESS)
+            .remove(KEY_REJECTED_VERSION)
+            .apply()
         cancelReadyNotification(context)
+    }
+
+    fun consumeUpdatedVersion(context: Context): String? {
+        val prefs = prefs(context)
+        val current = BuildConfig.VERSION_NAME
+        val previous = prefs.getString(KEY_LAST_LAUNCHED_VERSION, null)
+        prefs.edit().putString(KEY_LAST_LAUNCHED_VERSION, current).apply()
+        if (previous.isNullOrBlank()) return null
+        return if (compareVersions(current, previous) > 0) current else null
     }
 
     fun onInstallFailed(context: Context, message: String) {
         prefs(context).edit().putBoolean(KEY_INSTALL_IN_PROGRESS, false).apply()
+        val normalized = message.lowercase()
+        if ("permission" in normalized || "denied" in normalized || "not allowed" in normalized) {
+            return
+        }
         showInstallProblem(context, message)
     }
 
