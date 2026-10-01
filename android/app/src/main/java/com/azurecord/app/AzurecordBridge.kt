@@ -16,7 +16,12 @@ class AzurecordBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun hasCallPermissions(includeCamera: Boolean): Boolean =
+        activity.hasCallPermissions(includeCamera)
+
+    @JavascriptInterface
     fun requestCallPermissions(includeCamera: Boolean): Boolean {
+        if (activity.hasCallPermissions(includeCamera)) return true
         activity.requestCallPermissions(includeCamera)
         return true
     }
