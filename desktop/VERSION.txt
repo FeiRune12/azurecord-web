@@ -1,1 +1,1 @@
-Azurecord 3.0.6 Clean AzureCall Microphone Fix
+Azurecord 3.0.7 AzureCall Echo Control
