@@ -97,6 +97,19 @@ export class UserHub {
       return new Response(null, { status: 204 });
     }
 
+    if (url.pathname === "/commit" && request.method === "POST") {
+      const userId = String(request.headers.get("X-Azurecord-User-Id") || "");
+      const token = String(request.headers.get("X-Azurecord-Session") || "");
+      const message = await request.json().catch(() => null);
+      if (!userId || !token || !message?.type) return json({ ok: false, error: "Bad Request" }, 400);
+      const session = { userId, token, verifiedAt: Date.now() };
+      let delivered = false;
+      if (message.type === "dm.commit") delivered = await this.handleDmCommit(session, message);
+      else if (message.type === "channel.commit") delivered = await this.handleChannelCommit(session, message);
+      else return json({ ok: false, error: "Unsupported commit" }, 400);
+      return json({ ok: delivered });
+    }
+
     return new Response("Not Found", { status: 404 });
   }
 
@@ -177,6 +190,101 @@ export class UserHub {
     } catch {
       return [];
     }
+  }
+
+  async handleDmCommit(session, message) {
+    const targetUserId = String(message.targetUserId || "");
+    if (!targetUserId || targetUserId === session.userId) return false;
+
+    try {
+      const response = await fetch(`${AZURECORD_API_URL}/api/friends`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      const allowed = Array.isArray(data?.friends) && data.friends.some(friend => String(friend?.id || "") === targetUserId);
+      if (!allowed) return false;
+    } catch {
+      return false;
+    }
+
+    let canonical = null;
+    try {
+      const response = await fetch(`${AZURECORD_API_URL}/api/dms/${encodeURIComponent(targetUserId)}`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const messages = Array.isArray(data?.messages) ? data.messages : [];
+        canonical = messages.find(m =>
+          String(m?.id || "") === String(message.messageId || "") ||
+          (message.clientId && String(m?.clientId || "") === String(message.clientId))
+        ) || null;
+      }
+    } catch {}
+
+    const eventId = String(message.commitId || "") || crypto.randomUUID();
+    const makeEvent = peerId => canonical
+      ? { type: "dm.upsert", eventId, peerId, message: canonical, at: Date.now() }
+      : { type: "dm.changed", eventId, peerId, at: Date.now() };
+
+    await Promise.allSettled([
+      this.notifyUser(session.userId, makeEvent(targetUserId)),
+      this.notifyUser(targetUserId, makeEvent(session.userId)),
+    ]);
+    return true;
+  }
+
+  async handleChannelCommit(session, message) {
+    const serverId = String(message.serverId || "");
+    const channelId = String(message.channelId || "");
+    if (!serverId || !channelId) return false;
+
+    let members = [];
+    try {
+      const response = await fetch(
+        `${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/members`,
+        { headers: { Authorization: `Bearer ${session.token}` } }
+      );
+      if (!response.ok) return false;
+      const data = await response.json();
+      members = Array.isArray(data?.members) ? data.members : [];
+    } catch {
+      return false;
+    }
+
+    let canonical = null;
+    try {
+      const response = await fetch(
+        `${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}/messages?limit=100`,
+        { headers: { Authorization: `Bearer ${session.token}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const messages = Array.isArray(data?.messages) ? data.messages : [];
+        canonical = messages.find(m =>
+          String(m?.id || "") === String(message.messageId || "") ||
+          (message.clientId && String(m?.clientId || "") === String(message.clientId))
+        ) || null;
+      }
+    } catch {}
+
+    const event = {
+      type: canonical ? "channel.upsert" : "channel.changed",
+      eventId: String(message.commitId || "") || crypto.randomUUID(),
+      serverId,
+      channelId,
+      ...(canonical ? { message: canonical } : {}),
+      at: Date.now(),
+    };
+
+    await Promise.allSettled(
+      members
+        .map(member => String(member?.id || ""))
+        .filter(Boolean)
+        .map(userId => this.notifyUser(userId, event))
+    );
+    return true;
   }
 
   async webSocketMessage(ws, raw) {
@@ -264,11 +372,12 @@ export class UserHub {
       const kind = String(rawSignal.kind || "");
       const callId = String(rawSignal.callId || "").slice(0, 120);
       const callType = ["voice", "video", "screen"].includes(String(rawSignal.callType)) ? String(rawSignal.callType) : "voice";
-      if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy"].includes(kind)) return;
+      if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop"].includes(kind)) return;
       const signalId = String(rawSignal.signalId || "").slice(0, 120);
       const signal = { kind, callId, callType, signalId };
-      if ((kind === "offer" || kind === "answer") && rawSignal.description && typeof rawSignal.description === "object") signal.description = rawSignal.description;
-      if (kind === "ice" && rawSignal.candidate && typeof rawSignal.candidate === "object") signal.candidate = rawSignal.candidate;
+      if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer"].includes(kind) && rawSignal.description && typeof rawSignal.description === "object") signal.description = rawSignal.description;
+      if ((kind === "ice" || kind === "native-screen-ice") && rawSignal.candidate && typeof rawSignal.candidate === "object") signal.candidate = rawSignal.candidate;
+      if (Number.isFinite(Number(rawSignal.shareRevision))) signal.shareRevision = Math.max(0, Math.floor(Number(rawSignal.shareRevision)));
       if (rawSignal.reason) signal.reason = String(rawSignal.reason).slice(0, 80);
       if (JSON.stringify(signal).length > 180000) return;
       await this.notifyUser(targetUserId, {
@@ -320,97 +429,12 @@ export class UserHub {
     }
 
     if (message?.type === "dm.commit") {
-      const targetUserId = String(message.targetUserId || "");
-      if (!targetUserId || targetUserId === session.userId) return;
-
-      try {
-        const response = await fetch(`${AZURECORD_API_URL}/api/friends`, {
-          headers: { Authorization: `Bearer ${session.token}` },
-        });
-        if (!response.ok) return;
-        const data = await response.json();
-        const allowed = Array.isArray(data?.friends) && data.friends.some(friend => String(friend?.id || "") === targetUserId);
-        if (!allowed) return;
-      } catch {
-        return;
-      }
-
-      let canonical = null;
-      try {
-        const response = await fetch(`${AZURECORD_API_URL}/api/dms/${encodeURIComponent(targetUserId)}`, {
-          headers: { Authorization: `Bearer ${session.token}` },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const messages = Array.isArray(data?.messages) ? data.messages : [];
-          canonical = messages.find(m =>
-            String(m?.id || "") === String(message.messageId || "") ||
-            (message.clientId && String(m?.clientId || "") === String(message.clientId))
-          ) || null;
-        }
-      } catch {}
-
-      const eventId = crypto.randomUUID();
-      const makeEvent = peerId => canonical
-        ? { type: "dm.upsert", eventId, peerId, message: canonical, at: Date.now() }
-        : { type: "dm.changed", eventId, peerId, at: Date.now() };
-
-      await Promise.allSettled([
-        this.notifyUser(session.userId, makeEvent(targetUserId)),
-        this.notifyUser(targetUserId, makeEvent(session.userId)),
-      ]);
+      await this.handleDmCommit(session, message);
       return;
     }
 
     if (message?.type === "channel.commit") {
-      const serverId = String(message.serverId || "");
-      const channelId = String(message.channelId || "");
-      if (!serverId || !channelId) return;
-
-      let members = [];
-      try {
-        const response = await fetch(
-          `${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/members`,
-          { headers: { Authorization: `Bearer ${session.token}` } }
-        );
-        if (!response.ok) return;
-        const data = await response.json();
-        members = Array.isArray(data?.members) ? data.members : [];
-      } catch {
-        return;
-      }
-
-      let canonical = null;
-      try {
-        const response = await fetch(
-          `${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/channels/${encodeURIComponent(channelId)}/messages?limit=100`,
-          { headers: { Authorization: `Bearer ${session.token}` } }
-        );
-        if (response.ok) {
-          const data = await response.json();
-          const messages = Array.isArray(data?.messages) ? data.messages : [];
-          canonical = messages.find(m =>
-            String(m?.id || "") === String(message.messageId || "") ||
-            (message.clientId && String(m?.clientId || "") === String(message.clientId))
-          ) || null;
-        }
-      } catch {}
-
-      const event = {
-        type: canonical ? "channel.upsert" : "channel.changed",
-        eventId: crypto.randomUUID(),
-        serverId,
-        channelId,
-        ...(canonical ? { message: canonical } : {}),
-        at: Date.now(),
-      };
-
-      await Promise.allSettled(
-        members
-          .map(member => String(member?.id || ""))
-          .filter(Boolean)
-          .map(userId => this.notifyUser(userId, event))
-      );
+      await this.handleChannelCommit(session, message);
       return;
     }
   }
@@ -448,9 +472,34 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.5.0",
+        version: "1.6.0",
         transport: "websocket",
         hibernation: true,
+      });
+    }
+
+    if (url.pathname === "/commit" && request.method === "POST") {
+      const authHeader = String(request.headers.get("authorization") || "");
+      const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+      const user = await validateToken(token);
+      if (!user?.id) return json({ ok: false, error: "Unauthorized" }, 401);
+
+      const bodyText = await request.text();
+      let body = null;
+      try { body = JSON.parse(bodyText); } catch {}
+      if (!body || !["dm.commit","channel.commit"].includes(String(body.type || ""))) {
+        return json({ ok: false, error: "Invalid commit" }, 400);
+      }
+
+      const hub = env.USER_HUB.get(env.USER_HUB.idFromName(String(user.id)));
+      return hub.fetch("https://hub.internal/commit", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Azurecord-User-Id": String(user.id),
+          "X-Azurecord-Session": token,
+        },
+        body: JSON.stringify(body),
       });
     }
 

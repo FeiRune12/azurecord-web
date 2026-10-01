@@ -1170,12 +1170,12 @@ function cleanCallSignal(value) {
   const kind = String(value.kind || "");
   const callId = String(value.callId || "").slice(0, 120);
   const callType = ["voice","video","screen"].includes(String(value.callType)) ? String(value.callType) : "voice";
-  if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer"].includes(kind)) return null;
+  if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop"].includes(kind)) return null;
   const signalId = String(value.signalId || "").slice(0, 120);
   const out = { kind, callId, callType, signalId };
-  if ((kind === "offer" || kind === "answer" || kind === "screen-offer" || kind === "screen-answer") && value.description && typeof value.description === "object") out.description = value.description;
+  if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer"].includes(kind) && value.description && typeof value.description === "object") out.description = value.description;
   if (Number.isFinite(Number(value.shareRevision))) out.shareRevision = Math.max(0, Math.floor(Number(value.shareRevision)));
-  if (kind === "ice" && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
+  if ((kind === "ice" || kind === "native-screen-ice") && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
   if (value.reason) out.reason = String(value.reason).slice(0, 80);
   return JSON.stringify(out).length <= 180000 ? out : null;
 }

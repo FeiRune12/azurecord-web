@@ -16,13 +16,14 @@ test('2.0.3: websocket tem watchdog e reconexao de socket zumbi',()=>{
 
 test('2.0.3: conversa aberta faz fallback rapido mesmo com websocket conectado',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
-  assert.match(app,/activeConversation\?1800:8000/);
+  assert.match(app,/activeConversation\?700:2500/);
+  assert.match(app,/activeConversation\?500:1500/);
   assert.match(app,/cloudRealtimeConnected\(\)\?12000:5000/);
 });
 
 test('2.0.3: versao do cliente esta correta',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'2.0.3');
+  assert.equal(pkg.version,'2.0.4');
 });
 
 test('2.0.3: AzureCall busca ICE dinamico e API suporta TURN seguro',()=>{

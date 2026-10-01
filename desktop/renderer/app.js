@@ -857,15 +857,45 @@
     }
   }
 
+  async function postCloudRealtimeCommit(event){
+    if(!cloudToken||!event||!CLOUD_REALTIME_URL)return false;
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),4500);
+    try{
+      const response=await fetch(`${CLOUD_REALTIME_URL}/commit`,{
+        method:'POST',
+        cache:'no-store',
+        credentials:'omit',
+        signal:controller.signal,
+        headers:{'content-type':'application/json','authorization':`Bearer ${cloudToken}`},
+        body:JSON.stringify(event),
+      });
+      if(!response.ok)throw new Error(`Realtime commit HTTP ${response.status}`);
+      return true;
+    }catch(err){
+      console.warn('[Azurecord] Realtime commit fallback:',err?.message||err);
+      return false;
+    }finally{clearTimeout(timer);}
+  }
+
+  function commitCloudRealtime(event){
+    const socketAccepted=sendCloudRealtime(event);
+    // O POST é deliberadamente enviado junto do WebSocket. Se um proxy, NAT ou
+    // socket zumbi aceitar send() mas perder o frame, o Durable Object recebe
+    // o mesmo commit pelo caminho HTTP e publica a mensagem imediatamente.
+    void postCloudRealtimeCommit(event).then(ok=>{if(!ok&&!socketAccepted)wakeCloudRealtimeSync({snapshot:true});});
+    return socketAccepted;
+  }
+
   function cloudRealtimeDelay(){
     if(typeof navigator!=='undefined' && navigator.onLine===false)return 8000;
     const connected=cloudRealtimeConnected();
-    if(document.hidden)return connected?90000:12000;
+    if(document.hidden)return connected?10000:4000;
     const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
       (view.mode==='server'&&view.serverId&&view.channelId);
     const base=connected
-      ? (activeConversation?1800:8000)
-      : (activeConversation?900:2500);
+      ? (activeConversation?700:2500)
+      : (activeConversation?500:1500);
     if(!cloudRealtimeFailures)return base;
     return Math.min(15000,base*Math.pow(1.7,Math.min(cloudRealtimeFailures,5)));
   }
@@ -1103,7 +1133,19 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  function showToast(text,options={}){ const t=$('toast'); t.textContent=text; t.classList.add('show'); t.classList.toggle('clickable',typeof options.onClick==='function'); t.onclick=typeof options.onClick==='function'?()=>{options.onClick();t.classList.remove('show');}:null; clearTimeout(t._tm); t._tm=setTimeout(()=>{t.classList.remove('show');t.classList.remove('clickable');t.onclick=null;},Math.max(1200,Number(options.duration)||2500)); }
+  function hideToast(key=''){
+    const t=$('toast');if(!t)return;
+    if(key&&t.dataset.toastKey&&t.dataset.toastKey!==String(key))return;
+    clearTimeout(t._tm);t._tm=null;t.classList.remove('show','clickable');t.onclick=null;delete t.dataset.toastKey;
+  }
+  function showToast(text,options={}){
+    const t=$('toast');if(!t)return;
+    clearTimeout(t._tm);t._tm=null;t.textContent=text;t.classList.add('show');
+    t.classList.toggle('clickable',typeof options.onClick==='function');
+    if(options.key)t.dataset.toastKey=String(options.key);else delete t.dataset.toastKey;
+    t.onclick=typeof options.onClick==='function'?()=>{options.onClick();if(!options.keepAfterClick)hideToast(options.key||'');}:null;
+    if(!options.persistent)t._tm=setTimeout(()=>hideToast(options.key||''),Math.max(1200,Number(options.duration)||2500));
+  }
   function logout(){
     try{ if(backendEventSource){backendEventSource.close(); backendEventSource=null;} }catch{}
     if(activeCall)endActiveCall({notify:true});
@@ -2591,7 +2633,7 @@
         :await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options);
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
-      if(id!=='user-lola')sendCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id});
+      if(id!=='user-lola')commitCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id,commitId:uid('dm-commit')});
       wakeCloudRealtimeSync();
       return true;
     }catch(err){
@@ -2676,7 +2718,7 @@
           const controller=new AbortController();
           const timeout=setTimeout(()=>controller.abort(),12000);
           socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',signal:controller.signal,body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})})
-            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id});wakeCloudRealtimeSync();}})
+            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();commitCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id,commitId:uid('channel-commit')});wakeCloudRealtimeSync();}})
             .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);})
             .finally(()=>clearTimeout(timeout));
         }else{
@@ -3304,7 +3346,7 @@
     }else{if(local.srcObject)local.srcObject=null;local.hidden=true;}
 
     if(!remoteSharing&&call.remoteShareFocused)call.remoteShareFocused=false;
-    const localSharing=!!call.screenTrack;
+    const localSharing=!!call.screenTrack||!!call.nativeScreenSharing||!!call.nativeScreenRequested;
     const shareMode=remoteSharing||localSharing;
     const shell=overlay.querySelector('.azure-call-shell');
     shell?.classList.toggle('screen-share-mode',shareMode);
@@ -3320,7 +3362,7 @@
 
     const audio=call.localStream?.getAudioTracks?.()[0];$('callMicBtn').classList.toggle('off',!!audio&&!audio.enabled);
     $('callCameraBtn').classList.toggle('off',!call.cameraTrack||call.cameraTrack.enabled===false);
-    $('callShareBtn').classList.toggle('off',!call.screenTrack);
+    $('callShareBtn').classList.toggle('off',!localSharing);
   }
   async function postCallSignalHttp(targetUserId,signal){
     if(!socialCloudReady()||!targetUserId||!signal)return false;
@@ -3332,18 +3374,25 @@
       return false;
     }
   }
+  function remoteShareToastKey(call){return `screen-share:${call?.id||''}`;}
+  function clearRemoteShareNotice(call){if(call)hideToast(remoteShareToastKey(call));}
   function showRemoteShareNotice(call){
     if(!call)return;
     const name=getProfile(call.peerId)?.username||'A outra pessoa';
-    showToast(`${name} começou a compartilhar a tela. Toque para abrir.`,{duration:6500,onClick:()=>openRemoteSharedScreen()});
+    showToast(`${name} está compartilhando a tela. Toque para abrir.`,{persistent:true,key:remoteShareToastKey(call),keepAfterClick:true,onClick:()=>openRemoteSharedScreen()});
   }
   async function postScreenShareApiSignal(call,kind,payload={}){
-    if(!call||!socialCloudReady())return false;
+    if(!call)return false;
     const signal={kind,callId:call.id,callType:call.type,signalId:uid('screen-sig'),...payload};
-    try{
-      await cloudRequest('/api/realtime/signals',{method:'POST',body:JSON.stringify({targetUserId:call.peerId,signal})});
-      return true;
-    }catch(err){console.warn('[AzureCall] Screen API signal:',kind,err?.message||err);return false;}
+    let realtimeOk=false,httpOk=false;
+    if(cloudRealtimeConnected())realtimeOk=sendCloudRealtime({type:'call.signal',targetUserId:call.peerId,signal});
+    if(socialCloudReady()){
+      try{
+        await cloudRequest('/api/realtime/signals',{method:'POST',body:JSON.stringify({targetUserId:call.peerId,signal})});
+        httpOk=true;
+      }catch(err){console.warn('[AzureCall] Screen API signal:',kind,err?.message||err);}
+    }
+    return realtimeOk||httpOk;
   }
   async function syncScreenShareApiState(call,{force=false}={}){
     if(!call||activeCall!==call||!socialCloudReady())return false;
@@ -3357,7 +3406,7 @@
         const was=!!call.remoteScreenSharing;
         call.remoteScreenSharing=!!state.active;
         if(call.remoteScreenSharing&&!was)showRemoteShareNotice(call);
-        if(!call.remoteScreenSharing&&call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});
+        if(!call.remoteScreenSharing){clearRemoteShareNotice(call);if(call.nativeScreenPc)clearNativeScreenReceiver(call);if(call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});}
         updateCallUi();
       }
       return true;
@@ -3371,8 +3420,10 @@
     try{
       const offer=await call.pc.createOffer();
       await call.pc.setLocalDescription(offer);
-      const announced=await postScreenShareApiSignal(call,'screen-share-start');
-      const offered=await postScreenShareApiSignal(call,'screen-offer',{description:call.pc.localDescription});
+      const [announced,offered]=await Promise.all([
+        postScreenShareApiSignal(call,'screen-share-start'),
+        postScreenShareApiSignal(call,'screen-offer',{description:call.pc.localDescription}),
+      ]);
       armCallConnectTimeout(call);
       return announced&&offered;
     }catch(err){console.warn('[AzureCall] Screen API renegotiation:',err?.message||err);return false;}
@@ -3408,7 +3459,7 @@
   function scheduleCallSignalPoll(){
     clearTimeout(callSignalPollTimer);callSignalPollTimer=null;
     if(!socialCloudReady())return;
-    const delay=activeCall?900:3000;
+    const delay=activeCall?(cloudRealtimeConnected()?1200:500):3000;
     callSignalPollTimer=setTimeout(async()=>{await pollCallSignals();scheduleCallSignalPoll();},delay);
   }
   function startCallSignalPolling(){callSignalCursor=Date.now()-5000;scheduleCallSignalPoll();}
@@ -3451,12 +3502,17 @@
   function isMobileCallDevice(){
     return !!(navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (matchMedia?.('(pointer:coarse)')?.matches&&innerWidth<=1000));
   }
+  function nativeAndroidScreenBridge(){
+    const bridge=window.AzurecordNative;
+    return bridge&&typeof bridge.startScreenShare==='function'&&typeof bridge.stopScreenShare==='function'?bridge:null;
+  }
+  function nativeAndroidScreenSupported(){return !!nativeAndroidScreenBridge();}
   function screenCaptureGetter(){
     if(typeof navigator.mediaDevices?.getDisplayMedia==='function')return constraints=>navigator.mediaDevices.getDisplayMedia(constraints);
     if(typeof navigator.getDisplayMedia==='function')return constraints=>navigator.getDisplayMedia(constraints);
     return null;
   }
-  function screenCaptureSupported(){return !!screenCaptureGetter();}
+  function screenCaptureSupported(){return nativeAndroidScreenSupported()||!!screenCaptureGetter();}
   async function requestAzureDisplayMedia(){
     if(window.azurecordDesktop?.getDisplaySources&&window.azurecordDesktop?.selectDisplaySource){
       const selected=await chooseDesktopDisplaySource();
@@ -3470,6 +3526,7 @@
     const mobile=isMobileCallDevice();
     const stream=await capture({video:true,audio:false});
     const track=stream?.getVideoTracks?.()[0];
+    if(track){try{track.contentHint='motion';}catch{}}
     if(track?.applyConstraints){
       const limits=mobile
         ? {frameRate:{ideal:15,max:24},width:{ideal:1280,max:1920},height:{ideal:720,max:1080}}
@@ -3483,7 +3540,7 @@
     const wantsCamera=call.type==='video';
     call.localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:wantsCamera});
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
-    if(call.type==='screen'&&!incoming&&!call.screenTrack){
+    if(call.type==='screen'&&!incoming&&!call.screenTrack&&!nativeAndroidScreenSupported()){
       if(!screenCaptureSupported())throw new Error('Este navegador não oferece compartilhamento de tela.');
       call.screenStream=await requestAzureDisplayMedia();
       call.screenTrack=call.screenStream.getVideoTracks()[0]||null;
@@ -3495,18 +3552,97 @@
     if(!channel||channel.readyState!=='open')return false;
     try{channel.send(JSON.stringify(payload));return true;}catch{return false;}
   }
-  function publishLocalScreenState(call){if(call)sendCallControl(call,{type:'screen-share',active:!!call.screenTrack});}
+  function publishLocalScreenState(call){if(call)sendCallControl(call,{type:'screen-share',active:!!call.screenTrack||!!call.nativeScreenSharing});}
   function setupCallControlChannel(call,channel){
     if(!call||!channel)return;
     call.controlChannel=channel;
     channel.onopen=()=>publishLocalScreenState(call);
     channel.onmessage=event=>{
       let payload=null;try{payload=JSON.parse(String(event.data||''));}catch{return;}
-      if(payload?.type==='screen-share'){const was=!!call.remoteScreenSharing;call.remoteScreenSharing=!!payload.active;if(call.remoteScreenSharing&&!was)showRemoteShareNotice(call);if(!call.remoteScreenSharing&&call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();}
+      if(payload?.type==='screen-share'){const was=!!call.remoteScreenSharing;call.remoteScreenSharing=!!payload.active;if(call.remoteScreenSharing&&!was)showRemoteShareNotice(call);if(!call.remoteScreenSharing){clearRemoteShareNotice(call);if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});}updateCallUi();}
     };
     channel.onclose=()=>{if(call.controlChannel===channel)call.controlChannel=null;};
     channel.onerror=()=>{};
   }
+  function clearNativeScreenReceiver(call){
+    if(!call)return;
+    const nativePc=call.nativeScreenPc;call.nativeScreenPc=null;
+    try{nativePc?.close?.();}catch{}
+    call.nativeScreenPendingIce=[];
+    if(call.nativeRemoteScreenTrack&&call.remoteScreenTrack===call.nativeRemoteScreenTrack){call.remoteScreenTrack=null;call.remoteScreenStream=new MediaStream();}
+    call.nativeRemoteScreenTrack=null;call.remoteScreenSharing=false;clearRemoteShareNotice(call);
+    if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});
+    updateCallUi();
+  }
+  async function ensureNativeScreenReceiver(call){
+    if(call.nativeScreenPc)return call.nativeScreenPc;
+    await ensureAzureCallIceConfig();
+    const pc=new RTCPeerConnection(azureCallRtcConfig);
+    call.nativeScreenPc=pc;call.nativeScreenPendingIce=call.nativeScreenPendingIce||[];
+    pc.onicecandidate=e=>{if(e.candidate)sendCallSignal('native-screen-ice',{candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
+    pc.ontrack=e=>{
+      const track=e.track;if(!track||track.kind!=='video')return;
+      call.nativeRemoteScreenTrack=track;call.remoteScreenTrack=track;call.remoteScreenStream=new MediaStream([track]);
+      const was=!!call.remoteScreenSharing;call.remoteScreenSharing=true;if(!was)showRemoteShareNotice(call);
+      track.onunmute=()=>{call.remoteScreenSharing=true;showRemoteShareNotice(call);updateCallUi();$('remoteCallVideo')?.play?.().catch(()=>{});};
+      track.onmute=()=>{updateCallUi();};
+      track.onended=()=>{if(call.nativeRemoteScreenTrack===track)clearNativeScreenReceiver(call);};
+      updateCallUi();
+    };
+    pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState))clearNativeScreenReceiver(call);};
+    return pc;
+  }
+  async function handleNativeScreenOffer(call,description){
+    if(!call||!description)return;
+    const pc=await ensureNativeScreenReceiver(call);
+    if(pc.signalingState!=='stable'){try{await pc.setLocalDescription({type:'rollback'});}catch{}}
+    await pc.setRemoteDescription(description);
+    for(const candidate of call.nativeScreenPendingIce||[]){try{await pc.addIceCandidate(candidate);}catch{}}
+    call.nativeScreenPendingIce=[];
+    const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+    sendCallSignal('native-screen-answer',{description:pc.localDescription});
+  }
+  async function handleNativeScreenIce(call,candidate){
+    if(!call||!candidate)return;
+    const pc=call.nativeScreenPc;
+    if(!pc?.remoteDescription){call.nativeScreenPendingIce=call.nativeScreenPendingIce||[];call.nativeScreenPendingIce.push(candidate);return;}
+    try{await pc.addIceCandidate(candidate);}catch(err){console.warn('[AzureCall] native screen ICE:',err?.message||err);}
+  }
+  async function startNativeAndroidScreenShare(call){
+    const bridge=nativeAndroidScreenBridge();
+    if(!bridge||!call||!cloudToken)return false;
+    if(call.nativeScreenRequested||call.nativeScreenSharing)return true;
+    call.nativeScreenRequested=true;updateCallUi();
+    try{
+      const ok=bridge.startScreenShare(JSON.stringify({callId:call.id,peerId:call.peerId,token:cloudToken,apiBaseUrl:CLOUD_API_URL}));
+      if(ok===false)throw new Error('O Android recusou iniciar a captura.');
+      return true;
+    }catch(err){
+      call.nativeScreenRequested=false;call.nativeScreenSharing=false;updateCallUi();
+      showToast(err.message||'Não foi possível abrir a permissão de compartilhamento do Android.');
+      return false;
+    }
+  }
+  function stopNativeAndroidScreenShare(call){
+    const bridge=nativeAndroidScreenBridge();if(!call)return;
+    try{bridge?.stopScreenShare?.(call.id);}catch{}
+    call.nativeScreenRequested=false;call.nativeScreenSharing=false;call.nativeScreenAutoStart=false;publishLocalScreenState(call);updateCallUi();
+  }
+  function handleAzurecordNativeEvent(raw){
+    let payload=raw;try{if(typeof raw==='string')payload=JSON.parse(raw);}catch{return;}
+    const call=activeCall;if(!call||!payload||typeof payload!=='object')return;
+    if(payload.callId&&String(payload.callId)!==String(call.id))return;
+    if(payload.type==='screenShare.state'){
+      call.nativeScreenRequested=false;call.nativeScreenSharing=!!payload.active;
+      if(!payload.active)call.nativeScreenAutoStart=false;
+      publishLocalScreenState(call);updateCallUi();return;
+    }
+    if(payload.type==='screenShare.error'){
+      call.nativeScreenRequested=false;call.nativeScreenSharing=false;call.nativeScreenAutoStart=false;updateCallUi();
+      showToast(payload.message||'A transmissão nativa do Android falhou.');return;
+    }
+  }
+  window.__azurecordNativeEvent=handleAzurecordNativeEvent;
   async function openRemoteSharedScreen(){
     const call=activeCall;if(!call?.remoteScreenSharing)return;
     call.remoteShareFocused=true;updateCallUi();
@@ -3566,8 +3702,8 @@
           call.remoteScreenTrack=track;
           if(!call.remoteScreenStream.getTracks().some(t=>t.id===track.id))call.remoteScreenStream.addTrack(track);
           track.onunmute=()=>{const was=!!call.remoteScreenSharing;call.remoteScreenSharing=true;if(!was)showRemoteShareNotice(call);updateCallUi();$('remoteCallVideo')?.play?.().catch(()=>{});};
-          track.onmute=()=>{call.remoteScreenSharing=false;if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();};
-          track.onended=()=>{call.remoteScreenSharing=false;if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();};
+          track.onmute=()=>{updateCallUi();};
+          track.onended=()=>{call.remoteScreenSharing=false;clearRemoteShareNotice(call);if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();};
         }else{
           call.remoteCameraTrack=track;
           if(!call.remoteCameraStream.getTracks().some(t=>t.id===track.id))call.remoteCameraStream.addTrack(track);
@@ -3669,8 +3805,8 @@
     if(typeof RTCPeerConnection==='undefined'){showToast('WebRTC não está disponível neste dispositivo.');return;}
     let initialScreenCapture=null;
     if(type==='screen'){
-      if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'O Chrome deste celular não expôs a captura de tela para esta página. Atualize o navegador e tente novamente.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
-      initialScreenCapture=requestAzureDisplayMedia().then(stream=>({stream}),error=>({error}));
+      if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'O navegador deste celular não expôs a captura de tela para esta página. Use o app Android nativo ou atualize o navegador.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
+      if(!nativeAndroidScreenSupported())initialScreenCapture=requestAzureDisplayMedia().then(stream=>({stream}),error=>({error}));
     }
     const realtime=await ensureAzureCallRealtime();
     if(!realtime.ok){
@@ -3679,7 +3815,7 @@
       showToast(explainAzureCallRealtimeFailure(realtime));return;
     }
     await ensureAzureCallIceConfig();
-    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
+    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,nativeScreenSharing:false,nativeScreenRequested:false,nativeScreenAutoStart:type==='screen'&&nativeAndroidScreenSupported(),nativeScreenPc:null,nativeScreenPendingIce:[],nativeRemoteScreenTrack:null,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
     activeCall=call;scheduleCallSignalPoll();updateCallUi();
     try{
       if(initialScreenCapture){
@@ -3730,15 +3866,18 @@
   async function tuneScreenSender(sender){
     if(!sender?.getParameters||!sender?.setParameters)return;
     try{
+      try{if(sender.track)sender.track.contentHint='motion';}catch{}
       const params=sender.getParameters()||{};
-      params.degradationPreference='maintain-resolution';
+      params.degradationPreference='maintain-framerate';
       if(!params.encodings?.length)params.encodings=[{}];
-      const mobile=isMobileCallDevice();params.encodings[0]={...params.encodings[0],maxBitrate:mobile?1800000:2800000,maxFramerate:mobile?24:30};
+      const mobile=isMobileCallDevice();params.encodings[0]={...params.encodings[0],maxBitrate:mobile?1400000:2200000,maxFramerate:mobile?20:24};
       await sender.setParameters(params);
     }catch(err){console.warn('[AzureCall] screen sender params:',err?.message||err);}
   }
   async function stopCallScreenShare(){
-    const call=activeCall;if(!call?.screenTrack)return;
+    const call=activeCall;if(!call)return;
+    if(call.nativeScreenSharing||call.nativeScreenRequested){stopNativeAndroidScreenShare(call);return;}
+    if(!call.screenTrack)return;
     const old=call.screenTrack;call.screenTrack=null;try{old.stop();}catch{}
     if(call.screenStream){for(const t of call.screenStream.getTracks())if(t!==old)try{t.stop();}catch{}call.screenStream=null;}
     await prepareCallVideoSender(call,null,'screen');
@@ -3747,9 +3886,10 @@
   }
   async function toggleCallScreen(){
     const call=activeCall;if(!call?.pc)return;
-    if(call.screenTrack){await stopCallScreenShare();return;}
-    if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'Este Chrome do celular não expôs a captura de tela para esta página. Atualize o navegador e tente novamente.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
+    if(call.screenTrack||call.nativeScreenSharing||call.nativeScreenRequested){await stopCallScreenShare();return;}
+    if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'Este navegador do celular não expôs a captura de tela. Use o app Android nativo para compartilhar com MediaProjection.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
     if(!socialCloudReady()){showToast('A API do Azurecord precisa estar conectada para iniciar a transmissão.');return;}
+    if(nativeAndroidScreenSupported()){await startNativeAndroidScreenShare(call);return;}
     try{
       const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
       call.screenStream=stream;call.screenTrack=track;
@@ -3771,6 +3911,8 @@
     const call=activeCall;if(!call)return;
     if(notify)sendCallSignal('hangup');
     if(call.screenTrack&&socialCloudReady())void postScreenShareApiSignal(call,'screen-share-stop');
+    if(call.nativeScreenSharing||call.nativeScreenRequested)stopNativeAndroidScreenShare(call);
+    clearRemoteShareNotice(call);clearNativeScreenReceiver(call);
     clearTimeout(call.ringTimer);clearCallConnectTimer(call);
     const tracks=new Set([...(call.localStream?.getTracks?.()||[]),...(call.screenStream?.getTracks?.()||[])]);for(const track of tracks)try{track.stop();}catch{}
     try{call.controlChannel?.close?.();}catch{}try{call.pc?.close();}catch{}
@@ -3801,9 +3943,13 @@
       if(call.seenSignals.size>300){const first=call.seenSignals.values().next().value;call.seenSignals.delete(first);}
     }
     if(kind==='ring'){updateCallUi();return;}
-    if(kind==='accepted'){clearTimeout(call.ringTimer);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);setTimeout(()=>void syncScreenShareApiState(call,{force:true}),400);return;}
+    if(kind==='accepted'){clearTimeout(call.ringTimer);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);setTimeout(()=>void syncScreenShareApiState(call,{force:true}),250);if(call.nativeScreenAutoStart&&!call.nativeScreenSharing&&!call.nativeScreenRequested)setTimeout(()=>void startNativeAndroidScreenShare(call),180);return;}
+    if(kind==='native-screen-offer'){try{await handleNativeScreenOffer(call,signal.description);}catch(err){console.warn('[AzureCall] native screen offer:',err?.message||err);showToast('A transmissão Android não conseguiu negociar o vídeo.');}return;}
+    if(kind==='native-screen-ice'){await handleNativeScreenIce(call,signal.candidate);return;}
+    if(kind==='native-screen-stop'){clearNativeScreenReceiver(call);return;}
+    if(kind==='native-screen-answer'){return;}
     if(kind==='screen-share-start'){const was=!!call.remoteScreenSharing;call.remoteScreenSharing=true;call.shareRevision=Math.max(Number(call.shareRevision||0),Number(signal.shareRevision||0));if(!was)showRemoteShareNotice(call);updateCallUi();return;}
-    if(kind==='screen-share-stop'){call.remoteScreenSharing=false;call.shareRevision=Math.max(Number(call.shareRevision||0),Number(signal.shareRevision||0));if(call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();return;}
+    if(kind==='screen-share-stop'){call.remoteScreenSharing=false;call.shareRevision=Math.max(Number(call.shareRevision||0),Number(signal.shareRevision||0));clearRemoteShareNotice(call);if(call.nativeScreenPc)clearNativeScreenReceiver(call);if(call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();return;}
     if(kind==='screen-offer'){try{call.remoteScreenSharing=true;call.shareRevision=Math.max(Number(call.shareRevision||0),Number(signal.shareRevision||0));await handleScreenShareApiOffer(call,signal.description);}catch(err){console.warn('[AzureCall] screen offer:',err?.message||err);showToast('A transmissão não conseguiu negociar o vídeo.');}return;}
     if(kind==='screen-answer'){try{await handleScreenShareApiAnswer(call,signal.description);}catch(err){console.warn('[AzureCall] screen answer:',err?.message||err);}return;}
     if(kind==='offer'){try{await handleCallOffer(call,signal.description);}catch(err){console.warn('[AzureCall] offer:',err);endActiveCall({notify:true,message:'A chamada não conseguiu conectar.'});}return;}
