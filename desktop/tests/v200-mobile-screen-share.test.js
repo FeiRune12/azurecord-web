@@ -40,3 +40,24 @@ test('2.0: versão segue rollover .9 para próxima geração',()=>{
   assert.ok(parts[2]>=0&&parts[2]<=9,'Após patch .9, incremente o major e volte para .0.0');
   assert.equal(pkg.version,'2.0.0');
 });
+
+
+test('2.0: answerer pode iniciar transmissão e renegocia vídeo para sendrecv',()=>{
+  const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
+  assert.match(app,/function getCallVideoTransceiver/);
+  assert.match(app,/prepareCallVideoSender/);
+  assert.match(app,/transceiver\.direction='sendrecv'/);
+  assert.match(app,/transceiver\.currentDirection/);
+  assert.match(app,/renegotiateCall\(\{reason:'screen-share-start'\}\)/);
+  assert.match(app,/renegotiateCall\(\{reason:'screen-share-stop'\}\)/);
+  assert.match(app,/call\.direction==='incoming'/);
+  assert.match(app,/setLocalDescription\(\{type:'rollback'\}\)/);
+});
+
+test('2.0: renegociação de mídia espera signalingState estável e enfileira colisões',()=>{
+  const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
+  assert.match(app,/call\.pc\.signalingState!=='stable'/);
+  assert.match(app,/call\.renegotiating/);
+  assert.match(app,/call\.renegotiatePending/);
+  assert.match(app,/queued-media-change/);
+});

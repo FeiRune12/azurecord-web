@@ -3154,9 +3154,23 @@
   function callKindLabel(kind){return kind==='video'?'vídeo':kind==='screen'?'compartilhamento de tela':'voz';}
   function callPeer(){return getProfile(activeCall?.peerId)||{username:'Usuário',avatar:''};}
   function outboundVideoTrack(call=activeCall){return call?.screenTrack||((call?.cameraTrack?.enabled!==false)?call?.cameraTrack:null)||null;}
+  function getCallVideoTransceiver(call=activeCall){
+    if(!call?.pc)return null;
+    return call.pc.getTransceivers().find(t=>t.sender?.track?.kind==='video'||t.receiver?.track?.kind==='video')||null;
+  }
   function getCallVideoSender(call=activeCall){
     if(!call?.pc)return null;
-    return call.pc.getSenders().find(sender=>sender.track?.kind==='video')||call.pc.getTransceivers().find(t=>t.receiver?.track?.kind==='video'||t.sender?.track?.kind==='video')?.sender||null;
+    return call.pc.getSenders().find(sender=>sender.track?.kind==='video')||getCallVideoTransceiver(call)?.sender||null;
+  }
+  async function prepareCallVideoSender(call,track){
+    if(!call?.pc)return {sender:null,transceiver:null,needsRenegotiation:false};
+    let transceiver=getCallVideoTransceiver(call),needsRenegotiation=false;
+    if(!transceiver){transceiver=call.pc.addTransceiver('video',{direction:'sendrecv'});needsRenegotiation=true;}
+    const sender=transceiver.sender,desired=String(transceiver.direction||''),negotiated=String(transceiver.currentDirection||'');
+    if(desired!=='sendrecv'&&desired!=='sendonly'){try{transceiver.direction='sendrecv';}catch{}needsRenegotiation=true;}
+    if(negotiated!=='sendrecv'&&negotiated!=='sendonly')needsRenegotiation=true;
+    if(sender)await sender.replaceTrack(track||null);
+    return {sender,transceiver,needsRenegotiation};
   }
   function setCallStatus(status){if(!activeCall)return;activeCall.status=status;updateCallUi();}
   function updateCallUi(){
@@ -3420,6 +3434,7 @@
     if(!call||!description)return;
     if(call.direction==='incoming'&&call.status==='ringing'){call.pendingOffer=description;return;}
     const pc=createCallPeer(call,{offerer:false});
+    if(pc.signalingState!=='stable'){try{await pc.setLocalDescription({type:'rollback'});}catch{}}
     await pc.setRemoteDescription(description);
     attachCallLocalTracks(call,{offerer:false});
     await flushCallIce(call);
@@ -3427,9 +3442,23 @@
     sendCallSignal('answer',{description:pc.localDescription});
     if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);
   }
-  async function renegotiateCall(){
-    const call=activeCall;if(!call?.pc)return;
-    const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);sendCallSignal('offer',{description:call.pc.localDescription});armCallConnectTimeout(call);
+  async function renegotiateCall({reason='media-change'}={}){
+    const call=activeCall;if(!call?.pc)return false;
+    if(call.renegotiating){call.renegotiatePending=true;return false;}
+    call.renegotiating=true;
+    try{
+      const started=Date.now();
+      while(call.pc.signalingState!=='stable'&&Date.now()-started<5000)await new Promise(resolve=>setTimeout(resolve,80));
+      if(call.pc.signalingState!=='stable'){call.renegotiatePending=true;return false;}
+      const offer=await call.pc.createOffer();
+      await call.pc.setLocalDescription(offer);
+      sendCallSignal('offer',{description:call.pc.localDescription,renegotiateReason:reason});
+      armCallConnectTimeout(call);return true;
+    }catch(err){console.warn('[AzureCall] renegociação:',err?.message||err);return false;}
+    finally{
+      call.renegotiating=false;
+      if(call.renegotiatePending&&activeCall===call){call.renegotiatePending=false;setTimeout(()=>void renegotiateCall({reason:'queued-media-change'}),120);}
+    }
   }
   async function azureCallRealtimeHealth(){
     const controller=new AbortController();
@@ -3506,8 +3535,8 @@
     try{
       const stream=await navigator.mediaDevices.getUserMedia({video:true});const track=stream.getVideoTracks()[0];if(!track)return;
       call.cameraTrack=track;if(!call.localStream)call.localStream=new MediaStream();call.localStream.addTrack(track);
-      let sender=getCallVideoSender(call);
-      if(sender)await sender.replaceTrack(track);else{call.pc.addTrack(track,call.localStream);await renegotiateCall();}
+      const prepared=await prepareCallVideoSender(call,track);
+      if(prepared.needsRenegotiation||call.direction==='incoming')await renegotiateCall({reason:'camera-start'});
       track.onended=()=>{if(activeCall===call){call.cameraTrack=null;updateCallUi();}};updateCallUi();
     }catch(err){showToast('Não foi possível ligar a câmera.');}
   }
@@ -3525,7 +3554,9 @@
     const call=activeCall;if(!call?.screenTrack)return;
     const old=call.screenTrack;call.screenTrack=null;try{old.stop();}catch{}
     if(call.screenStream){for(const t of call.screenStream.getTracks())if(t!==old)try{t.stop();}catch{}call.screenStream=null;}
-    const sender=getCallVideoSender(call);if(sender)await sender.replaceTrack(call.cameraTrack?.enabled!==false?call.cameraTrack:null);
+    const replacement=call.cameraTrack?.enabled!==false?call.cameraTrack:null;
+    await prepareCallVideoSender(call,replacement);
+    await renegotiateCall({reason:'screen-share-stop'});
     publishLocalScreenState(call);updateCallUi();
   }
   async function toggleCallScreen(){
@@ -3534,9 +3565,11 @@
     if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'Este navegador do celular ainda não permite compartilhar a tela. Tente um navegador compatível.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
     try{
       const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
-      call.screenStream=stream;call.screenTrack=track;let sender=getCallVideoSender(call);
-      if(sender)await sender.replaceTrack(track);else{const transceiver=call.pc.addTransceiver('video',{direction:'sendrecv'});sender=transceiver.sender;await sender.replaceTrack(track);await renegotiateCall();}
-      await tuneScreenSender(sender);publishLocalScreenState(call);
+      call.screenStream=stream;call.screenTrack=track;
+      const prepared=await prepareCallVideoSender(call,track);
+      await tuneScreenSender(prepared.sender);
+      await renegotiateCall({reason:'screen-share-start'});
+      publishLocalScreenState(call);
       track.onended=()=>{if(activeCall===call)stopCallScreenShare().catch(()=>{});};updateCallUi();
     }catch(err){if(err?.name!=='NotAllowedError')showToast('Não foi possível compartilhar a tela.');}
   }
