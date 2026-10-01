@@ -1,1 +1,1 @@
-Azurecord 3.0.1 Auth Mobile Hotfix
+Azurecord 3.0.2 Deleted Cloud Profile Cache Fix
