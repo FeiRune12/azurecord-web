@@ -1581,8 +1581,9 @@
       const remembered=state.accounts.find(a=>a.id===state.rememberedAccountId);
       state.currentAccountId=null;save();setScreen('loginScreen');
       if(remembered)selectSavedAccount(remembered);
-      if(!cloudOnline)showAuthNotice('O Azurecord Cloud não respondeu. Seus perfis locais foram preservados; tente entrar novamente quando a conexão voltar.',true);
+      if(typeof navigator!=='undefined' && navigator.onLine===false)showAuthNotice('Sem conexão com a internet. Seus perfis locais foram preservados.',true);
       else if(remembered?.cloud)showAuthNotice('Conta cloud encontrada. Digite sua senha uma única vez para entrar; confirmação só é usada ao criar conta.');
+      else showAuthNotice('');
     };
     const loadingElapsed=performance.now()-(window.__azurecordBootStarted||performance.now());
     setTimeout(finishTarget,Math.max(0,700-loadingElapsed));
