@@ -1056,3 +1056,67 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .presence-dot.dnd{display:inline-block!important;background:#ef5d73!important;box-shadow:0 0 0 3px rgba(239,93,115,.10)!important}
 .presence-dot.offline{display:inline-block!important;background:#687180!important}
 @media(max-width:720px){.typing-indicator{padding:2px 12px 1px;font-size:9px}.chat-drop-overlay{inset:8px;border-radius:14px}}
+
+
+/* ===== Azurecord 1.0.5: multiline composer + AzureCall ===== */
+.composer{align-items:flex-end!important}
+.composer textarea#messageInput{
+  flex:1 1 auto!important;width:auto!important;min-width:0!important;min-height:40px!important;max-height:132px!important;
+  resize:none!important;overflow-y:auto!important;padding:10px 13px!important;border:1px solid var(--line)!important;
+  border-radius:12px!important;background:var(--panel-2)!important;color:var(--text)!important;font:inherit!important;
+  line-height:1.45!important;scrollbar-width:thin
+}
+.composer textarea#messageInput:focus{border-color:rgba(0,102,255,.45)!important;box-shadow:0 0 0 3px rgba(0,102,255,.07)!important}
+.azure-call-overlay{
+  position:fixed;inset:0;z-index:12000;display:grid;place-items:center;padding:18px;
+  background:rgba(3,6,10,.82);backdrop-filter:blur(18px)
+}
+.azure-call-overlay[hidden]{display:none!important}
+.azure-call-shell{
+  width:min(980px,calc(100vw - 36px));height:min(720px,calc(100dvh - 36px));display:flex;flex-direction:column;
+  overflow:hidden;border:1px solid rgba(255,255,255,.09);border-radius:24px;background:#090d13;
+  box-shadow:0 28px 90px rgba(0,0,0,.62)
+}
+.azure-call-stage{position:relative;flex:1 1 auto;min-height:0;display:grid;place-items:center;overflow:hidden;background:#070a0f}
+.azure-call-remote{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#070a0f}
+.azure-call-remote.audio-only{opacity:0;pointer-events:none}
+.azure-call-fallback{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;color:var(--text)}
+.azure-call-avatar{
+  width:104px;height:104px;border-radius:34px;display:grid;place-items:center;background:linear-gradient(145deg,var(--accent),#143965);
+  color:#fff;font-size:38px;font-weight:950;background-position:center;background-size:cover;box-shadow:0 18px 50px rgba(0,102,255,.2)
+}
+.azure-call-fallback strong{font-size:22px}.azure-call-fallback span{color:var(--muted);font-size:12px}
+.azure-call-local{
+  position:absolute;right:18px;bottom:18px;z-index:4;width:min(240px,28vw);aspect-ratio:16/10;object-fit:cover;
+  border-radius:16px;border:1px solid rgba(255,255,255,.14);background:#111823;box-shadow:0 16px 42px rgba(0,0,0,.42)
+}
+.azure-call-local[hidden]{display:none!important}
+.azure-call-bar{
+  flex:0 0 auto;min-height:86px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;
+  background:#10151e;border-top:1px solid rgba(255,255,255,.06)
+}
+.azure-call-copy{display:flex;flex-direction:column;gap:3px}.azure-call-copy strong{font-size:14px}.azure-call-copy span{font-size:10px;color:var(--muted)}
+.azure-call-actions{display:flex;align-items:center;justify-content:center;gap:9px}
+.call-control{
+  width:46px;height:46px;border:1px solid rgba(255,255,255,.08);border-radius:50%;background:#202733;color:#f3f7ff;
+  font-size:17px;cursor:pointer;display:grid;place-items:center
+}
+.call-control:hover{background:#2a3443}.call-control.off{background:#4a2228;color:#ffb0b8}
+.call-control.accept{background:#1e8d5a;color:#fff}.call-control.hangup{background:#c83e4f;color:#fff}
+.call-control[hidden]{display:none!important}
+@media(max-width:720px){
+  .composer textarea#messageInput{font-size:13px!important;max-height:110px!important}
+  .azure-call-overlay{padding:0}.azure-call-shell{width:100vw;height:100dvh;border:0;border-radius:0}
+  .azure-call-local{right:12px;bottom:12px;width:34vw;max-width:160px;border-radius:12px}
+  .azure-call-bar{padding:12px;flex-direction:column;gap:10px}.azure-call-copy{text-align:center}
+  .call-control{width:43px;height:43px}
+}
+
+.azure-call-fallback[hidden]{display:none!important}
+@media(max-width:720px){
+  #voiceBtn:not([hidden]),#videoBtn:not([hidden]){
+    display:grid!important;place-items:center!important;width:34px!important;height:34px!important;padding:0!important;font-size:0!important
+  }
+  #voiceBtn:not([hidden])::before{content:'☎';font-size:15px}
+  #videoBtn:not([hidden])::before{content:'▣';font-size:15px}
+}

@@ -229,6 +229,31 @@ export class UserHub {
       }
     }
 
+    if (message?.type === "call.signal") {
+      const targetUserId = String(message.targetUserId || "");
+      const rawSignal = message.signal && typeof message.signal === "object" ? message.signal : null;
+      if (!targetUserId || targetUserId === session.userId || !rawSignal) return;
+      const friends = await this.friendIdsFor(session);
+      if (!friends.includes(targetUserId)) return;
+      const kind = String(rawSignal.kind || "");
+      const callId = String(rawSignal.callId || "").slice(0, 120);
+      const callType = ["voice", "video", "screen"].includes(String(rawSignal.callType)) ? String(rawSignal.callType) : "voice";
+      if (!callId || !["ring","offer","answer","ice","hangup","decline","busy"].includes(kind)) return;
+      const signal = { kind, callId, callType };
+      if ((kind === "offer" || kind === "answer") && rawSignal.description && typeof rawSignal.description === "object") signal.description = rawSignal.description;
+      if (kind === "ice" && rawSignal.candidate && typeof rawSignal.candidate === "object") signal.candidate = rawSignal.candidate;
+      if (rawSignal.reason) signal.reason = String(rawSignal.reason).slice(0, 80);
+      if (JSON.stringify(signal).length > 180000) return;
+      await this.notifyUser(targetUserId, {
+        type: "call.signal",
+        eventId: crypto.randomUUID(),
+        fromUserId: session.userId,
+        signal,
+        at: Date.now(),
+      });
+      return;
+    }
+
     if (message?.type === "account.commit") {
       await this.notifyUser(session.userId, {
         type: "account.changed",
@@ -396,7 +421,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.2.0",
+        version: "1.3.0",
         transport: "websocket",
         hibernation: true,
       });

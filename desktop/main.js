@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, Notification, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, Notification, shell, safeStorage, desktopCapturer, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater } = require('./updater');
@@ -204,6 +204,20 @@ app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
   try {
     app.setAppUserModelId('com.azurecord.app');
+
+    try {
+      session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+        try {
+          const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } });
+          callback(sources[0] ? { video: sources[0] } : {});
+        } catch (err) {
+          log('[display-media]', err?.message || err);
+          callback({});
+        }
+      }, { useSystemPicker: true });
+    } catch (err) {
+      log('[display-media-handler]', err?.message || err);
+    }
 
     ipcMain.handle('desktop:backend-info', () => ({
       host: backendAddress?.address || '127.0.0.1',

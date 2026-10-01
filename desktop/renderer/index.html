@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0066ff" />
   <title>Azurecord</title>
   <link rel="icon" type="image/png" href="assets/azurecord-mark.png" />
-  <link rel="stylesheet" href="styles.css?v=1.0.4" />
+  <link rel="stylesheet" href="styles.css?v=1.0.5" />
 
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0d6efd">
@@ -116,19 +116,20 @@
 
       <section id="chatView" hidden>
         <header id="chatHeader" class="chat-header"><button id="chatTitleTrigger" class="chat-title-wrap dm-profile-trigger"><span id="chatIcon" class="hash">#</span><div><h2 id="channelTitle">geral</h2><p id="channelTopic">Conversa principal da comunidade.</p></div></button><div class="chat-actions"><button class="action-chip" id="voiceBtn">◉ Voz</button><button class="action-chip" id="videoBtn">▣ Vídeo</button><button class="action-chip" id="screenBtn">▤ Tela</button><button class="action-chip" id="searchBtn">⌕</button><button class="action-chip" id="peopleBtn">👥 Pessoas</button><button class="action-chip" id="lolaStatusBtn" type="button" hidden>🧠 Configurar Lola</button><button class="action-chip" id="newLolaChatBtn" type="button" hidden>✦ Nova conversa</button><button class="action-chip" id="clearDmBtn" hidden>🗑 Limpar</button><button class="action-chip" id="memberToggle">☰</button></div></header>
-        <div class="chat-body"><div id="chatBanner" class="channel-banner"><div class="banner-icon">#</div><div><strong id="channelWelcome">Bem-vindo a #geral</strong><span>Este é o começo desta conversa.</span></div></div><div id="messages" class="messages"></div><div id="chatDropOverlay" class="chat-drop-overlay" hidden><div><strong>Solte para anexar</strong><span>Os arquivos serão enviados pelo Azurecord R2.</span></div></div><div id="attachmentPreview" class="attachment-preview" hidden></div><div id="typingIndicator" class="typing-indicator" hidden></div><div id="composerPopover" class="composer-popover" hidden></div><form id="composer" class="composer"><button type="button" class="composer-plus" id="attachBtn" aria-label="Anexar arquivo">＋</button><input id="messageInput" autocomplete="off" placeholder="Conversar em #geral"><input id="fileInput" type="file" multiple hidden><div class="composer-tools"><button type="button" class="composer-quick" id="gifBtn" aria-label="GIF">GIF</button><button type="button" class="composer-quick" id="stickerBtn" aria-label="Sticker">✦</button><button type="button" class="composer-quick" id="emojiBtn" aria-label="Emoji">☺</button><button type="button" class="composer-quick" id="appsBtn" aria-label="Apps">✣</button></div><button class="send-btn" type="submit" aria-label="Enviar">➤</button></form></div>
+        <div class="chat-body"><div id="chatBanner" class="channel-banner"><div class="banner-icon">#</div><div><strong id="channelWelcome">Bem-vindo a #geral</strong><span>Este é o começo desta conversa.</span></div></div><div id="messages" class="messages"></div><div id="chatDropOverlay" class="chat-drop-overlay" hidden><div><strong>Solte para anexar</strong><span>Os arquivos serão enviados pelo Azurecord R2.</span></div></div><div id="attachmentPreview" class="attachment-preview" hidden></div><div id="typingIndicator" class="typing-indicator" hidden></div><div id="composerPopover" class="composer-popover" hidden></div><form id="composer" class="composer"><button type="button" class="composer-plus" id="attachBtn" aria-label="Anexar arquivo">＋</button><textarea id="messageInput" rows="1" maxlength="8000" autocomplete="off" placeholder="Conversar em #geral" aria-label="Mensagem"></textarea><input id="fileInput" type="file" multiple hidden><div class="composer-tools"><button type="button" class="composer-quick" id="gifBtn" aria-label="GIF">GIF</button><button type="button" class="composer-quick" id="stickerBtn" aria-label="Sticker">✦</button><button type="button" class="composer-quick" id="emojiBtn" aria-label="Emoji">☺</button><button type="button" class="composer-quick" id="appsBtn" aria-label="Apps">✣</button></div><button class="send-btn" type="submit" aria-label="Enviar">➤</button></form></div>
       </section>
     </main>
 
     <aside id="memberPanel" class="member-panel"><div class="member-panel-head"><strong>MEMBROS</strong><button class="icon-btn" id="memberClose">×</button></div><div id="memberList" class="member-list"></div></aside>
     <aside id="profilePeek" class="dm-profile-peek" hidden><div class="dm-profile-topbar"><span>PERFIL</span><button class="icon-btn" id="profilePeekClose">×</button></div><div id="profilePeekCard" class="dm-profile-card"></div></aside>
   </section>
+  <section id="callOverlay" class="azure-call-overlay" hidden><div class="azure-call-shell"><div class="azure-call-stage"><video id="remoteCallVideo" class="azure-call-remote" autoplay playsinline></video><div id="callRemoteFallback" class="azure-call-fallback"><div id="callRemoteAvatar" class="azure-call-avatar">A</div><strong id="callPeerName">AzureCall</strong><span id="callStatusText">Conectando…</span></div><video id="localCallVideo" class="azure-call-local" autoplay muted playsinline></video></div><div class="azure-call-bar"><div class="azure-call-copy"><strong id="callTitle">AzureCall</strong><span id="callSubtitle">Chamada privada</span></div><div class="azure-call-actions"><button id="callAcceptBtn" class="call-control accept" type="button" hidden aria-label="Atender">✓</button><button id="callDeclineBtn" class="call-control hangup" type="button" hidden aria-label="Recusar">✕</button><button id="callMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="callCameraBtn" class="call-control" type="button" aria-label="Câmera">▣</button><button id="callShareBtn" class="call-control" type="button" aria-label="Compartilhar tela">▤</button><button id="callHangupBtn" class="call-control hangup" type="button" aria-label="Encerrar">☎</button></div></div></div></section>
 </div>
-<script src="config.js?v=1.0.4"></script>
-<script src="web-shim.js?v=1.0.4"></script>
-<script src="lola-client.js?v=1.0.4"></script>
-<script src="auth-recovery.js?v=1.0.4"></script>
-<script src="app.js?v=1.0.4"></script>
+<script src="config.js?v=1.0.5"></script>
+<script src="web-shim.js?v=1.0.5"></script>
+<script src="lola-client.js?v=1.0.5"></script>
+<script src="auth-recovery.js?v=1.0.5"></script>
+<script src="app.js?v=1.0.5"></script>
 <script src="pwa.js"></script>
 </body>
 </html>
