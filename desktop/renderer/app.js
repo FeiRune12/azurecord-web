@@ -334,6 +334,7 @@
       avatar:String(u.avatar||u.avatarUrl||''),
       banner:String(u.banner||u.bannerUrl||''),
       personality:String(u.personality||'Usuário do Azurecord.'),
+      pronouns:String(u.pronouns||''),
       memberSince:String(u.memberSince||new Date(u.createdAt||Date.now()).toLocaleDateString('pt-BR')),
       role:String(u.role||'Membro'),
       badge:String(u.badge||''),
@@ -369,6 +370,7 @@
       avatar:String(p.avatar||''),
       banner:String(p.banner||''),
       personality:String(p.personality||'Usuário do Azurecord.'),
+      pronouns:String(p.pronouns||'').trim().slice(0,48),
       profileComplete: extra.profileComplete ?? p.profileComplete === true
     };
   }
@@ -412,7 +414,7 @@
     const localSnapshot={
       username:local.username,handle:local.handle,bio:local.bio,accent:local.accent,status:local.status,
       customStatus:local.customStatus,lastSeenAt:local.lastSeenAt,statusUpdatedAt:local.statusUpdatedAt,
-      avatar:local.avatar,banner:local.banner,personality:local.personality,profileComplete:local.profileComplete
+      avatar:local.avatar,banner:local.banner,personality:local.personality,pronouns:local.pronouns,profileComplete:local.profileComplete
     };
     const localWasCustomized=hadLocal&&localProfileLooksCustomized(localSnapshot,profile.email);
 
@@ -3005,7 +3007,7 @@
         <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
         <div class="profile-main-head">
           <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>${customStatusOf(p)?`<div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span>${esc(customStatusOf(p))}</span></div>`:''}</div>
-          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
+          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}${p.pronouns?` <span class="profile-bullet">•</span> ${esc(p.pronouns)}`:''}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
         </div>
         <div class="profile-preview-bio">${esc(p.bio||'Sem bio.')}</div>
         <div class="profile-actions profile-preview-actions"><button class="btn btn-primary wide" data-profile-full="${p.id}">Exibir perfil completo</button></div>
@@ -3126,6 +3128,8 @@
       <label>Nome de usuário<input id="editUsername" value="${esc(p.username)}" maxlength="24"></label>
       <label>Bio<input id="editBio" value="${esc(p.bio||'')}" maxlength="160"></label>
       <label>Mensagem de status<input id="editCustomStatus" value="${esc(p.customStatus||'')}" maxlength="120" placeholder="O que você está fazendo?"></label>
+      <label>Pronomes<input id="editPronouns" value="${esc(p.pronouns||'')}" maxlength="48" placeholder="Ex.: Ela/Dela ou Ele/Dele"></label>
+      <label class="span-2">Personalidade<textarea id="editPersonality" maxlength="240" placeholder="Conte um pouco sobre sua personalidade">${esc(p.personality||'')}</textarea></label>
       <label>Cor de destaque<input id="editAccent" type="color" value="${esc(p.accent||'#0066ff')}"></label>
     </div><div class="onboarding-actions"><button class="btn btn-ghost" id="editCancel">Cancelar</button><button class="btn btn-primary" id="editSave">Salvar alterações</button></div>`);
     let avatar=p.avatar||'',banner=p.banner||'';
@@ -3137,10 +3141,10 @@
       if(!nu){showToast('Escolha um nome de usuário.');return;}
       if(allPeople().some(x=>x.id!==p.id&&usernameKey(x.username)===usernameKey(nu))){showToast('Esse nome de usuário já está em uso.');return;}
       p.username=nu;p.handle='@'+nu.toLowerCase();p.bio=$('editBio').value.trim();p.accent=$('editAccent').value;
-      p.customStatus=$('editCustomStatus').value.trim().slice(0,120);p.statusUpdatedAt=new Date().toISOString();
+      p.customStatus=$('editCustomStatus').value.trim().slice(0,120);p.pronouns=$('editPronouns').value.trim().slice(0,48);p.personality=$('editPersonality').value.trim().slice(0,240)||'Usuário do Azurecord.';p.statusUpdatedAt=new Date().toISOString();
       p.avatar=avatar;p.banner=banner;p.profileComplete=true;
       const account=state.accounts.find(a=>a.id===p.id);
-      if(account)Object.assign(account,{username:p.username,handle:p.handle,bio:p.bio,accent:p.accent,customStatus:p.customStatus,statusUpdatedAt:p.statusUpdatedAt,avatar:p.avatar,banner:p.banner,profileComplete:true});
+      if(account)Object.assign(account,{username:p.username,handle:p.handle,bio:p.bio,accent:p.accent,customStatus:p.customStatus,pronouns:p.pronouns,personality:p.personality,statusUpdatedAt:p.statusUpdatedAt,avatar:p.avatar,banner:p.banner,profileComplete:true});
       state.profiles[p.id]={...p};saveNow();
       if(p.cloud){
         await syncCloudProfile(p,{profileComplete:true});
