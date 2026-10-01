@@ -119,6 +119,8 @@
   let cloudRealtimeSocketReady = false;
   let cloudRealtimeReconnectTimer = null;
   let cloudRealtimeHeartbeatTimer = null;
+  let cloudRealtimeWatchdogTimer = null;
+  let cloudRealtimeLastPongAt = 0;
   let cloudRealtimeReconnectAttempt = 0;
   const cloudRealtimeSeenEvents = new Set();
   let cloudSearchEpoch = 0;
@@ -135,7 +137,10 @@
   let callSignalPollTimer = null;
   let callSignalCursor = Date.now() - 5000;
   let activeCall = null;
-  const AZURECALL_RTC_CONFIG = {iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+  const AZURECALL_FALLBACK_ICE_SERVERS = [{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.l.google.com:19302'}];
+  let azureCallRtcConfig = {iceServers:AZURECALL_FALLBACK_ICE_SERVERS,iceCandidatePoolSize:4};
+  let azureCallIceConfigExpiresAt = 0;
+  let azureCallIceConfigPromise = null;
 
   async function cloudRequest(path, options = {}){
     const {auth=true, ...fetchOptions} = options;
@@ -150,6 +155,32 @@
       throw error;
     }
     return data;
+  }
+
+  async function ensureAzureCallIceConfig({force=false}={}){
+    if(!socialCloudReady())return azureCallRtcConfig;
+    if(!force&&Date.now()<azureCallIceConfigExpiresAt)return azureCallRtcConfig;
+    if(azureCallIceConfigPromise)return azureCallIceConfigPromise;
+    azureCallIceConfigPromise=(async()=>{
+      try{
+        const data=await cloudRequest('/api/realtime/ice-servers');
+        const iceServers=Array.isArray(data?.iceServers)?data.iceServers.filter(server=>server&&server.urls):[];
+        if(iceServers.length){
+          azureCallRtcConfig={iceServers,iceCandidatePoolSize:4};
+          const ttlSeconds=Math.max(60,Math.min(86400,Number(data?.ttl)||3600));
+          azureCallIceConfigExpiresAt=Date.now()+Math.floor(ttlSeconds*800);
+        }else{
+          azureCallRtcConfig={iceServers:AZURECALL_FALLBACK_ICE_SERVERS,iceCandidatePoolSize:4};
+          azureCallIceConfigExpiresAt=Date.now()+60000;
+        }
+      }catch(err){
+        console.warn('[AzureCall] ICE config:',err?.message||err);
+        azureCallRtcConfig={iceServers:AZURECALL_FALLBACK_ICE_SERVERS,iceCandidatePoolSize:4};
+        azureCallIceConfigExpiresAt=Date.now()+60000;
+      }finally{azureCallIceConfigPromise=null;}
+      return azureCallRtcConfig;
+    })();
+    return azureCallIceConfigPromise;
   }
 
   async function cloudBinaryRequest(path,{method='PUT',body=null,headers={},auth=true,signal}={}){
@@ -561,6 +592,8 @@
   function stopCloudRealtimeSocket(){
     clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
     clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+    clearInterval(cloudRealtimeWatchdogTimer);cloudRealtimeWatchdogTimer=null;
+    cloudRealtimeLastPongAt=0;
     cloudRealtimeSocketReady=false;
     const ws=cloudRealtimeSocket;cloudRealtimeSocket=null;
     if(ws){
@@ -750,6 +783,8 @@
 
     clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
     clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+    clearInterval(cloudRealtimeWatchdogTimer);cloudRealtimeWatchdogTimer=null;
+    cloudRealtimeLastPongAt=0;
     if(cloudRealtimeSocket){
       try{cloudRealtimeSocket.onopen=cloudRealtimeSocket.onmessage=cloudRealtimeSocket.onerror=cloudRealtimeSocket.onclose=null;cloudRealtimeSocket.close();}catch{}
     }
@@ -769,17 +804,30 @@
 
     ws.onopen=()=>{
       cloudRealtimeReconnectAttempt=0;
+      cloudRealtimeLastPongAt=Date.now();
       clearInterval(cloudRealtimeHeartbeatTimer);
+      clearInterval(cloudRealtimeWatchdogTimer);
       cloudRealtimeHeartbeatTimer=setInterval(()=>{
         if(ws.readyState===WebSocket.OPEN){
           try{ws.send(JSON.stringify({type:'ping',at:Date.now()}));publishPresence();}catch{}
         }
       },25000);
+      cloudRealtimeWatchdogTimer=setInterval(()=>{
+        if(cloudRealtimeSocket!==ws)return;
+        const stale=Date.now()-cloudRealtimeLastPongAt>65000;
+        if(ws.readyState!==WebSocket.OPEN||stale){
+          cloudRealtimeSocketReady=false;
+          try{ws.close(4000,stale?'heartbeat timeout':'socket unavailable');}catch{}
+          scheduleCloudRealtimeReconnect();
+          wakeCloudRealtimeSync({snapshot:true});
+        }
+      },15000);
     };
 
     ws.onmessage=(ev)=>{
       let event=null;
       try{event=JSON.parse(String(ev.data||''));}catch{return;}
+      cloudRealtimeLastPongAt=Date.now();
       handleCloudRealtimeEvent(event).catch(err=>console.warn('[Azurecord] Realtime event:',err?.message||err));
     };
 
@@ -789,6 +837,8 @@
       if(cloudRealtimeSocket===ws)cloudRealtimeSocket=null;
       cloudRealtimeSocketReady=false;
       clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+      clearInterval(cloudRealtimeWatchdogTimer);cloudRealtimeWatchdogTimer=null;
+      cloudRealtimeLastPongAt=0;
       scheduleCloudRealtimeReconnect();
       wakeCloudRealtimeSync();
     };
@@ -800,6 +850,9 @@
       cloudRealtimeSocket.send(JSON.stringify(event));
       return true;
     }catch{
+      cloudRealtimeSocketReady=false;
+      scheduleCloudRealtimeReconnect();
+      wakeCloudRealtimeSync();
       return false;
     }
   }
@@ -811,7 +864,7 @@
     const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
       (view.mode==='server'&&view.serverId&&view.channelId);
     const base=connected
-      ? (activeConversation?30000:60000)
+      ? (activeConversation?1800:8000)
       : (activeConversation?900:2500);
     if(!cloudRealtimeFailures)return base;
     return Math.min(15000,base*Math.pow(1.7,Math.min(cloudRealtimeFailures,5)));
@@ -848,7 +901,7 @@
       const stamp=Date.now();
       // O snapshot social mantém amigos, DMs recentes, servidores e badges em sincronia,
       // mas não precisa rodar na mesma velocidade da conversa aberta.
-      if(stamp-cloudSocialSnapshotAt>=(cloudRealtimeConnected()?60000:5000)){
+      if(stamp-cloudSocialSnapshotAt>=(cloudRealtimeConnected()?12000:5000)){
         const snapshotOk=await hydrateFromCloudSocial({quiet:true});
         if(snapshotOk)cloudSocialSnapshotAt=Date.now();
         else ok=false;
@@ -3497,7 +3550,7 @@
   }
   function createCallPeer(call,{offerer=false}={}){
     if(call.pc)return call.pc;
-    const pc=new RTCPeerConnection(AZURECALL_RTC_CONFIG);call.pc=pc;call.remoteStream=new MediaStream();call.remoteAudioStream=new MediaStream();call.remoteCameraStream=new MediaStream();call.remoteScreenStream=new MediaStream();
+    const pc=new RTCPeerConnection(azureCallRtcConfig);call.pc=pc;call.remoteStream=new MediaStream();call.remoteAudioStream=new MediaStream();call.remoteCameraStream=new MediaStream();call.remoteScreenStream=new MediaStream();
     if(offerer)setupCallControlChannel(call,pc.createDataChannel('azurecall-control',{ordered:true}));
     else pc.ondatachannel=e=>{if(e.channel?.label==='azurecall-control')setupCallControlChannel(call,e.channel);};
     pc.onicecandidate=e=>{if(e.candidate)sendCallSignal('ice',{candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
@@ -3625,6 +3678,7 @@
       for(const track of captured?.stream?.getTracks?.()||[])try{track.stop();}catch{}
       showToast(explainAzureCallRealtimeFailure(realtime));return;
     }
+    await ensureAzureCallIceConfig();
     const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
     activeCall=call;scheduleCallSignalPoll();updateCallUi();
     try{
@@ -3650,6 +3704,7 @@
     const call=activeCall;if(!call||call.direction!=='incoming'||call.status!=='ringing')return;
     clearTimeout(call.ringTimer);clearCallConnectTimer(call);call.status='connecting';updateCallUi();
     try{
+      await ensureAzureCallIceConfig();
       await acquireCallMedia(call,{incoming:true});createCallPeer(call,{offerer:false});
       directCallSignal(call.peerId,{kind:'accepted',callId:call.id,callType:call.type});
       if(call.pendingOffer){const offer=call.pendingOffer;call.pendingOffer=null;await handleCallOffer(call,offer);}

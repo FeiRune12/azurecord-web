@@ -1332,6 +1332,42 @@ async function handleSocial(request, env, url, path) {
     return json({ ok: true, state });
   }
 
+  if (path === "/api/realtime/ice-servers" && method === "GET") {
+    const fallback = [
+      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "stun:stun.l.google.com:19302" },
+    ];
+    const keyId = String(env.TURN_KEY_ID || "").trim();
+    const apiToken = String(env.TURN_KEY_API_TOKEN || "").trim();
+    if (!keyId || !apiToken) {
+      return json({ ok: true, iceServers: fallback, turn: false, ttl: 60 });
+    }
+    try {
+      const ttl = 3600;
+      const response = await fetch(
+        `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ttl }),
+        }
+      );
+      if (!response.ok) {
+        console.error("AZURECALL TURN CREDENTIAL ERROR", { status: response.status });
+        return json({ ok: true, iceServers: fallback, turn: false, ttl: 60 });
+      }
+      const data = await response.json().catch(() => ({}));
+      const iceServers = Array.isArray(data?.iceServers) ? data.iceServers.filter(server => server && server.urls) : [];
+      return json({ ok: true, iceServers: iceServers.length ? iceServers : fallback, turn: iceServers.some(server => String(server.urls).includes("turn:") || String(server.urls).includes("turns:")), ttl });
+    } catch (error) {
+      console.error("AZURECALL TURN CREDENTIAL ERROR", { message: String(error?.message || error) });
+      return json({ ok: true, iceServers: fallback, turn: false, ttl: 60 });
+    }
+  }
+
   if (path === "/api/realtime/signals" && method === "POST") {
     const body = await readJson(request) || {};
     const targetUserId = String(body.targetUserId || "");
@@ -2608,6 +2644,7 @@ export default {
         cloudPolls: true,
         azureCallV2: true,
         azureCallShareState: true,
+        azureCallTurn: Boolean(env.TURN_KEY_ID && env.TURN_KEY_API_TOKEN),
         largeAttachments: Boolean(env.ATTACHMENTS),
         attachmentStorage: env.ATTACHMENTS ? "r2-multipart" : "disabled",
           },
