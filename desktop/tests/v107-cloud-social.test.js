@@ -54,5 +54,5 @@ test('1.0.7: realtime aceita protocolo empacotado e peers de servidores',()=>{
   assert.match(worker,/WS_PROTOCOL_PREFIX = "azurecord-v1\."/);
   assert.match(worker,/websocketAuth\(request\)/);
   assert.match(worker,/peerIdsFor\(session\)/);
-  assert.match(worker,/version: "1\.4\.0"/);
+  assert.match(worker,/version: "1\.5\.0"/);
 });

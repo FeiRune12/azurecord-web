@@ -1158,8 +1158,9 @@ function cleanCallSignal(value) {
   const kind = String(value.kind || "");
   const callId = String(value.callId || "").slice(0, 120);
   const callType = ["voice","video","screen"].includes(String(value.callType)) ? String(value.callType) : "voice";
-  if (!callId || !["ring","offer","answer","ice","hangup","decline","busy"].includes(kind)) return null;
-  const out = { kind, callId, callType };
+  if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy"].includes(kind)) return null;
+  const signalId = String(value.signalId || "").slice(0, 120);
+  const out = { kind, callId, callType, signalId };
   if ((kind === "offer" || kind === "answer") && value.description && typeof value.description === "object") out.description = value.description;
   if (kind === "ice" && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
   if (value.reason) out.reason = String(value.reason).slice(0, 80);
@@ -2496,7 +2497,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "0.8.3",
+          version: "0.8.4",
         });
       }
 
@@ -2506,7 +2507,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "0.8.3",
+          version: "0.8.4",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
@@ -2529,6 +2530,7 @@ export default {
         livePresence: true,
         serverMemberList: true,
         cloudPolls: true,
+        azureCallV2: true,
         largeAttachments: Boolean(env.ATTACHMENTS),
         attachmentStorage: env.ATTACHMENTS ? "r2-multipart" : "disabled",
           },

@@ -1154,3 +1154,42 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .poll-card{width:100%;padding:10px}
   .poll-option{min-height:40px}
 }
+
+
+/* ===== Azurecord 1.0.8: AzureCall V2 + source picker ===== */
+.screen-source-picker-layer{
+  position:fixed;inset:0;z-index:14000;display:grid;place-items:center;padding:20px;
+  background:rgba(3,6,10,.82);backdrop-filter:blur(14px)
+}
+.screen-source-dialog{
+  width:min(920px,calc(100vw - 32px));max-height:min(760px,calc(100dvh - 32px));overflow:auto;
+  border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:0 28px 90px rgba(0,0,0,.5)
+}
+.screen-source-head{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;border-bottom:1px solid var(--line)
+}
+.screen-source-head>div{display:flex;flex-direction:column;gap:4px}
+.screen-source-head strong{font-size:15px}
+.screen-source-head span{font-size:10px;color:var(--muted)}
+.screen-source-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px
+}
+.screen-source-card{
+  overflow:hidden;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);color:var(--text);
+  text-align:left;cursor:pointer;transition:.15s
+}
+.screen-source-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 70%,white 8%);box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.screen-source-card img,.screen-source-placeholder{
+  display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#070a0f
+}
+.screen-source-placeholder{display:grid;place-items:center;font-size:38px;color:var(--muted)}
+.screen-source-card>div{display:flex;flex-direction:column;gap:3px;padding:10px 12px}
+.screen-source-card strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.screen-source-card span{font-size:9px;color:var(--muted)}
+.screen-source-foot{display:flex;justify-content:flex-end;padding:0 16px 16px}
+@media(max-width:720px){
+  .screen-source-picker-layer{padding:0}
+  .screen-source-dialog{width:100vw;max-height:100dvh;height:100dvh;border:0;border-radius:0}
+  .screen-source-grid{grid-template-columns:1fr;padding:12px}
+  .screen-source-card img,.screen-source-placeholder{aspect-ratio:16/8}
+}

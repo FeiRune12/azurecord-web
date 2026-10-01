@@ -3219,15 +3219,45 @@
   function stopCallSignalPolling(){clearTimeout(callSignalPollTimer);callSignalPollTimer=null;}
   function sendCallSignal(kind,payload={}){
     const call=activeCall;if(!call)return false;
-    const signal={kind,callId:call.id,callType:call.type,...payload};
-    if(cloudRealtimeConnected()&&sendCloudRealtime({type:'call.signal',targetUserId:call.peerId,signal}))return true;
-    void postCallSignalHttp(call.peerId,signal);
-    return socialCloudReady();
+    const signal={kind,callId:call.id,callType:call.type,signalId:uid('sig'),...payload};
+    if(cloudRealtimeConnected())sendCloudRealtime({type:'call.signal',targetUserId:call.peerId,signal});
+    if(socialCloudReady())void postCallSignalHttp(call.peerId,signal);
+    return cloudRealtimeConnected()||socialCloudReady();
   }
   function directCallSignal(targetUserId,signal){
-    if(cloudRealtimeConnected()&&sendCloudRealtime({type:'call.signal',targetUserId,signal}))return true;
-    void postCallSignalHttp(targetUserId,signal);
-    return socialCloudReady();
+    const outgoing={signalId:signal?.signalId||uid('sig'),...signal};
+    if(cloudRealtimeConnected())sendCloudRealtime({type:'call.signal',targetUserId,signal:outgoing});
+    if(socialCloudReady())void postCallSignalHttp(targetUserId,outgoing);
+    return cloudRealtimeConnected()||socialCloudReady();
+  }
+  async function chooseDesktopDisplaySource(){
+    const desktop=window.azurecordDesktop;
+    if(!desktop?.getDisplaySources||!desktop?.selectDisplaySource)return true;
+    const sources=await desktop.getDisplaySources();
+    if(!Array.isArray(sources)||!sources.length)throw new Error('Nenhuma tela ou janela disponível para compartilhar.');
+    return await new Promise(resolve=>{
+      const layer=document.createElement('div');layer.className='screen-source-picker-layer';
+      const cards=sources.map(source=>{
+        const thumb=source.thumbnail?'<img src="'+source.thumbnail+'" alt="">':'<div class="screen-source-placeholder">▣</div>';
+        const kind=source.type==='screen'?'Tela inteira':'Aplicativo';
+        return '<button type="button" class="screen-source-card" data-display-source="'+esc(source.id)+'">'+thumb+'<div><strong>'+esc(source.name||kind)+'</strong><span>'+kind+'</span></div></button>';
+      }).join('');
+      layer.innerHTML='<div class="screen-source-dialog"><div class="screen-source-head"><div><strong>Compartilhar tela</strong><span>Escolha uma tela inteira ou uma janela de aplicativo.</span></div><button type="button" class="icon-btn" data-display-cancel>×</button></div><div class="screen-source-grid">'+cards+'</div><div class="screen-source-foot"><button type="button" class="btn btn-ghost" data-display-cancel>Cancelar</button></div></div>';
+      const finish=value=>{try{layer.remove();}catch{}resolve(value);};
+      layer.querySelectorAll('[data-display-cancel]').forEach(btn=>btn.onclick=()=>finish(false));
+      layer.onclick=e=>{if(e.target===layer)finish(false);};
+      layer.querySelectorAll('[data-display-source]').forEach(btn=>btn.onclick=async()=>{
+        try{const ok=await desktop.selectDisplaySource(btn.dataset.displaySource);if(!ok)throw new Error('Fonte indisponível.');finish(true);}catch(err){showToast(err.message||'Não foi possível selecionar essa tela.');}
+      });
+      document.body.appendChild(layer);
+    });
+  }
+  async function requestAzureDisplayMedia(){
+    if(window.azurecordDesktop?.getDisplaySources&&window.azurecordDesktop?.selectDisplaySource){
+      const selected=await chooseDesktopDisplaySource();
+      if(!selected){const err=new Error('Compartilhamento cancelado.');err.name='NotAllowedError';throw err;}
+    }
+    return await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
   }
   async function acquireCallMedia(call,{incoming=false}={}){
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este dispositivo não oferece acesso ao microfone/câmera.');
@@ -3236,10 +3266,40 @@
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
     if(call.type==='screen'&&!incoming){
       if(!navigator.mediaDevices.getDisplayMedia)throw new Error('Compartilhamento de tela não disponível neste dispositivo.');
-      call.screenStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+      call.screenStream=await requestAzureDisplayMedia();
       call.screenTrack=call.screenStream.getVideoTracks()[0]||null;
       if(call.screenTrack)call.screenTrack.onended=()=>{if(activeCall===call)stopCallScreenShare().catch(()=>{});};
     }
+  }
+  function clearCallConnectTimer(call){if(call?.connectTimer){clearTimeout(call.connectTimer);call.connectTimer=null;}}
+  function markCallConnected(call){if(activeCall!==call)return;clearCallConnectTimer(call);call.connectAttempts=0;call.iceRestarting=false;if(call.status!=='active')setCallStatus('active');}
+  async function restartCallIce(call){
+    if(!call?.pc||activeCall!==call||call.iceRestarting)return;
+    call.iceRestarting=true;call.connectAttempts=(call.connectAttempts||0)+1;setCallStatus('reconnecting');
+    try{
+      if(call.offerer){
+        try{call.pc.restartIce?.();}catch{}
+        const offer=await call.pc.createOffer({iceRestart:true});await call.pc.setLocalDescription(offer);sendCallSignal('offer',{description:call.pc.localDescription,iceRestart:true});
+      }else sendCallSignal('ice-restart');
+    }catch(err){console.warn('[AzureCall] ICE restart:',err?.message||err);}
+    finally{call.iceRestarting=false;armCallConnectTimeout(call);}
+  }
+  function armCallConnectTimeout(call){
+    clearCallConnectTimer(call);
+    if(!call||call.status==='active')return;
+    call.connectTimer=setTimeout(()=>{
+      if(activeCall!==call||call.status==='active')return;
+      if((call.connectAttempts||0)<2)void restartCallIce(call);
+      else endActiveCall({notify:true,message:'A conexão P2P não conseguiu se estabelecer. Tente novamente.'});
+    },12000);
+  }
+  function syncCallPeerState(call){
+    if(activeCall!==call||!call?.pc)return;
+    const connection=call.pc.connectionState,ice=call.pc.iceConnectionState;
+    if(connection==='connected'||ice==='connected'||ice==='completed'){markCallConnected(call);return;}
+    if(connection==='failed'||ice==='failed'){void restartCallIce(call);return;}
+    if(connection==='disconnected'||ice==='disconnected'){setCallStatus('reconnecting');armCallConnectTimeout(call);return;}
+    if((connection==='connecting'||ice==='checking')&&call.status!=='ringing'){setCallStatus('connecting');armCallConnectTimeout(call);}
   }
   function createCallPeer(call,{offerer=false}={}){
     if(call.pc)return call.pc;
@@ -3251,13 +3311,9 @@
       else if(e.track&&!call.remoteStream.getTracks().some(t=>t.id===e.track.id))call.remoteStream.addTrack(e.track);
       e.track.onunmute=updateCallUi;e.track.onmute=updateCallUi;e.track.onended=updateCallUi;updateCallUi();
     };
-    pc.onconnectionstatechange=()=>{
-      if(activeCall!==call)return;
-      if(pc.connectionState==='connected')setCallStatus('active');
-      else if(pc.connectionState==='disconnected')setCallStatus('reconnecting');
-      else if(pc.connectionState==='failed')endActiveCall({notify:true,message:'A conexão da chamada falhou.'});
-      else if(pc.connectionState==='closed')updateCallUi();
-    };
+    pc.onconnectionstatechange=()=>syncCallPeerState(call);
+    pc.oniceconnectionstatechange=()=>syncCallPeerState(call);
+    pc.onicegatheringstatechange=()=>{if(activeCall===call&&pc.iceGatheringState==='complete')syncCallPeerState(call);};
     if(offerer)call.offerer=true;
     return pc;
   }
@@ -3283,11 +3339,11 @@
     await flushCallIce(call);
     const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
     sendCallSignal('answer',{description:pc.localDescription});
-    setCallStatus('connecting');
+    if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);
   }
   async function renegotiateCall(){
     const call=activeCall;if(!call?.pc)return;
-    const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);sendCallSignal('offer',{description:call.pc.localDescription});
+    const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);sendCallSignal('offer',{description:call.pc.localDescription});armCallConnectTimeout(call);
   }
   async function azureCallRealtimeHealth(){
     const controller=new AbortController();
@@ -3331,7 +3387,7 @@
     const realtime=await ensureAzureCallRealtime();
     if(!realtime.ok){showToast(explainAzureCallRealtimeFailure(realtime));return;}
     if(typeof RTCPeerConnection==='undefined'){showToast('WebRTC não está disponível neste dispositivo.');return;}
-    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null};
+    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set()};
     activeCall=call;scheduleCallSignalPoll();updateCallUi();
     try{
       await acquireCallMedia(call,{incoming:false});
@@ -3344,11 +3400,12 @@
   }
   async function acceptIncomingCall(){
     const call=activeCall;if(!call||call.direction!=='incoming'||call.status!=='ringing')return;
-    clearTimeout(call.ringTimer);call.status='connecting';updateCallUi();
+    clearTimeout(call.ringTimer);clearCallConnectTimer(call);call.status='connecting';updateCallUi();
     try{
       await acquireCallMedia(call,{incoming:true});createCallPeer(call,{offerer:false});
+      directCallSignal(call.peerId,{kind:'accepted',callId:call.id,callType:call.type});
       if(call.pendingOffer){const offer=call.pendingOffer;call.pendingOffer=null;await handleCallOffer(call,offer);}
-      else setCallStatus('connecting');
+      else{setCallStatus('connecting');armCallConnectTimeout(call);}
     }catch(err){directCallSignal(call.peerId,{kind:'decline',callId:call.id,callType:call.type,reason:'media_error'});endActiveCall({notify:false});showToast(err.message||'Não foi possível acessar o microfone/câmera.');}
   }
   function declineIncomingCall(){
@@ -3380,7 +3437,7 @@
     if(call.screenTrack){await stopCallScreenShare();return;}
     if(!navigator.mediaDevices?.getDisplayMedia){showToast('Compartilhamento de tela indisponível neste dispositivo.');return;}
     try{
-      const stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});const track=stream.getVideoTracks()[0];if(!track)return;
+      const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
       call.screenStream=stream;call.screenTrack=track;let sender=getCallVideoSender(call);
       if(sender)await sender.replaceTrack(track);else{const transceiver=call.pc.addTransceiver('video',{direction:'sendrecv'});await transceiver.sender.replaceTrack(track);await renegotiateCall();}
       track.onended=()=>{if(activeCall===call)stopCallScreenShare().catch(()=>{});};updateCallUi();
@@ -3389,7 +3446,7 @@
   function endActiveCall({notify=true,message=''}={}){
     const call=activeCall;if(!call)return;
     if(notify)sendCallSignal('hangup');
-    clearTimeout(call.ringTimer);
+    clearTimeout(call.ringTimer);clearCallConnectTimer(call);
     const tracks=new Set([...(call.localStream?.getTracks?.()||[]),...(call.screenStream?.getTracks?.()||[])]);for(const track of tracks)try{track.stop();}catch{}
     try{call.pc?.close();}catch{}
     const remote=$('remoteCallVideo'),local=$('localCallVideo');if(remote)remote.srcObject=null;if(local)local.srcObject=null;
@@ -3404,16 +3461,25 @@
     }
     if(!activeCall&&(kind==='ring'||kind==='offer')){
       if(!isFriend(from))return;
-      activeCall={id:callId,peerId:from,type:['voice','video','screen'].includes(signal.callType)?signal.callType:'voice',direction:'incoming',status:'ringing',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null};
+      activeCall={id:callId,peerId:from,type:['voice','video','screen'].includes(signal.callType)?signal.callType:'voice',direction:'incoming',status:'ringing',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set()};
       activeCall.ringTimer=setTimeout(()=>{if(activeCall?.id===callId)declineIncomingCall();},45000);
       updateCallUi();showToast(`${getProfile(from)?.username||'Alguém'} está ligando…`);
       try{window.azurecordDesktop?.notify?.('AzureCall',`${getProfile(from)?.username||'Alguém'} está ligando para você.`);}catch{}
     }
     const call=activeCall;if(!call||call.id!==callId||call.peerId!==from)return;
+    const signalId=String(signal.signalId||'');
+    if(signalId){
+      call.seenSignals=call.seenSignals||new Set();
+      if(call.seenSignals.has(signalId))return;
+      call.seenSignals.add(signalId);
+      if(call.seenSignals.size>300){const first=call.seenSignals.values().next().value;call.seenSignals.delete(first);}
+    }
     if(kind==='ring'){updateCallUi();return;}
+    if(kind==='accepted'){clearTimeout(call.ringTimer);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);return;}
     if(kind==='offer'){try{await handleCallOffer(call,signal.description);}catch(err){console.warn('[AzureCall] offer:',err);endActiveCall({notify:true,message:'A chamada não conseguiu conectar.'});}return;}
-    if(kind==='answer'){try{if(call.pc){await call.pc.setRemoteDescription(signal.description);await flushCallIce(call);setCallStatus('connecting');}}catch(err){console.warn('[AzureCall] answer:',err);}return;}
-    if(kind==='ice'){if(signal.candidate){if(call.pc?.remoteDescription){try{await call.pc.addIceCandidate(signal.candidate);}catch{}}else call.pendingIce.push(signal.candidate);}return;}
+    if(kind==='answer'){try{if(call.pc){await call.pc.setRemoteDescription(signal.description);await flushCallIce(call);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);syncCallPeerState(call);}}catch(err){console.warn('[AzureCall] answer:',err);}return;}
+    if(kind==='ice'){if(signal.candidate){if(call.pc?.remoteDescription){try{await call.pc.addIceCandidate(signal.candidate);syncCallPeerState(call);}catch(err){console.warn('[AzureCall] ICE candidate:',err?.message||err);}}else call.pendingIce.push(signal.candidate);}return;}
+    if(kind==='ice-restart'){if(call.offerer)void restartCallIce(call);return;}
     if(kind==='decline'){endActiveCall({notify:false,message:'A chamada foi recusada.'});return;}
     if(kind==='busy'){endActiveCall({notify:false,message:'A pessoa já está em outra chamada.'});return;}
     if(kind==='hangup'){endActiveCall({notify:false,message:'A chamada foi encerrada.'});return;}

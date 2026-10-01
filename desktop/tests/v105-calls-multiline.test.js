@@ -34,7 +34,8 @@ test('1.0.5: desktop habilita seletor de compartilhamento de tela',()=>{
   const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
   assert.match(main,/desktopCapturer/);
   assert.match(main,/setDisplayMediaRequestHandler/);
-  assert.match(main,/useSystemPicker:\s*true/);
+  assert.match(main,/desktop:display-sources/);
+  assert.match(main,/desktop:display-source-select/);
 });
 
 test('1.0.7: AzureCall usa WebSocket quando disponível e HTTP como fallback',()=>{

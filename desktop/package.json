@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
-  "description": "Azurecord 1.0: AzureCall resiliente, presença entre dispositivos, membros reais, boas-vindas e enquetes Cloud.",
+  "description": "Azurecord 1.0: AzureCall V2 com ICE restart e seletor de tela/janela.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

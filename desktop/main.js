@@ -38,6 +38,7 @@ let tray = null;
 let backend = null;
 let backendAddress = null;
 let updaterController = null;
+let selectedDisplaySourceId = null;
 const CLOUD_SESSION_FILE = () => path.join(app.getPath('userData'), 'cloud-session.bin');
 
 function createWindow() {
@@ -208,16 +209,60 @@ app.whenReady().then(async () => {
     try {
       session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
         try {
-          const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } });
-          callback(sources[0] ? { video: sources[0] } : {});
+          const sources = await desktopCapturer.getSources({
+            types: ['screen', 'window'],
+            thumbnailSize: { width: 320, height: 180 },
+            fetchWindowIcons: true
+          });
+          const selected = sources.find(source => source.id === selectedDisplaySourceId) ||
+            sources.find(source => String(source.id).startsWith('screen:')) ||
+            sources[0] || null;
+          selectedDisplaySourceId = null;
+          callback(selected ? { video: selected } : {});
         } catch (err) {
+          selectedDisplaySourceId = null;
           log('[display-media]', err?.message || err);
           callback({});
         }
-      }, { useSystemPicker: true });
+      });
     } catch (err) {
       log('[display-media-handler]', err?.message || err);
     }
+
+    ipcMain.handle('desktop:display-sources', async () => {
+      try {
+        const sources = await desktopCapturer.getSources({
+          types: ['screen', 'window'],
+          thumbnailSize: { width: 320, height: 180 },
+          fetchWindowIcons: true
+        });
+        return sources.map(source => ({
+          id: source.id,
+          name: source.name,
+          displayId: source.display_id || '',
+          type: String(source.id).startsWith('screen:') ? 'screen' : 'window',
+          thumbnail: source.thumbnail && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : '',
+          appIcon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : ''
+        }));
+      } catch (err) {
+        log('[display-sources]', err?.message || err);
+        return [];
+      }
+    });
+
+    ipcMain.handle('desktop:display-source-select', async (_event, sourceId) => {
+      const id = String(sourceId || '');
+      if (!id) return false;
+      try {
+        const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 1, height: 1 } });
+        if (!sources.some(source => source.id === id)) return false;
+        selectedDisplaySourceId = id;
+        return true;
+      } catch (err) {
+        log('[display-source-select]', err?.message || err);
+        return false;
+      }
+    });
 
     ipcMain.handle('desktop:backend-info', () => ({
       host: backendAddress?.address || '127.0.0.1',
