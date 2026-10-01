@@ -2902,8 +2902,8 @@
     if(tab==='lola')return `<div class="settings-section"><h3>Lola / Workers AI</h3>${settingsToggleRow('lolaEnabledV83','Ativar Lola','Permite conversar com a assistente do Azurecord.',cs.lolaEnabled!==false)}${settingsToggleRow('lolaMemoryV83','Memória da Lola','Permite usar memória de contexto quando disponível.',cs.lolaMemoryEnabled!==false)}<div class="settings-option"><div><strong>Modelo</strong><span>${esc(cloudInfo?.capabilities?.lolaWorkersAI?'Cloudflare Workers AI ativo':'Workers AI indisponível')}</span></div><span class="pill">Llama 4 Scout</span></div><div class="settings-actions"><button class="btn btn-primary" id="openLolaFromSettings">Abrir Lola</button><button class="btn btn-ghost" id="newLolaFromSettings">Nova conversa</button></div></div>`;
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
     if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Uploads grandes</strong><p>A interface já está preparada para a futura migração para Cloudflare R2. Até essa etapa, os limites atuais continuam para não sobrecarregar o D1.</p></div></div>`;
-    if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>Chamadas WebRTC ativas</strong><p>Voz, vídeo e compartilhamento de tela entre dispositivos compatíveis, incluindo captura móvel quando o navegador oferece suporte.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn" disabled>▣ Vídeo</button><button class="choice-btn" disabled>▤ Tela</button></div></div></div>`;
-    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 2.0</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
+    if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>AzureCall 2.0 ativo</strong><p>Voz, vídeo e compartilhamento usam WebRTC com trilhas separadas para câmera e tela. Qualquer lado da chamada pode transmitir, inclusive no navegador móvel quando a captura nativa estiver disponível.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn active" disabled>▣ Vídeo</button><button class="choice-btn active" disabled>▤ Tela</button></div></div></div>`;
+    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 2.0.1</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
   function bindAppSettings(tab){
@@ -3154,22 +3154,52 @@
   function callKindLabel(kind){return kind==='video'?'vídeo':kind==='screen'?'compartilhamento de tela':'voz';}
   function callPeer(){return getProfile(activeCall?.peerId)||{username:'Usuário',avatar:''};}
   function outboundVideoTrack(call=activeCall){return call?.screenTrack||((call?.cameraTrack?.enabled!==false)?call?.cameraTrack:null)||null;}
-  function getCallVideoTransceiver(call=activeCall){
-    if(!call?.pc)return null;
-    return call.pc.getTransceivers().find(t=>t.sender?.track?.kind==='video'||t.receiver?.track?.kind==='video')||null;
+  function getCallVideoTransceivers(call=activeCall){
+    if(!call?.pc)return [];
+    return call.pc.getTransceivers().filter(t=>t.receiver?.track?.kind==='video'||t.sender?.track?.kind==='video');
   }
-  function getCallVideoSender(call=activeCall){
-    if(!call?.pc)return null;
-    return call.pc.getSenders().find(sender=>sender.track?.kind==='video')||getCallVideoTransceiver(call)?.sender||null;
+  function assignCallVideoSlots(call=activeCall){
+    if(!call?.pc)return {camera:null,screen:null};
+    const slots=getCallVideoTransceivers(call);
+    if(!call.cameraTransceiver&&slots[0])call.cameraTransceiver=slots[0];
+    if(!call.screenTransceiver&&slots[1])call.screenTransceiver=slots[1];
+    return {camera:call.cameraTransceiver||null,screen:call.screenTransceiver||null};
   }
-  async function prepareCallVideoSender(call,track){
+  function ensureOffererVideoSlots(call){
+    if(!call?.pc)return {camera:null,screen:null};
+    let slots=getCallVideoTransceivers(call);
+    while(slots.length<2){call.pc.addTransceiver('video',{direction:'sendrecv'});slots=getCallVideoTransceivers(call);}
+    call.cameraTransceiver=slots[0]||call.cameraTransceiver||null;
+    call.screenTransceiver=slots[1]||call.screenTransceiver||null;
+    for(const transceiver of [call.cameraTransceiver,call.screenTransceiver]){if(transceiver&&transceiver.direction!=='sendrecv')try{transceiver.direction='sendrecv';}catch{}}
+    return {camera:call.cameraTransceiver,screen:call.screenTransceiver};
+  }
+  function bindAnswererVideoSlots(call){
+    const slots=getCallVideoTransceivers(call);
+    call.cameraTransceiver=slots[0]||call.cameraTransceiver||null;
+    call.screenTransceiver=slots[1]||call.screenTransceiver||null;
+    for(const transceiver of [call.cameraTransceiver,call.screenTransceiver]){if(transceiver&&transceiver.direction!=='sendrecv')try{transceiver.direction='sendrecv';}catch{}}
+    return {camera:call.cameraTransceiver,screen:call.screenTransceiver};
+  }
+  function getCallVideoTransceiver(call=activeCall,purpose='camera'){
+    const slots=assignCallVideoSlots(call);
+    return purpose==='screen'?slots.screen:slots.camera;
+  }
+  function getCallVideoSender(call=activeCall,purpose='camera'){
+    return getCallVideoTransceiver(call,purpose)?.sender||null;
+  }
+  async function prepareCallVideoSender(call,track,purpose='camera'){
     if(!call?.pc)return {sender:null,transceiver:null,needsRenegotiation:false};
-    let transceiver=getCallVideoTransceiver(call),needsRenegotiation=false;
-    if(!transceiver){transceiver=call.pc.addTransceiver('video',{direction:'sendrecv'});needsRenegotiation=true;}
-    const sender=transceiver.sender,desired=String(transceiver.direction||''),negotiated=String(transceiver.currentDirection||'');
+    let transceiver=getCallVideoTransceiver(call,purpose),needsRenegotiation=false;
+    if(!transceiver){
+      transceiver=call.pc.addTransceiver('video',{direction:'sendrecv'});
+      if(purpose==='screen')call.screenTransceiver=transceiver;else call.cameraTransceiver=transceiver;
+      needsRenegotiation=true;
+    }
+    const desired=String(transceiver.direction||''),negotiated=String(transceiver.currentDirection||'');
     if(desired!=='sendrecv'&&desired!=='sendonly'){try{transceiver.direction='sendrecv';}catch{}needsRenegotiation=true;}
-    if(negotiated!=='sendrecv'&&negotiated!=='sendonly')needsRenegotiation=true;
-    if(sender)await sender.replaceTrack(track||null);
+    if(negotiated&&negotiated!=='sendrecv'&&negotiated!=='sendonly')needsRenegotiation=true;
+    const sender=transceiver.sender;if(sender)await sender.replaceTrack(track||null);
     return {sender,transceiver,needsRenegotiation};
   }
   function setCallStatus(status){if(!activeCall)return;activeCall.status=status;updateCallUi();}
@@ -3200,10 +3230,16 @@
     $('callMicBtn').hidden=incoming;$('callCameraBtn').hidden=incoming;$('callShareBtn').hidden=incoming;$('callHangupBtn').hidden=incoming;
 
     const remote=$('remoteCallVideo'),remoteAudio=$('remoteCallAudio');
-    if(call.remoteStream&&remote.srcObject!==call.remoteStream){remote.srcObject=call.remoteStream;remote.muted=true;remote.play?.().catch(()=>{});}
-    if(call.remoteStream&&remoteAudio&&remoteAudio.srcObject!==call.remoteStream){remoteAudio.srcObject=call.remoteStream;remoteAudio.play?.().catch(()=>{});}
-    const remoteVideo=call.remoteStream?.getVideoTracks?.().find(track=>track.readyState!=='ended');
-    const hasRemoteVideo=!!remoteVideo;
+    const remoteScreenTrack=call.remoteScreenTrack&&call.remoteScreenTrack.readyState!=='ended'?call.remoteScreenTrack:null;
+    const remoteCameraTrack=call.remoteCameraTrack&&call.remoteCameraTrack.readyState!=='ended'?call.remoteCameraTrack:null;
+    const remoteSharing=!!call.remoteScreenSharing&&!!remoteScreenTrack;
+    const displayStream=remoteSharing&&call.remoteScreenStream?.getVideoTracks?.().length
+      ? call.remoteScreenStream
+      : (call.remoteCameraStream?.getVideoTracks?.().length?call.remoteCameraStream:null);
+    if(displayStream&&remote.srcObject!==displayStream){remote.srcObject=displayStream;remote.muted=true;remote.play?.().catch(()=>{});}
+    if(!displayStream&&remote.srcObject)remote.srcObject=null;
+    if(call.remoteAudioStream&&remoteAudio&&remoteAudio.srcObject!==call.remoteAudioStream){remoteAudio.srcObject=call.remoteAudioStream;remoteAudio.play?.().catch(()=>{});}
+    const hasRemoteVideo=!!(remoteSharing?remoteScreenTrack:remoteCameraTrack);
     remote.classList.toggle('audio-only',!hasRemoteVideo);
     $('callRemoteFallback').hidden=hasRemoteVideo;
 
@@ -3214,7 +3250,6 @@
       local.hidden=false;local.play?.().catch(()=>{});
     }else{if(local.srcObject)local.srcObject=null;local.hidden=true;}
 
-    const remoteSharing=!!call.remoteScreenSharing || (call.type==='screen'&&call.direction==='incoming'&&hasRemoteVideo);
     if(!remoteSharing&&call.remoteShareFocused)call.remoteShareFocused=false;
     const localSharing=!!call.screenTrack;
     const shareMode=remoteSharing||localSharing;
@@ -3334,7 +3369,7 @@
     const wantsCamera=call.type==='video';
     call.localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:wantsCamera});
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
-    if(call.type==='screen'&&!incoming){
+    if(call.type==='screen'&&!incoming&&!call.screenTrack){
       if(!screenCaptureSupported())throw new Error('Este navegador não oferece compartilhamento de tela.');
       call.screenStream=await requestAzureDisplayMedia();
       call.screenTrack=call.screenStream.getVideoTracks()[0]||null;
@@ -3401,15 +3436,32 @@
   }
   function createCallPeer(call,{offerer=false}={}){
     if(call.pc)return call.pc;
-    const pc=new RTCPeerConnection(AZURECALL_RTC_CONFIG);call.pc=pc;call.remoteStream=new MediaStream();
+    const pc=new RTCPeerConnection(AZURECALL_RTC_CONFIG);call.pc=pc;call.remoteStream=new MediaStream();call.remoteAudioStream=new MediaStream();call.remoteCameraStream=new MediaStream();call.remoteScreenStream=new MediaStream();
     if(offerer)setupCallControlChannel(call,pc.createDataChannel('azurecall-control',{ordered:true}));
     else pc.ondatachannel=e=>{if(e.channel?.label==='azurecall-control')setupCallControlChannel(call,e.channel);};
     pc.onicecandidate=e=>{if(e.candidate)sendCallSignal('ice',{candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
     pc.ontrack=e=>{
-      const stream=e.streams?.[0];
-      if(stream){for(const track of stream.getTracks())if(!call.remoteStream.getTracks().some(t=>t.id===track.id))call.remoteStream.addTrack(track);}
-      else if(e.track&&!call.remoteStream.getTracks().some(t=>t.id===e.track.id))call.remoteStream.addTrack(e.track);
-      e.track.onunmute=()=>{updateCallUi();$('remoteCallVideo')?.play?.().catch(()=>{});};e.track.onmute=updateCallUi;e.track.onended=()=>{if(e.track.kind==='video'&&!call.remoteStream?.getVideoTracks?.().some(t=>t!==e.track&&t.readyState!=='ended'))call.remoteScreenSharing=false;updateCallUi();};updateCallUi();
+      const track=e.track;if(!track)return;
+      if(!call.remoteStream.getTracks().some(t=>t.id===track.id))call.remoteStream.addTrack(track);
+      if(track.kind==='audio'){
+        if(!call.remoteAudioStream.getTracks().some(t=>t.id===track.id))call.remoteAudioStream.addTrack(track);
+      }else{
+        const slots=getCallVideoTransceivers(call),slotIndex=slots.indexOf(e.transceiver);
+        const isScreen=slotIndex===1;
+        if(isScreen){
+          call.remoteScreenTrack=track;
+          if(!call.remoteScreenStream.getTracks().some(t=>t.id===track.id))call.remoteScreenStream.addTrack(track);
+          track.onunmute=()=>{const was=!!call.remoteScreenSharing;call.remoteScreenSharing=true;if(!was)showToast(`${getProfile(call.peerId)?.username||'A outra pessoa'} começou a compartilhar a tela. Toque no aviso para abrir.`);updateCallUi();$('remoteCallVideo')?.play?.().catch(()=>{});};
+          track.onmute=()=>{call.remoteScreenSharing=false;if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();};
+          track.onended=()=>{call.remoteScreenSharing=false;if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();};
+        }else{
+          call.remoteCameraTrack=track;
+          if(!call.remoteCameraStream.getTracks().some(t=>t.id===track.id))call.remoteCameraStream.addTrack(track);
+          track.onunmute=()=>{updateCallUi();$('remoteCallVideo')?.play?.().catch(()=>{});};
+          track.onmute=updateCallUi;track.onended=updateCallUi;
+        }
+      }
+      updateCallUi();
     };
     pc.onconnectionstatechange=()=>syncCallPeerState(call);
     pc.oniceconnectionstatechange=()=>syncCallPeerState(call);
@@ -3417,12 +3469,13 @@
     if(offerer)call.offerer=true;
     return pc;
   }
-  function attachCallLocalTracks(call,{offerer=false}={}){
+  async function attachCallLocalTracks(call,{offerer=false}={}){
     if(!call?.pc||call.tracksAttached)return;
     for(const track of call.localStream?.getAudioTracks?.()||[])call.pc.addTrack(track,call.localStream);
-    const video=outboundVideoTrack(call);
-    if(video)call.pc.addTrack(video,call.screenStream||call.localStream);
-    else if(offerer)call.pc.addTransceiver('video',{direction:'sendrecv'});
+    if(offerer)ensureOffererVideoSlots(call);else bindAnswererVideoSlots(call);
+    const cameraSender=getCallVideoSender(call,'camera'),screenSender=getCallVideoSender(call,'screen');
+    if(cameraSender)await cameraSender.replaceTrack(call.cameraTrack?.enabled!==false?call.cameraTrack:null);
+    if(screenSender)await screenSender.replaceTrack(call.screenTrack||null);
     call.tracksAttached=true;
   }
   async function flushCallIce(call){
@@ -3436,7 +3489,7 @@
     const pc=createCallPeer(call,{offerer:false});
     if(pc.signalingState!=='stable'){try{await pc.setLocalDescription({type:'rollback'});}catch{}}
     await pc.setRemoteDescription(description);
-    attachCallLocalTracks(call,{offerer:false});
+    await attachCallLocalTracks(call,{offerer:false});
     await flushCallIce(call);
     const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
     sendCallSignal('answer',{description:pc.localDescription});
@@ -3499,19 +3552,37 @@
     if(view.mode!=='dm'||!view.dmUserId||view.dmUserId==='user-lola'){showToast('Abra uma DM com um amigo para iniciar uma chamada.');return;}
     if(!isFriend(view.dmUserId)){showToast('Chamadas estão disponíveis entre amigos.');return;}
     if(activeCall){showToast('Você já está em uma chamada.');return;}
-    const realtime=await ensureAzureCallRealtime();
-    if(!realtime.ok){showToast(explainAzureCallRealtimeFailure(realtime));return;}
     if(typeof RTCPeerConnection==='undefined'){showToast('WebRTC não está disponível neste dispositivo.');return;}
-    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,uiFrame:0};
+    let initialScreenCapture=null;
+    if(type==='screen'){
+      if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'O Chrome deste celular não expôs a captura de tela para esta página. Atualize o navegador e tente novamente.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
+      initialScreenCapture=requestAzureDisplayMedia().then(stream=>({stream}),error=>({error}));
+    }
+    const realtime=await ensureAzureCallRealtime();
+    if(!realtime.ok){
+      const captured=initialScreenCapture?await initialScreenCapture:null;
+      for(const track of captured?.stream?.getTracks?.()||[])try{track.stop();}catch{}
+      showToast(explainAzureCallRealtimeFailure(realtime));return;
+    }
+    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,uiFrame:0};
     activeCall=call;scheduleCallSignalPoll();updateCallUi();
     try{
+      if(initialScreenCapture){
+        const captured=await initialScreenCapture;
+        if(captured?.error)throw captured.error;
+        call.screenStream=captured?.stream||null;
+        call.screenTrack=call.screenStream?.getVideoTracks?.()[0]||null;
+        if(!call.screenTrack)throw new Error('O navegador não retornou uma trilha de tela.');
+        call.screenTrack.onended=()=>{if(activeCall===call)stopCallScreenShare().catch(()=>{});};
+      }
       await acquireCallMedia(call,{incoming:false});
-      const pc=createCallPeer(call,{offerer:true});attachCallLocalTracks(call,{offerer:true});
+      const pc=createCallPeer(call,{offerer:true});await attachCallLocalTracks(call,{offerer:true});
+      if(call.screenTrack)await tuneScreenSender(getCallVideoSender(call,'screen'));
       setCallStatus('ringing');
       if(!sendCallSignal('ring'))throw new Error('Realtime desconectado.');
       const offer=await pc.createOffer();await pc.setLocalDescription(offer);sendCallSignal('offer',{description:pc.localDescription});
       call.ringTimer=setTimeout(()=>{if(activeCall===call&&call.status==='ringing')endActiveCall({notify:true,message:'A chamada não foi atendida.'});},45000);
-    }catch(err){endActiveCall({notify:false});showToast(err.message||'Não foi possível iniciar a chamada.');}
+    }catch(err){endActiveCall({notify:false});if(err?.name!=='NotAllowedError')showToast(err.message||'Não foi possível iniciar a chamada.');}
   }
   async function acceptIncomingCall(){
     const call=activeCall;if(!call||call.direction!=='incoming'||call.status!=='ringing')return;
@@ -3530,13 +3601,12 @@
   async function toggleCallMic(){const call=activeCall;const track=call?.localStream?.getAudioTracks?.()[0];if(!track)return;track.enabled=!track.enabled;updateCallUi();}
   async function toggleCallCamera(){
     const call=activeCall;if(!call?.pc)return;
-    if(call.screenTrack){showToast('Pare o compartilhamento de tela antes de alternar a câmera.');return;}
     if(call.cameraTrack){call.cameraTrack.enabled=!call.cameraTrack.enabled;updateCallUi();return;}
     try{
       const stream=await navigator.mediaDevices.getUserMedia({video:true});const track=stream.getVideoTracks()[0];if(!track)return;
       call.cameraTrack=track;if(!call.localStream)call.localStream=new MediaStream();call.localStream.addTrack(track);
-      const prepared=await prepareCallVideoSender(call,track);
-      if(prepared.needsRenegotiation||call.direction==='incoming')await renegotiateCall({reason:'camera-start'});
+      const prepared=await prepareCallVideoSender(call,track,'camera');
+      if(prepared.needsRenegotiation)await renegotiateCall({reason:'camera-slot-fallback'});
       track.onended=()=>{if(activeCall===call){call.cameraTrack=null;updateCallUi();}};updateCallUi();
     }catch(err){showToast('Não foi possível ligar a câmera.');}
   }
@@ -3554,9 +3624,8 @@
     const call=activeCall;if(!call?.screenTrack)return;
     const old=call.screenTrack;call.screenTrack=null;try{old.stop();}catch{}
     if(call.screenStream){for(const t of call.screenStream.getTracks())if(t!==old)try{t.stop();}catch{}call.screenStream=null;}
-    const replacement=call.cameraTrack?.enabled!==false?call.cameraTrack:null;
-    await prepareCallVideoSender(call,replacement);
-    await renegotiateCall({reason:'screen-share-stop'});
+    const prepared=await prepareCallVideoSender(call,null,'screen');
+    if(prepared.needsRenegotiation)await renegotiateCall({reason:'screen-slot-stop-fallback'});
     publishLocalScreenState(call);updateCallUi();
   }
   async function toggleCallScreen(){
@@ -3566,9 +3635,9 @@
     try{
       const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
       call.screenStream=stream;call.screenTrack=track;
-      const prepared=await prepareCallVideoSender(call,track);
+      const prepared=await prepareCallVideoSender(call,track,'screen');
       await tuneScreenSender(prepared.sender);
-      await renegotiateCall({reason:'screen-share-start'});
+      if(prepared.needsRenegotiation)await renegotiateCall({reason:'screen-slot-start-fallback'});
       publishLocalScreenState(call);
       track.onended=()=>{if(activeCall===call)stopCallScreenShare().catch(()=>{});};updateCallUi();
     }catch(err){if(err?.name!=='NotAllowedError')showToast('Não foi possível compartilhar a tela.');}

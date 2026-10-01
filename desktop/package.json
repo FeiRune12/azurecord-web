@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
-  "description": "Azurecord 2.0: compartilhamento de tela mobile, aviso clicável e visualização focada.",
+  "description": "Azurecord 2.0.1: compartilhamento móvel nativo e trilha de tela WebRTC dedicada.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
