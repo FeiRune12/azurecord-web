@@ -1291,7 +1291,7 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  const APP_CORRECTION_NOTICE={id:'3.0.6-clean-azurecall-microphone-20261001',title:'Azurecord 3.0.6',body:'AzureCall recebeu uma correção limpa no controle do microfone: silenciar não derruba mais a captura nem dispara falsos erros de permissão no Android.'};
+  const APP_CORRECTION_NOTICE={id:'3.0.7-azurecall-echo-control-20261001',title:'Azurecord 3.0.7',body:'AzureCall recebeu cancelamento de eco, redução de ruído e proteção contra trilhas de áudio duplicadas.'};
   function announceAppCorrection(){
     if(!currentUser())return;
     const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
@@ -3887,6 +3887,15 @@
     }
     return stream;
   }
+  function callAudioConstraints(){
+    return {
+      echoCancellation:{ideal:true},
+      noiseSuppression:{ideal:true},
+      autoGainControl:{ideal:true},
+      channelCount:{ideal:1},
+      sampleRate:{ideal:48000}
+    };
+  }
   async function acquireCallMedia(call,{incoming=false}={}){
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este dispositivo não oferece acesso ao microfone/câmera.');
     const wantsCamera=call.type==='video';
@@ -3894,9 +3903,13 @@
       const granted=await ensureNativeCallPermissions(wantsCamera);
       if(!granted){const err=new Error('Android permission denied');err.name='NotAllowedError';throw err;}
     }
-    call.localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:wantsCamera});
+    call.localStream=await navigator.mediaDevices.getUserMedia({audio:callAudioConstraints(),video:wantsCamera});
     call.micMuted=false;
-    for(const track of call.localStream.getAudioTracks())track.enabled=true;
+    for(const track of call.localStream.getAudioTracks()){
+      track.enabled=true;
+      try{track.contentHint='speech';}catch{}
+      if(track.applyConstraints)try{await track.applyConstraints(callAudioConstraints());}catch{}
+    }
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
     if(call.type==='screen'&&!incoming&&!call.screenTrack&&!nativeAndroidScreenSupported()){
       if(!screenCaptureSupported())throw new Error('Este navegador não oferece compartilhamento de tela.');
@@ -4062,9 +4075,14 @@
       const track=e.track;if(!track)return;
       if(!call.remoteStream.getTracks().some(t=>t.id===track.id))call.remoteStream.addTrack(track);
       if(track.kind==='audio'){
-        if(!call.remoteAudioStream.getTracks().some(t=>t.id===track.id))call.remoteAudioStream.addTrack(track);
+        for(const oldTrack of call.remoteAudioStream.getAudioTracks()){
+          if(oldTrack.id===track.id)continue;
+          try{call.remoteAudioStream.removeTrack(oldTrack);}catch{}
+          try{oldTrack.stop?.();}catch{}
+        }
+        if(!call.remoteAudioStream.getAudioTracks().some(t=>t.id===track.id))call.remoteAudioStream.addTrack(track);
         track.onunmute=()=>{markCallConnected(call);updateCallUi();$('remoteCallAudio')?.play?.().catch(()=>{});};
-        track.onended=updateCallUi;
+        track.onended=()=>{try{call.remoteAudioStream.removeTrack(track);}catch{}updateCallUi();};
       }else{
         const slots=getCallVideoTransceivers(call),slotIndex=slots.indexOf(e.transceiver);
         const isScreen=slotIndex===1;
@@ -4093,8 +4111,15 @@
     if(!call?.pc||call.tracksAttached)return;
     for(const track of call.localStream?.getAudioTracks?.()||[]){
       track.enabled=true;
-      const sender=call.pc.addTrack(track,call.localStream);
+      try{track.contentHint='speech';}catch{}
+      let sender=getCallAudioSender(call);
+      if(sender?.replaceTrack)await sender.replaceTrack(track);
+      else sender=call.pc.addTrack(track,call.localStream);
       if(sender)sender.__azurecordAudioSender=true;
+    }
+    const audioSenders=call.pc.getSenders?.().filter(s=>s?.track?.kind==='audio'||s?.__azurecordAudioSender===true)||[];
+    for(let i=1;i<audioSenders.length;i++){
+      try{await audioSenders[i].replaceTrack(null);}catch{}
     }
     if(offerer)ensureOffererVideoSlots(call);else bindAnswererVideoSlots(call);
     const cameraSender=getCallVideoSender(call,'camera'),screenSender=getCallVideoSender(call,'screen');
@@ -4248,7 +4273,7 @@
             const granted=await ensureNativeCallPermissions(false);
             if(!granted){const err=new Error('Android permission denied');err.name='NotAllowedError';throw err;}
           }
-          const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+          const stream=await navigator.mediaDevices.getUserMedia({audio:callAudioConstraints(),video:false});
           track=stream.getAudioTracks()[0]||null;
           if(!track)throw new Error('Nenhum microfone disponível.');
           if(!call.localStream)call.localStream=new MediaStream();
