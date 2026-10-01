@@ -3536,8 +3536,9 @@
   }
   function clearNativeScreenReceiver(call){
     if(!call)return;
-    try{call.nativeScreenPc?.close?.();}catch{}
-    call.nativeScreenPc=null;call.nativeScreenPendingIce=[];
+    const nativePc=call.nativeScreenPc;call.nativeScreenPc=null;
+    try{nativePc?.close?.();}catch{}
+    call.nativeScreenPendingIce=[];
     if(call.nativeRemoteScreenTrack&&call.remoteScreenTrack===call.nativeRemoteScreenTrack){call.remoteScreenTrack=null;call.remoteScreenStream=new MediaStream();}
     call.nativeRemoteScreenTrack=null;call.remoteScreenSharing=false;clearRemoteShareNotice(call);
     if(call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});
