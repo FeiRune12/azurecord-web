@@ -75,6 +75,7 @@ class AzureCallScreenEngine(
     private var videoSource: VideoSource? = null
     private var videoTrack: VideoTrack? = null
     private val pendingRemoteIce = mutableListOf<IceCandidate>()
+    private val localIceCandidates = mutableListOf<IceCandidate>()
     @Volatile private var remoteDescriptionReady = false
 
     fun start() {
@@ -193,7 +194,11 @@ class AzureCallScreenEngine(
         override fun onIceGatheringChange(newState: PeerConnection.IceGatheringState) = Unit
 
         override fun onIceCandidate(candidate: IceCandidate) {
-            executor.execute { sendSignal("native-screen-ice", candidate = candidate) }
+            executor.execute {
+                localIceCandidates += candidate
+                while (localIceCandidates.size > 80) localIceCandidates.removeAt(0)
+                sendSignal("native-screen-ice", candidate = candidate)
+            }
         }
 
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
@@ -281,28 +286,32 @@ class AzureCallScreenEngine(
     }
 
     private fun postSignalHttp(signal: JSONObject) {
-        try {
-            val payload = JSONObject()
-                .put("targetUserId", peerId)
-                .put("signal", signal)
-                .toString()
-                .toRequestBody("application/json; charset=utf-8".toMediaType())
+        var lastError: String? = null
+        repeat(2) { attempt ->
+            try {
+                val payload = JSONObject()
+                    .put("targetUserId", peerId)
+                    .put("signal", signal)
+                    .toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
 
-            val request = Request.Builder()
-                .url(API_BASE + "/api/realtime/signals")
-                .header("Authorization", "Bearer " + token)
-                .post(payload)
-                .build()
+                val request = Request.Builder()
+                    .url(API_BASE + "/api/realtime/signals")
+                    .header("Authorization", "Bearer " + token)
+                    .post(payload)
+                    .build()
 
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful && !webSocketReady && !stopping.get()) {
-                    onError("A sinalização da transmissão respondeu HTTP " + response.code + ".")
+                http.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) return
+                    lastError = "HTTP " + response.code
                 }
+            } catch (error: Exception) {
+                lastError = error.message ?: "falha de rede"
             }
-        } catch (error: Exception) {
-            if (!webSocketReady && !stopping.get()) {
-                onError(error.message ?: "A sinalização da transmissão ficou indisponível.")
-            }
+            if (attempt == 0) try { Thread.sleep(180) } catch (_: Exception) {}
+        }
+        if (!webSocketReady && !stopping.get()) {
+            onError("A sinalização da transmissão ficou indisponível: " + (lastError ?: "erro desconhecido"))
         }
     }
 
@@ -420,6 +429,18 @@ class AzureCallScreenEngine(
                 )
             }
 
+            "native-screen-resync" -> {
+                val local = peerConnection?.localDescription
+                if (local != null && local.type == SessionDescription.Type.OFFER) {
+                    sendSignal("native-screen-offer", description = local)
+                    for (candidate in localIceCandidates.toList()) {
+                        sendSignal("native-screen-ice", candidate = candidate)
+                    }
+                } else {
+                    createOffer()
+                }
+            }
+
             "native-screen-ice" -> {
                 val raw = signal.optJSONObject("candidate") ?: return
                 val sdp = raw.optString("candidate")
@@ -491,6 +512,7 @@ class AzureCallScreenEngine(
         surfaceTextureHelper = null
 
         pendingRemoteIce.clear()
+        localIceCandidates.clear()
         remoteDescriptionReady = false
         try { peerConnection?.close() } catch (_: Exception) {}
         try { peerConnection?.dispose() } catch (_: Exception) {}
