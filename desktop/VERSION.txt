@@ -1,1 +1,1 @@
-Azurecord 3.0.2 Deleted Cloud Profile Cache Fix
+Azurecord 3.0.3 Profile Presence Selector
