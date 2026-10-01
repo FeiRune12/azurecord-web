@@ -1,1 +1,1 @@
-Azurecord 3.0.4 Presence Buttons and R2 Attachments
+Azurecord 3.0.5 Presence Settings Wiring Fix
