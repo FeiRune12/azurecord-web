@@ -100,7 +100,7 @@ class MainActivity : Activity() {
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
-            userAgentString = "$userAgentString AzurecordAndroid/2.0.4"
+            userAgentString = "$userAgentString AzurecordAndroid/${BuildConfig.VERSION_NAME}"
         }
 
         webView.addJavascriptInterface(AzurecordBridge(this), "AzurecordNative")

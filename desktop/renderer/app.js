@@ -157,6 +157,29 @@
     return data;
   }
 
+  function retryableCloudMessageError(err){
+    const status=Number(err?.status||0);
+    return err?.name==='AbortError'||!status||status===408||status>=500;
+  }
+
+  async function cloudPostMessageWithRetry(path,payload,{timeoutMs=15000,retries=1}={}){
+    let lastError=null;
+    for(let attempt=0;attempt<=retries;attempt++){
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+      try{
+        return await cloudRequest(path,{method:'POST',signal:controller.signal,body:JSON.stringify(payload)});
+      }catch(err){
+        lastError=err;
+        if(attempt>=retries||!retryableCloudMessageError(err))throw err;
+        await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+      }finally{
+        clearTimeout(timeout);
+      }
+    }
+    throw lastError||new Error('Falha no envio.');
+  }
+
   async function ensureAzureCallIceConfig({force=false}={}){
     if(!socialCloudReady())return azureCallRtcConfig;
     if(!force&&Date.now()<azureCallIceConfigExpiresAt)return azureCallRtcConfig;
@@ -203,7 +226,9 @@
     return !!(cloudToken && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
   }
   function lolaCloudReady(){
-    return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.lolaWorkersAI && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
+    // A sessão autenticada é a fonte de verdade. /health é só telemetria e
+    // pode ficar temporariamente atrasado durante deploys ou reconexões.
+    return !!(cloudToken && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
   }
   function pointsCloudReady(){
     return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.azurePointsCloud && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
@@ -339,6 +364,11 @@
   }
 
   async function initCloudAuth(){
+    if(!cloudToken){
+      try{cloudToken=await window.azurecordDesktop?.getSecureSession?.()||null;}catch{cloudToken=null;}
+    }
+
+    let healthOk=false;
     try{
       const health=await cloudRequest('/health',{auth:false});
       cloudInfo={
@@ -346,34 +376,36 @@
         capabilities:health?.capabilities&&typeof health.capabilities==='object'?health.capabilities:{}
       };
       cloudOnline=true;
-      if(!cloudToken){
-        try{cloudToken=await window.azurecordDesktop?.getSecureSession?.()||null;}catch{cloudToken=null;}
-      }
-      if(!cloudToken)return true;
-      try{
-        const me=await cloudRequest('/auth/me');
-        const account=applyCloudUser(me.user);
-        if(!account?.id)throw Object.assign(new Error('Sessão cloud inválida.'),{status:401});
-        if(state.cloudAccountId && state.cloudAccountId!==account.id)throw Object.assign(new Error('Sessão pertence a outra conta.'),{status:401});
-        cloudVerifiedAccountId=account.id;
-        state.cloudAccountId=account.id;
-        state.currentAccountId=account.id;
-        save();
-        if(account._needsCloudProfileSync)syncCloudProfile(account,{quiet:true,profileComplete:true}).catch(()=>{});
-        if(cloudInfo?.capabilities?.socialCloud){hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});}
-        if(cloudInfo?.capabilities?.settingsCloud){fetchCloudSettings({rerender:false}).catch(()=>{});}
-      }catch(err){
-        if(err.status===401){
-          cloudToken=null;cloudVerifiedAccountId=null;state.cloudAccountId=null;
-          try{await window.azurecordDesktop?.deleteSecureSession?.();}catch{}
-          save();
-        }else throw err;
-      }
-      return true;
+      healthOk=true;
     }catch(err){
       cloudOnline=false;
-      cloudInfo={version:null,capabilities:{}};
-      console.warn('[Azurecord] Cloud auth offline:',err?.message||err);
+      console.warn('[Azurecord] Cloud health temporariamente indisponível:',err?.message||err);
+    }
+
+    if(!cloudToken)return healthOk;
+
+    try{
+      const me=await cloudRequest('/auth/me');
+      const account=applyCloudUser(me.user);
+      if(!account?.id)throw Object.assign(new Error('Sessão cloud inválida.'),{status:401});
+      if(state.cloudAccountId && state.cloudAccountId!==account.id)throw Object.assign(new Error('Sessão pertence a outra conta.'),{status:401});
+      cloudVerifiedAccountId=account.id;
+      state.cloudAccountId=account.id;
+      state.currentAccountId=account.id;
+      cloudOnline=true;
+      save();
+      if(account._needsCloudProfileSync)syncCloudProfile(account,{quiet:true,profileComplete:true}).catch(()=>{});
+      hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});
+      if(cloudInfo?.capabilities?.settingsCloud)fetchCloudSettings({rerender:false}).catch(()=>{});
+      return true;
+    }catch(err){
+      if(err.status===401){
+        cloudToken=null;cloudVerifiedAccountId=null;state.cloudAccountId=null;
+        try{await window.azurecordDesktop?.deleteSecureSession?.();}catch{}
+        save();
+      }else{
+        console.warn('[Azurecord] Cloud auth temporariamente indisponível:',err?.message||err);
+      }
       return false;
     }
   }
@@ -433,12 +465,26 @@
   }
 
 
-  async function askLolaAi(userText, recentMessages, attachments=[], proactive=false){
-    if(!cloudOnline || !cloudToken || cloudVerifiedAccountId!==state.currentAccountId){
-      return {failed:true,code:'login_required'};
+  async function ensureLolaSession(){
+    const current=state.lolaSessionInfo?.[state.currentAccountId]?.id;
+    if(current&&current!=='legacy')return current;
+    if(!lolaCloudReady())return null;
+    try{
+      const remote=await cloudRequest('/api/ai/conversations');
+      const id=String(remote?.sessionId||'').trim();
+      if(!id)return null;
+      state.lolaSessionInfo[state.currentAccountId]={id,pendingReset:false};
+      saveNow();
+      return id;
+    }catch(err){
+      console.warn('[Azurecord] Sessão da Lola:',err?.message||err);
+      return null;
     }
-    if(!cloudInfo?.capabilities?.lolaWorkersAI){
-      return {failed:true,code:'AI_NOT_CONFIGURED'};
+  }
+
+  async function askLolaAi(userText, recentMessages, attachments=[], proactive=false){
+    if(!lolaCloudReady()){
+      return {failed:true,code:'login_required'};
     }
     const controller = new AbortController();
     const timeout=setTimeout(()=>controller.abort(),90000);
@@ -448,9 +494,9 @@
         text:String(m?.text||'').slice(0,5000),
         images:(Array.isArray(m?.files)?m.files:[]).filter(f=>String(f?.type||'').startsWith('image/')&&(f?.dataUrl||f?.url)).slice(0,2).map(f=>({dataUrl:f.dataUrl||'',url:f.url||'',name:f.name,type:f.type}))
       })).filter(m=>m.text||m.images.length):[];
-      const sessionId=state.lolaSessionInfo?.[state.currentAccountId]?.id||'legacy';
+      const sessionId=await ensureLolaSession();
       const data=await cloudRequest('/api/ai/chat',{method:'POST',signal:controller.signal,body:JSON.stringify({
-        proactive,sessionId,
+        proactive,...(sessionId?{sessionId}:{}),
         userText:String(userText||'').slice(0,7000),
         recent,
         attachments:(attachments||[]).slice(0,3).map(f=>({
@@ -458,8 +504,12 @@
         })),
         memory:memoryContext(getLolaMemory())
       })});
+      if(data?.sessionId){
+        state.lolaSessionInfo[state.currentAccountId]={id:String(data.sessionId),pendingReset:false};
+        saveNow();
+      }
       return data?.reply?{text:String(data.reply).trim(),message:data.message||null,
-        model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId,newChat:!!data.newChat}:null;
+        model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}:null;
     }catch(err){
       if(err.code==='conversation_changed')return {discarded:true};
       console.warn('[Azurecord] Workers AI indisponível; modo local transparente:',err?.message||err);
@@ -2617,20 +2667,22 @@
       return failed;
     }
     if(id==='user-lola' ? !lolaCloudReady() : !socialReady()){
-      const failed=fail('Azurecord Cloud indisponível.');
-      return failed;
+      return fail('Azurecord Cloud indisponível.');
     }
-    if(id==='user-lola' && m.lolaSessionId && m.lolaSessionId!==(state.lolaSessionInfo?.[state.currentAccountId]?.id||'legacy'))return false;
+    if(id==='user-lola' && m.lolaSessionId && m.lolaSessionId!==(state.lolaSessionInfo?.[state.currentAccountId]?.id||m.lolaSessionId))return false;
+
     m.sending=true;m.pending=true;m.failed=false;delete m.lastError;saveNow();
     if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),12000);
+
     try{
-      const options={method:'POST',signal:controller.signal,body:JSON.stringify({clientId:m.id,text:m.text,
-        files:m.files||[],replyTo:m.replyTo||null,...(id==='user-lola'?{sessionId:m.lolaSessionId||'legacy'}:{})})};
-      const response=id==='user-lola'
-        ?await cloudRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options)
-        :await socialRequest(`/api/dms/${encodeURIComponent(id)}/messages`,options);
+      const payload={clientId:m.id,text:m.text,files:m.files||[],replyTo:m.replyTo||null};
+      if(id==='user-lola'&&m.lolaSessionId)payload.sessionId=m.lolaSessionId;
+      const response=await cloudPostMessageWithRetry(
+        `/api/dms/${encodeURIComponent(id)}/messages`,
+        payload,
+        {timeoutMs:15000,retries:1}
+      );
+      if(!response?.message?.id)throw new Error('O servidor não confirmou a mensagem.');
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
       if(id!=='user-lola')commitCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id,commitId:uid('dm-commit')});
@@ -2642,7 +2694,6 @@
       showToast(`DM não enviada: ${reason}`);
       return false;
     }finally{
-      clearTimeout(timeout);
       m.sending=false;
     }
   }
@@ -2669,10 +2720,7 @@
     if((!text&&!pendingAttachments.length)||pendingAttachmentReads>0){if(pendingAttachmentReads>0)showToast('Aguarde os anexos.');return;}
     if(mode==='dm'&&dmId==='user-lola'&&lolaCloudReady()){
       if(lolaResetPromise){try{await lolaResetPromise;}catch{}}
-      if(!state.lolaSessionInfo?.[state.currentAccountId]){
-        try{const remote=await cloudRequest('/api/ai/conversations');state.lolaSessionInfo[state.currentAccountId]={id:remote.sessionId||'legacy',pendingReset:false};}
-        catch(err){console.warn('[Azurecord] Sessão da Lola:',err.message);}
-      }
+      await ensureLolaSession();
     }
     const p=currentUser();if(!p)return;
     let outgoingFiles=[];
@@ -2685,8 +2733,9 @@
         return;
       }
     }
+    const lolaSessionId=mode==='dm'&&dmId==='user-lola'?state.lolaSessionInfo?.[p.id]?.id:null;
     const m={id:uid('msg'),author:p.id,text,time:now(),...(mode==='dm'?{clientId:null}:{}),
-      ...(mode==='dm'&&dmId==='user-lola'?{lolaSessionId:state.lolaSessionInfo?.[p.id]?.id||'legacy'}:{})};
+      ...(lolaSessionId&&lolaSessionId!=='legacy'?{lolaSessionId}:{})};
     if(replyTo){m.replyTo={authorName:getProfile(replyTo.author)?.username||'Usuário',text:replyTo.text};replyTo=null;}
     if(outgoingFiles.length){m.files=outgoingFiles;if(m.files.length===1)m.file=m.files[0];}
     learnFromUserText(text);
@@ -2715,12 +2764,13 @@
         if(typeof navigator!=='undefined'&&navigator.onLine===false){
           m.failed=true;m.lastError='Sem conexão com a internet.';saveNow();renderMessages();
         }else if(socialReady()){
-          const controller=new AbortController();
-          const timeout=setTimeout(()=>controller.abort(),12000);
-          socialRequest(`/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,{method:'POST',signal:controller.signal,body:JSON.stringify({text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id})})
-            .then(result=>{if(result.message){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();commitCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id,commitId:uid('channel-commit')});wakeCloudRealtimeSync();}})
-            .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);})
-            .finally(()=>clearTimeout(timeout));
+          cloudPostMessageWithRetry(
+            `/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,
+            {text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id},
+            {timeoutMs:15000,retries:1}
+          )
+            .then(result=>{if(result?.message?.id){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();commitCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id,commitId:uid('channel-commit')});wakeCloudRealtimeSync();}else throw new Error('O servidor não confirmou a mensagem.');})
+            .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);});
         }else{
           m.failed=true;m.lastError='Azurecord Cloud indisponível.';saveNow();renderMessages();
         }

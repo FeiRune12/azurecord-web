@@ -1,1 +1,1 @@
-Azurecord 2.0.4 AzureCall Native Android
+Azurecord 2.0.5 AzureCall Native Android
