@@ -1,4 +1,4 @@
-# Azurecord V52 Beta 8.4
+# Azurecord Repository
 
 Este repositório pode hospedar ao mesmo tempo o Azurecord Web/PWA e o código do app Windows.
 
