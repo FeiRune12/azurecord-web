@@ -13,7 +13,9 @@ test('1.0.9: compartilhamento remoto aparece no Web com áudio separado',()=>{
   assert.match(html,/id="callRemoteShareName"/);
   assert.match(app,/remote\.muted=true/);
   assert.match(app,/remoteAudio\.srcObject/);
-  assert.match(app,/track\.readyState!=='ended'/);
+  assert.match(app,/remoteScreenTrack/);
+  assert.match(app,/remoteCameraTrack/);
+  assert.match(app,/displayStream=remoteSharing/);
 });
 
 test('1.0.9: AzureCall sinaliza screen share pelo DataChannel sem depender da API',()=>{
