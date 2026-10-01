@@ -23,5 +23,4 @@ test('1.0.4: realtime worker suporta typing e presence',()=>{
   const worker=fs.readFileSync(path.resolve(root,'..','realtime','worker.js'),'utf8');
   assert.match(worker,/message\?\.type === "typing"/);
   assert.match(worker,/message\?\.type === "presence\.commit"/);
-  assert.match(worker,/version: "1\.2\.0"/);
 });

@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "private": true,
-  "description": "Azurecord 1.0: realtime WebSocket instantâneo, servidores por link, R2 e sincronização Web/Desktop.",
+  "description": "Azurecord 1.0: realtime, servidores, R2, mensagens multilinha e AzureCall WebRTC.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

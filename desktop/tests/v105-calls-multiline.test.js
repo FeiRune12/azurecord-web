@@ -27,7 +27,7 @@ test('1.0.5: AzureCall 1:1 usa WebRTC e sinalização realtime',()=>{
   assert.match(app,/navigator\.mediaDevices\.getDisplayMedia/);
   assert.match(app,/type:'call\.signal'/);
   assert.match(worker,/message\?\.type === "call\.signal"/);
-  assert.match(worker,/version: "1\.3\.0"/);
+  assert.match(worker,/type: "call\.signal"/);
 });
 
 test('1.0.5: desktop habilita seletor de compartilhamento de tela',()=>{
