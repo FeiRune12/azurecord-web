@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Azurecord</string>
+    <string name="screen_share_channel">AzureCall - compartilhamento de tela</string>
+    <string name="screen_share_active">Compartilhando sua tela no AzureCall</string>
+</resources>
