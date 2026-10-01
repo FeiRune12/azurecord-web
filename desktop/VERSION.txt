@@ -1,1 +1,1 @@
-Azurecord 3.0.0 Mobile Profile Polish
+Azurecord 3.0.1 Auth Mobile Hotfix
