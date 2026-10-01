@@ -1,6 +1,8 @@
 'use strict';
 
 const { app, Notification } = require('electron');
+const fs = require('fs');
+const path = require('path');
 
 function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
   const noop = { checkNow: async () => false, isReady: () => false, installNow: () => false };
@@ -24,6 +26,20 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
   autoUpdater.allowDowngrade = false;
   let updateReady = false;
   let downloadedVersion = null;
+  const stateFile = path.join(app.getPath('userData'), 'azurecord-update-state.json');
+
+  const readState = () => {
+    try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); }
+    catch { return {}; }
+  };
+  const writeState = (state) => {
+    try {
+      fs.mkdirSync(path.dirname(stateFile), { recursive: true });
+      fs.writeFileSync(stateFile, JSON.stringify(state), 'utf8');
+    } catch {}
+  };
+  const clearState = () => { try { fs.rmSync(stateFile, { force: true }); } catch {} };
+  const startupState = readState();
 
   const notify = (title, body) => {
     try {
@@ -44,17 +60,21 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     updateReady = true;
     downloadedVersion = info?.version || null;
     log('[updater] Atualização baixada:', downloadedVersion || 'desconhecida');
-    notify('Atualização pronta', 'Feche a janela do Azurecord para reiniciar e instalar a nova versão.');
+    writeState({ pendingVersion: downloadedVersion || null, downloadedAt: Date.now() });
+    notify('Atualização pronta', 'O Azurecord será reiniciado para aplicar a nova versão.');
     try {
       const win = getMainWindow?.();
       if (win && !win.isDestroyed()) {
         win.webContents.send('desktop:update-status', {
           state: 'downloaded',
           version: info?.version || null,
-          installOnQuit: true,
+          installOnQuit: false,
+          autoInstall: true,
         });
       }
     } catch {}
+    const installTimer = setTimeout(() => installNow(), 1200);
+    installTimer.unref?.();
   });
   autoUpdater.on('error', (error) => log('[updater] Erro:', error?.stack || error));
 
@@ -74,6 +94,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     if (!updateReady) return false;
     try {
       log('[updater] Instalando atualização:', downloadedVersion || 'desconhecida');
+      app.isQuitting = true;
       setImmediate(() => autoUpdater.quitAndInstall(false, true));
       return true;
     } catch (error) {
@@ -82,7 +103,23 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     }
   };
 
-  const startupTimer = setTimeout(checkNow, 8000);
+  if (startupState?.pendingVersion && startupState.pendingVersion === app.getVersion()) {
+    clearState();
+    const completedTimer = setTimeout(() => {
+      notify('Azurecord atualizado', `A versão ${app.getVersion()} foi instalada com sucesso.`);
+      try {
+        const win = getMainWindow?.();
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('desktop:update-status', { state: 'updated', version: app.getVersion() });
+        }
+      } catch {}
+    }, 1800);
+    completedTimer.unref?.();
+  } else if (startupState?.pendingVersion && startupState.pendingVersion !== app.getVersion()) {
+    log('[updater] Atualização pendente ainda não aplicada:', startupState.pendingVersion);
+  }
+
+  const startupTimer = setTimeout(checkNow, 1500);
   startupTimer.unref?.();
   const interval = setInterval(checkNow, 15 * 60 * 1000);
   interval.unref?.();
