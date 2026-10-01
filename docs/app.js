@@ -126,6 +126,11 @@
   let backendEventSource = null;
   let pendingAttachments = [];
   let pendingAttachmentReads = 0;
+  const realtimePresence = new Map();
+  const realtimeTyping = new Map();
+  let typingLastSentAt = 0;
+  let typingStopTimer = null;
+  let dragDepth = 0;
 
   async function cloudRequest(path, options = {}){
     const {auth=true, ...fetchOptions} = options;
@@ -590,10 +595,90 @@
     if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)renderMessages();else renderServerRail();
     return true;
   }
+  function effectiveOwnPresence(){
+    const own=currentUser();
+    const manual=String(own?.status||'online');
+    if(manual==='offline'||manual==='dnd'||manual==='idle')return manual;
+    return document.hidden?'idle':'online';
+  }
+  function resolvedPresence(userId){
+    if(!userId)return 'offline';
+    if(userId==='user-lola')return 'online';
+    if(userId===state.currentAccountId)return effectiveOwnPresence();
+    const item=realtimePresence.get(String(userId));
+    if(item&&Date.now()-item.at<70000)return item.status;
+    if(item)realtimePresence.delete(String(userId));
+    return 'offline';
+  }
+  function publishPresence(){
+    if(!cloudRealtimeConnected()||!state.currentAccountId)return false;
+    return sendCloudRealtime({type:'presence.commit',status:effectiveOwnPresence()});
+  }
+  function typingConversationKey(scope,userId,serverId='',channelId=''){
+    return scope==='dm' ? `dm|${String(userId||'')}` : `channel|${String(serverId||'')}|${String(channelId||'')}|${String(userId||'')}`;
+  }
+  function renderTypingIndicator(){
+    const el=$('typingIndicator');if(!el)return;
+    const stamp=Date.now();const names=[];
+    for(const [key,item] of realtimeTyping){
+      if(stamp-item.at>5000){realtimeTyping.delete(key);continue;}
+      const inView=item.scope==='dm'
+        ? view.mode==='dm'&&String(view.dmUserId)===String(item.userId)
+        : view.mode==='server'&&String(view.serverId)===String(item.localServerId||item.serverId)&&String(view.channelId)===String(item.localChannelId||item.channelId);
+      if(!inView)continue;
+      names.push(getProfile(item.userId)?.username||'Alguém');
+    }
+    if(!names.length){el.hidden=true;el.textContent='';return;}
+    el.hidden=false;
+    el.textContent=names.length===1?`${names[0]} está digitando…`:`${names.slice(0,2).join(' e ')} estão digitando…`;
+  }
+  function publishTyping(active){
+    if(!cloudRealtimeConnected()||!state.currentAccountId)return false;
+    if(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')return sendCloudRealtime({type:'typing',scope:'dm',targetUserId:view.dmUserId,active:!!active});
+    if(view.mode==='server'&&view.serverId&&view.channelId){
+      const srv=getServer(view.serverId),ch=getChannel(view.serverId,view.channelId);
+      if(!srv||!ch)return false;
+      return sendCloudRealtime({type:'typing',scope:'channel',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,active:!!active});
+    }
+    return false;
+  }
+  function handleTypingInput(){
+    const input=$('messageInput');if(!input)return;
+    const active=!!input.value.trim(),stamp=Date.now();
+    if(active&&stamp-typingLastSentAt>1200){publishTyping(true);typingLastSentAt=stamp;}
+    clearTimeout(typingStopTimer);typingStopTimer=setTimeout(()=>publishTyping(false),2200);
+    if(!active)publishTyping(false);
+  }
+  function stopTypingNow(){clearTimeout(typingStopTimer);typingStopTimer=null;typingLastSentAt=0;publishTyping(false);}
+  function applyPresenceEvent(event){
+    const userId=String(event.userId||'');if(!userId||userId===state.currentAccountId)return;
+    const status=['online','idle','dnd','offline'].includes(event.status)?event.status:'offline';
+    realtimePresence.set(userId,{status,at:Date.now()});
+    if(view.mode==='home')renderHome();
+    if(view.mode==='dm'&&view.dmUserId===userId)renderChat();
+    if(view.mode==='server')renderMemberPanel();
+  }
+  function applyTypingEvent(event){
+    const userId=String(event.userId||'');if(!userId||userId===state.currentAccountId)return;
+    let localServerId='',localChannelId='';
+    if(event.scope==='channel'){
+      const srv=state.servers.find(x=>String(x.backendId||x.id)===String(event.serverId||''));
+      const ch=srv?.channels?.find(x=>String(x.backendId||x.id)===String(event.channelId||''));
+      localServerId=srv?.id||'';localChannelId=ch?.id||'';
+    }
+    const key=typingConversationKey(String(event.scope||''),userId,event.serverId,event.channelId);
+    if(event.active===false)realtimeTyping.delete(key);
+    else realtimeTyping.set(key,{scope:event.scope,userId,serverId:event.serverId||'',channelId:event.channelId||'',localServerId,localChannelId,at:Date.now()});
+    renderTypingIndicator();
+    if(event.active!==false)setTimeout(renderTypingIndicator,5200);
+  }
+
   async function handleCloudRealtimeEvent(event){
     if(!event||rememberRealtimeEvent(event.eventId))return;
-    if(event.type==='ready'){cloudRealtimeSocketReady=true;cloudRealtimeReconnectAttempt=0;cloudRealtimeFailures=0;wakeCloudRealtimeSync({snapshot:true});return;}
+    if(event.type==='ready'){cloudRealtimeSocketReady=true;cloudRealtimeReconnectAttempt=0;cloudRealtimeFailures=0;publishPresence();wakeCloudRealtimeSync({snapshot:true});return;}
     if(event.type==='pong')return;
+    if(event.type==='presence.changed'){applyPresenceEvent(event);return;}
+    if(event.type==='typing'){applyTypingEvent(event);return;}
     if(event.type==='dm.upsert'){const peerId=String(event.peerId||'');if(peerId&&event.message){applyRealtimeDmMessage(peerId,event.message);return;}}
     if(event.type==='dm.changed'){const peerId=String(event.peerId||'');if(!peerId||peerId==='user-lola')return;await syncDmFromBackend(peerId);return;}
     if(event.type==='channel.upsert'){const ok=applyRealtimeChannelMessage(String(event.serverId||''),String(event.channelId||''),event.message);if(!ok)await hydrateFromCloudSocial({quiet:true});return;}
@@ -643,7 +728,7 @@
       clearInterval(cloudRealtimeHeartbeatTimer);
       cloudRealtimeHeartbeatTimer=setInterval(()=>{
         if(ws.readyState===WebSocket.OPEN){
-          try{ws.send(JSON.stringify({type:'ping',at:Date.now()}));}catch{}
+          try{ws.send(JSON.stringify({type:'ping',at:Date.now()}));publishPresence();}catch{}
         }
       },25000);
     };
@@ -922,7 +1007,9 @@
   function showToast(text){ const t=$('toast'); t.textContent=text; t.classList.add('show'); clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),2500); }
   function logout(){
     try{ if(backendEventSource){backendEventSource.close(); backendEventSource=null;} }catch{}
+    if(cloudRealtimeConnected())sendCloudRealtime({type:'presence.commit',status:'offline'});
     stopCloudRealtimeSocket();
+    realtimePresence.clear();realtimeTyping.clear();renderTypingIndicator();
     clearTimeout(cloudSocialPollTimer);cloudSocialPollTimer=null;
     if(cloudToken)cloudRequest('/auth/logout',{method:'POST'}).catch(()=>{});
     state.accounts=state.accounts.map(a=>a.id===state.currentAccountId?{...a,status:'offline',lastLogin:a.lastLogin||now()}:a);
@@ -1178,14 +1265,14 @@
     $('pointsBtn').onclick=openAzurePoints; $('railPointsBtn').onclick=openAzurePoints; $('lolaStatusBtn').onclick=openLolaAiSetup;
     $('globalSearchBtn').onclick=openGlobalSearch; $('notifyBtn').onclick=openNotifications; $('themeBtn').onclick=toggleTheme; $('openSettings').onclick=openSettings;
     $('logoutBtn').onclick=logout; $('userBar').onclick=(e)=>{if(e.target.closest('button'))return;e.stopPropagation();openProfilePeek(currentUser()?.id,e.currentTarget);};
-    $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b||b.disabled)return;const [removed]=pendingAttachments.splice(Number(b.dataset.removeAttachment),1);releasePendingAttachment(removed);renderAttachmentPreview();});
+    $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('messageInput').addEventListener('input',handleTypingInput); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('chatView')?.addEventListener('dragenter',handleChatDragEnter); $('chatView')?.addEventListener('dragover',handleChatDragOver); $('chatView')?.addEventListener('dragleave',handleChatDragLeave); $('chatView')?.addEventListener('drop',handleChatDrop); $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b||b.disabled)return;const [removed]=pendingAttachments.splice(Number(b.dataset.removeAttachment),1);releasePendingAttachment(removed);renderAttachmentPreview();});
     $('gifBtn').dataset.composerType='gif'; $('stickerBtn').dataset.composerType='sticker'; $('emojiBtn').dataset.composerType='emoji'; $('appsBtn').dataset.composerType='apps';
     $('gifBtn').onclick=()=>openComposerPopover('gif'); $('stickerBtn').onclick=()=>openComposerPopover('sticker'); $('emojiBtn').onclick=()=>openComposerPopover('emoji'); $('appsBtn').onclick=()=>openComposerPopover('apps');
     $('composer').addEventListener('click',e=>e.stopPropagation()); $('composerPopover')?.addEventListener('click',e=>e.stopPropagation());
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=openCallInfo; $('videoBtn').onclick=openCallInfo; $('screenBtn').onclick=openCallInfo; $('searchBtn').onclick=openChannelSearch; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&socialCloudReady()){startCloudRealtimeSocket();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -1515,12 +1602,12 @@
   }
   function toggleDms(){ const list=$('dmList'); const hidden=list.hidden;list.hidden=!hidden;$('dmToggle').setAttribute('aria-expanded',String(hidden));$('dmToggle').querySelector('.dm-chevron').textContent=hidden?'⌄':'›'; }
 
-  function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p?.status==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
+  function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p&&resolvedPresence(p.id)==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
   function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); const hasRequests=(state.requests||[]).some(r=>r.status==='pending'&&(r.from===state.currentAccountId||r.to===state.currentAccountId)); if((view.home==='requests'||view.homeTab==='pending')&&hasRequests){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(!hasRequests&&(view.home==='requests'||view.homeTab==='pending')){view.home='friends';view.homeTab='all';} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
-  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>p.status==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${allPeople().filter(p=>p.id!==currentUser()?.id&&!isFriend(p.id)).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
+  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${allPeople().filter(p=>p.id!==currentUser()?.id&&!isFriend(p.id)).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
-  function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=p.id==='user-lola'; const statusText=system?'Assistente do sistema':statusLabel(p.status); return `<div class="friend-row" data-user-row="${p.id}"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span></div><span class="presence-dot ${p.status==='online'?'online':''}"></span><div class="friend-actions">${system?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
+  function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=p.id==='user-lola'; const liveStatus=resolvedPresence(p.id); const statusText=system?'Assistente do sistema':statusLabel(liveStatus); return `<div class="friend-row" data-user-row="${p.id}"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span></div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
   function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} const refresh=$('refreshFriendRequests');if(refresh)refresh.onclick=async()=>{refresh.disabled=true;try{await hydrateFromCloudSocial({quiet:false});renderHome();}finally{refresh.disabled=false;}}; $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
   async function renderSearchResults(){
     const holder=$('friendSearchResults');if(!holder)return;
@@ -1788,7 +1875,7 @@
   }
   async function clearDm(){if(view.mode!=='dm'||!view.dmUserId)return;const id=view.dmUserId;if(id==='user-lola'){if(confirm('Iniciar uma nova conversa com a Lola? O chat atual será arquivado no Azurecord Cloud.'))await startNewLolaChat();return;}if(!confirm(`Limpar a conversa com ${getProfile(id)?.username||'usuário'}?`))return;const key=dmKey(id);state.closedDms=state.closedDms||{};delete state.closedDms[key];state.dmMessages[key]=[];state.unread[key]=0;if(id==='user-lola'){state.lolaInitiated=state.lolaInitiated&&typeof state.lolaInitiated==='object'?state.lolaInitiated:{};delete state.lolaInitiated[key];}save();renderDms();renderMessages();if(socialReady()){try{await socialRequest(`/api/dms/${encodeURIComponent(id)}`,{method:'DELETE'});}catch{showToast('Conversa limpa apenas neste dispositivo.');}}showToast('Conversa limpa.');if(id==='user-lola')queueLolaInitiation(false);}
 
-  function renderChat(){ if(view.mode==='home'){ $('chatView').hidden=true;return; } $('chatView').hidden=false; const isDm=view.mode==='dm', p=isDm?getProfile(view.dmUserId):null,c=isDm?null:getChannel(view.serverId,view.channelId);$('chatIcon').textContent=isDm?'':(c?.type==='text'?'#':'◉');$('channelTitle').textContent=isDm?p?.username||'Mensagem Direta':c?.name||'geral';$('channelTopic').textContent=isDm?`${p?.handle||''} • ${p?.status==='online'?'online':'offline'}`:(c?.topic||'');$('channelWelcome').textContent=isDm?`Conversa com ${p?.username||'usuário'}`:`Bem-vindo a #${c?.name||'geral'}`;$('chatHeader').classList.toggle('dm-header',isDm);$('chatBanner')?.removeAttribute?.('hidden');$('messageInput').placeholder=isDm?`Mensagem para ${p?.username||'usuário'}`:`Conversar em #${c?.name||'geral'}`;$('clearDmBtn').hidden=!isDm;$('newLolaChatBtn').hidden=!(isDm&&view.dmUserId==='user-lola');$('lolaStatusBtn').hidden=!(isDm&&view.dmUserId==='user-lola');$('messageInput').disabled=false;$('messageInput').readOnly=false;$('profilePeek').hidden=!view.showProfile||!isDm; renderMessages(); }
+  function renderChat(){ if(view.mode==='home'){ $('chatView').hidden=true;return; } $('chatView').hidden=false; const isDm=view.mode==='dm', p=isDm?getProfile(view.dmUserId):null,c=isDm?null:getChannel(view.serverId,view.channelId);$('chatIcon').textContent=isDm?'':(c?.type==='text'?'#':'◉');$('channelTitle').textContent=isDm?p?.username||'Mensagem Direta':c?.name||'geral';$('channelTopic').textContent=isDm?`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`:(c?.topic||'');$('channelWelcome').textContent=isDm?`Conversa com ${p?.username||'usuário'}`:`Bem-vindo a #${c?.name||'geral'}`;$('chatHeader').classList.toggle('dm-header',isDm);$('chatBanner')?.removeAttribute?.('hidden');$('messageInput').placeholder=isDm?`Mensagem para ${p?.username||'usuário'}`:`Conversar em #${c?.name||'geral'}`;$('clearDmBtn').hidden=!isDm;$('newLolaChatBtn').hidden=!(isDm&&view.dmUserId==='user-lola');$('lolaStatusBtn').hidden=!(isDm&&view.dmUserId==='user-lola');$('messageInput').disabled=false;$('messageInput').readOnly=false;$('profilePeek').hidden=!view.showProfile||!isDm; renderMessages(); renderTypingIndicator(); }
   function getMessages(){ if(view.mode==='dm')return state.dmMessages[dmKey(view.dmUserId)]||[]; return state.channelMessages[`${view.serverId}|${view.channelId}`]||[]; }
   function setMessages(arr){ if(view.mode==='dm')state.dmMessages[dmKey(view.dmUserId)]=arr; else state.channelMessages[`${view.serverId}|${view.channelId}`]=arr; save(); }
   function renderMessages(){ const box=$('messages');const all=getMessages();const msgs=all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));const hiddenCount=all.length-msgs.length;box.innerHTML=(hiddenCount?`<div class="message-filter-note">${hiddenCount} mensagem${hiddenCount===1?'':'s'} ocultada${hiddenCount===1?'':'s'} por Bloquear/Ignorar.</div>`:'')+(msgs.map(renderMessage).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem visível. Comece a conversa.</span></div>'); box.querySelectorAll('[data-msg]').forEach(el=>el.addEventListener('contextmenu',e=>openContextMenu(e,el.dataset.msg))); box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);}); }
@@ -1858,6 +1945,20 @@
     if(item?._previewUrl){try{URL.revokeObjectURL(item._previewUrl);}catch{}}
   }
 
+  function setDropOverlay(show){
+    const overlay=$('chatDropOverlay');if(overlay)overlay.hidden=!show;
+    $('chatView')?.classList.toggle('drag-active',!!show);
+  }
+  function dragHasFiles(e){return Array.from(e.dataTransfer?.types||[]).includes('Files');}
+  function handleChatDragEnter(e){if(!dragHasFiles(e))return;e.preventDefault();dragDepth++;setDropOverlay(true);}
+  function handleChatDragOver(e){if(!dragHasFiles(e))return;e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';setDropOverlay(true);}
+  function handleChatDragLeave(e){if(!dragHasFiles(e))return;e.preventDefault();dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)setDropOverlay(false);}
+  async function handleChatDrop(e){
+    if(!dragHasFiles(e))return;e.preventDefault();dragDepth=0;setDropOverlay(false);
+    const files=[...(e.dataTransfer?.files||[])];if(!files.length)return;
+    await handleFiles({target:{files}});$('messageInput')?.focus();
+  }
+
   async function uploadAttachmentInChunks(item){
     const file=item?._file;
     if(!file)return {id:item.id,name:item.name,size:item.size,type:item.type,url:item.url||'',key:item.key||'',visual:item.visual||null};
@@ -1904,7 +2005,7 @@
   }
 
   async function handleFiles(e){
-    const files=[...(e.target.files||[])];
+    const files=[...(e.target?.files||[])];
     if(!files.length)return;
     pendingAttachmentReads+=files.length;
     for(const file of files){
@@ -2402,7 +2503,7 @@
     }else{
       const key=`${serverId}|${channelId}`;state.channelMessages[key]=state.channelMessages[key]||[];state.channelMessages[key].push(m);
     }
-    input.value='';$('fileInput').value='';pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();saveNow();renderMessages();renderDms();
+    input.value='';stopTypingNow();$('fileInput').value='';pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();saveNow();renderMessages();renderDms();
     if(mode==='dm'){
       if((dmId==='user-lola'&&lolaCloudReady())||(dmId!=='user-lola'&&socialReady())){
         const persisted=await sendDmToBackend(m,dmId);
@@ -2441,7 +2542,7 @@
   function closeProfilePeekOnOutside(e){const panel=$('profilePeek');if(!panel||panel.hidden)return;if(e.target.closest('#profilePeek'))return;if(e.target.closest('[data-profile-msg], [data-member], #userBar, #chatTitleTrigger'))return;closeProfilePeek();}
   function hideContext(){ $('contextMenu').hidden=true; }
 
-  function renderMemberPanel(){ const panel=$('memberPanel'); if(view.mode!=='server'||!view.showMembers){panel.hidden=true;return;}panel.hidden=false;const members=[currentUser(),...DEMO_USERS.filter(x=>x.id!==currentUser()?.id)];$('memberList').innerHTML=`<div class="member-panel-head"><strong>MEMBROS • ${members.length}</strong><span class="presence-legend">${members.filter(m=>m.status==='online').length} online</span></div>`+members.filter(Boolean).map(p=>`<button class="member-item" data-member="${p.id}"><div class="mini-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc(p.username[0])}</div><div><strong>${esc(p.username)}</strong><span>${statusLabel(p.status)}</span></div><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span></button>`).join('');$('[data-member]')?.focus?.();$$('#memberList [data-member]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openProfilePeek(b.dataset.member,b);}); }
+  function renderMemberPanel(){ const panel=$('memberPanel'); if(view.mode!=='server'||!view.showMembers){panel.hidden=true;return;}panel.hidden=false;const members=[currentUser(),...DEMO_USERS.filter(x=>x.id!==currentUser()?.id)];$('memberList').innerHTML=`<div class="member-panel-head"><strong>MEMBROS • ${members.length}</strong><span class="presence-legend">${members.filter(m=>m.status==='online').length} online</span></div>`+members.filter(Boolean).map(p=>`<button class="member-item" data-member="${p.id}"><div class="mini-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc(p.username[0])}</div><div><strong>${esc(p.username)}</strong><span>${statusLabel(resolvedPresence(p.id))}</span></div><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span></button>`).join('');$('[data-member]')?.focus?.();$$('#memberList [data-member]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openProfilePeek(b.dataset.member,b);}); }
   function openProfilePeek(id,anchorEl=null){
     const p=getProfile(id); if(!p)return;
     selectedProfile=id; view.showProfile=true;

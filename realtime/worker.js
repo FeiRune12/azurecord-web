@@ -122,6 +122,37 @@ export class UserHub {
     });
   }
 
+  async friendIdsFor(session) {
+    try {
+      const response = await fetch(`${AZURECORD_API_URL}/api/friends`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (Array.isArray(data?.friends) ? data.friends : [])
+        .map(friend => String(friend?.id || ""))
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  async serverMemberIdsFor(session, serverId) {
+    try {
+      const response = await fetch(
+        `${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/members`,
+        { headers: { Authorization: `Bearer ${session.token}` } }
+      );
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (Array.isArray(data?.members) ? data.members : [])
+        .map(member => String(member?.id || ""))
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
   async webSocketMessage(ws, raw) {
     const session = await this.sessionFor(ws);
     if (!session) return;
@@ -136,6 +167,66 @@ export class UserHub {
     if (message?.type === "ping") {
       try { ws.send(JSON.stringify({ type: "pong", at: Date.now() })); } catch {}
       return;
+    }
+
+    if (message?.type === "presence.commit") {
+      const status = ["online", "idle", "dnd", "offline"].includes(String(message.status))
+        ? String(message.status)
+        : "online";
+      const friendIds = await this.friendIdsFor(session);
+      const event = {
+        type: "presence.changed",
+        eventId: crypto.randomUUID(),
+        userId: session.userId,
+        status,
+        at: Date.now(),
+      };
+      await Promise.allSettled([
+        this.notifyUser(session.userId, event),
+        ...friendIds.map(userId => this.notifyUser(userId, event)),
+      ]);
+      return;
+    }
+
+    if (message?.type === "typing") {
+      const active = message.active !== false;
+      const scope = String(message.scope || "");
+      if (scope === "dm") {
+        const targetUserId = String(message.targetUserId || "");
+        if (!targetUserId || targetUserId === session.userId) return;
+        const friends = await this.friendIdsFor(session);
+        if (!friends.includes(targetUserId)) return;
+        await this.notifyUser(targetUserId, {
+          type: "typing",
+          eventId: crypto.randomUUID(),
+          scope: "dm",
+          userId: session.userId,
+          active,
+          at: Date.now(),
+        });
+        return;
+      }
+      if (scope === "channel") {
+        const serverId = String(message.serverId || "");
+        const channelId = String(message.channelId || "");
+        if (!serverId || !channelId) return;
+        const members = await this.serverMemberIdsFor(session, serverId);
+        if (!members.includes(session.userId)) return;
+        const event = {
+          type: "typing",
+          eventId: crypto.randomUUID(),
+          scope: "channel",
+          userId: session.userId,
+          serverId,
+          channelId,
+          active,
+          at: Date.now(),
+        };
+        await Promise.allSettled(
+          members.filter(userId => userId !== session.userId).map(userId => this.notifyUser(userId, event))
+        );
+        return;
+      }
     }
 
     if (message?.type === "account.commit") {
@@ -273,6 +364,22 @@ export class UserHub {
   }
 
   webSocketClose(ws, code, reason) {
+    const session = ws.deserializeAttachment?.() || null;
+    if (session?.userId && session?.token) {
+      this.ctx.waitUntil((async () => {
+        const others = this.ctx.getWebSockets().filter(socket => socket !== ws);
+        if (others.length) return;
+        const friendIds = await this.friendIdsFor(session);
+        const event = {
+          type: "presence.changed",
+          eventId: crypto.randomUUID(),
+          userId: session.userId,
+          status: "offline",
+          at: Date.now(),
+        };
+        await Promise.allSettled(friendIds.map(userId => this.notifyUser(userId, event)));
+      })());
+    }
     try { ws.close(code, reason); } catch {}
   }
 
@@ -289,7 +396,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.1.0",
+        version: "1.2.0",
         transport: "websocket",
         hibernation: true,
       });
