@@ -58,7 +58,10 @@ class AzurecordUpdateWorker(
         for (i in 0 until assets.length()) {
             val asset = assets.optJSONObject(i) ?: continue
             val name = asset.optString("name")
-            if (name.startsWith("Azurecord-Android-") && name.endsWith(".apk")) {
+            if (name.startsWith("Azurecord-Android-") &&
+                name.endsWith(".apk") &&
+                !name.contains("UNSIGNED-TEST", ignoreCase = true)
+            ) {
                 downloadUrl = asset.optString("browser_download_url")
                 break
             }

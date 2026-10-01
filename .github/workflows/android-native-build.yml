@@ -56,7 +56,7 @@ jobs:
             echo "AZURECORD_SIGNED_BUILD=true" >> "$GITHUB_ENV"
           else
             echo "AZURECORD_SIGNED_BUILD=false" >> "$GITHUB_ENV"
-            echo "::warning::Chave Android permanente ainda não configurada. O job gerará somente APK de teste e não publicará um APK atualizável."
+            echo "::warning::Chave Android permanente ainda não configurada. O job publicará um APK claramente marcado como UNSIGNED-TEST para download manual, mas o updater irá ignorá-lo."
           fi
 
       - name: Java 17
@@ -125,8 +125,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Publicar APK assinado no GitHub Release
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && env.AZURECORD_SIGNED_BUILD == 'true'
+      - name: Publicar APK no GitHub Release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
