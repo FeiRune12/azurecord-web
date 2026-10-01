@@ -7,6 +7,8 @@ on:
       - fix/2.0.4-azurecall-native-android
     paths:
       - "android/**"
+      - "docs/**"
+      - "desktop/package.json"
       - ".github/workflows/android-native-build.yml"
   pull_request:
     paths:
