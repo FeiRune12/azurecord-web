@@ -1559,6 +1559,12 @@
   }
 
   function boot(){
+    try{
+      window.azurecordDesktop?.onUpdateStatus?.((payload)=>{
+        if(payload?.state==='updated')showToast(`Azurecord atualizado para ${payload.version||'a versão mais recente'}.`,{duration:5200});
+        else if(payload?.state==='downloaded'&&payload?.autoInstall)showToast('Atualização baixada. O Azurecord vai reiniciar para instalar.',{duration:4000});
+      });
+    }catch{}
     window.__azurecordBootStarted=performance.now();
     setScreen('loadingScreen');
     setupMobileUi();
