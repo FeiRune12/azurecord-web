@@ -11,13 +11,28 @@ android {
         applicationId = "com.azurecord.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 205
-        versionName = "2.0.5"
+        versionCode = 206
+        versionName = "2.0.6"
+    }
+
+    signingConfigs {
+        create("release") {
+            val signingFile = System.getenv("AZURECORD_SIGNING_STORE_FILE")
+            if (!signingFile.isNullOrBlank()) {
+                storeFile = file(signingFile)
+                storePassword = System.getenv("AZURECORD_SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("AZURECORD_SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("AZURECORD_SIGNING_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (!System.getenv("AZURECORD_SIGNING_STORE_FILE").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

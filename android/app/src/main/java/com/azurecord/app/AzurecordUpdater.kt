@@ -34,6 +34,7 @@ object AzurecordUpdater {
     private const val KEY_PENDING_PERMISSION = "pending_install_permission"
     private const val KEY_FINISH_AFTER_PERMISSION = "finish_after_permission"
     private const val KEY_INSTALL_IN_PROGRESS = "install_in_progress"
+    private const val KEY_REJECTED_VERSION = "rejected_version"
 
     private const val UPDATE_CHANNEL = "azurecord-updates"
     private const val UPDATE_NOTIFICATION_ID = 205
@@ -78,9 +79,39 @@ object AzurecordUpdater {
         prefs.edit()
             .putString(KEY_VERSION, version)
             .putString(KEY_PATH, apk.absolutePath)
+            .remove(KEY_REJECTED_VERSION)
             .putBoolean(KEY_INSTALL_IN_PROGRESS, false)
             .apply()
         showReadyNotification(context, version)
+    }
+
+    fun rejectedVersion(context: Context): String? =
+        prefs(context).getString(KEY_REJECTED_VERSION, null)
+
+    fun markSigningTransitionNeeded(context: Context, version: String, downloadUrl: String) {
+        prefs(context).edit().putString(KEY_REJECTED_VERSION, version).apply()
+        ensureUpdateChannel(context)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) return
+
+        val open = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
+        val pending = PendingIntent.getActivity(
+            context,
+            206,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = Notification.Builder(context, UPDATE_CHANNEL)
+            .setSmallIcon(R.drawable.ic_azurecord)
+            .setContentTitle("Azurecord $version precisa de uma reinstalação única")
+            .setContentText("A assinatura Android mudou para a chave permanente. Toque para baixar o APK oficial.")
+            .setContentIntent(pending)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java)
+            .notify(UPDATE_NOTIFICATION_ID, notification)
     }
 
     fun readyVersion(context: Context): String? {

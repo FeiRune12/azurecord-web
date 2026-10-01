@@ -51,6 +51,7 @@ class AzurecordUpdateWorker(
 
         val tag = release.optString("tag_name").removePrefix("v")
         if (tag.isBlank() || compareVersions(tag, BuildConfig.VERSION_NAME) <= 0) return
+        if (AzurecordUpdater.rejectedVersion(applicationContext) == tag) return
 
         val assets = release.optJSONArray("assets") ?: return
         var downloadUrl = ""
@@ -95,7 +96,8 @@ class AzurecordUpdateWorker(
 
         if (!AzurecordUpdater.verifyDownloadedApk(applicationContext, target)) {
             target.delete()
-            throw IllegalStateException("O APK baixado não corresponde à assinatura/versão instalada.")
+            AzurecordUpdater.markSigningTransitionNeeded(applicationContext, tag, downloadUrl)
+            return
         }
 
         AzurecordUpdater.markReady(applicationContext, tag, target)
