@@ -1291,7 +1291,7 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  const APP_CORRECTION_NOTICE={id:'3.0.7-azurecall-echo-control-20261001',title:'Azurecord 3.0.7',body:'AzureCall recebeu cancelamento de eco, redução de ruído e proteção contra trilhas de áudio duplicadas.'};
+  const APP_CORRECTION_NOTICE={id:'3.0.8-android-screen-share-clean-ui-20261001',title:'Azurecord 3.0.8',body:'A transmissão de tela no Android foi estabilizada e o aviso foi simplificado para mostrar apenas o nome de quem está transmitindo.'};
   function announceAppCorrection(){
     if(!currentUser())return;
     const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
@@ -1586,7 +1586,7 @@
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=()=>startDmCall('voice'); $('videoBtn').onclick=()=>startDmCall('video'); $('screenBtn').onclick=()=>activeCall?toggleCallScreen():startDmCall('screen'); $('searchBtn').onclick=openChannelSearch;
-    $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callRemoteShareTag').onclick=openRemoteSharedScreen; $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
+    $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
     document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
@@ -3654,7 +3654,7 @@
     const focusExit=$('callShareFocusExit');if(focusExit)focusExit.hidden=!(remoteSharing&&call.remoteShareFocused);
     const remoteTag=$('callRemoteShareTag'),localTag=$('callLocalShareTag');
     if(remoteTag){remoteTag.hidden=!remoteSharing;$('callRemoteShareName').textContent=peer.username||'Usuário';}
-    if(localTag){localTag.hidden=!localSharing;$('callLocalShareName').textContent=own.username||own.displayName||'Você';}
+    if(localTag)localTag.hidden=true;
     local.classList.toggle('screen-main',localSharing&&!remoteSharing);
     local.classList.toggle('screen-pip',localSharing&&remoteSharing);
 
@@ -3678,13 +3678,8 @@
     console.warn('[AzureCall] HTTP signal:',lastError?.message||lastError);
     return false;
   }
-  function remoteShareToastKey(call){return `screen-share:${call?.id||''}`;}
-  function clearRemoteShareNotice(call){if(call)hideToast(remoteShareToastKey(call));}
-  function showRemoteShareNotice(call){
-    if(!call)return;
-    const name=getProfile(call.peerId)?.username||'A outra pessoa';
-    showToast(`${name} está compartilhando a tela. Toque para abrir.`,{persistent:true,key:remoteShareToastKey(call),keepAfterClick:true,onClick:()=>openRemoteSharedScreen()});
-  }
+  function clearRemoteShareNotice(call){}
+  function showRemoteShareNotice(call){}
   async function postScreenShareApiSignal(call,kind,payload={}){
     if(!call)return false;
     const signal={kind,callId:call.id,callType:call.type,signalId:uid('screen-sig'),...payload};
