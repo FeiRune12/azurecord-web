@@ -9,5 +9,11 @@ contextBridge.exposeInMainWorld('azurecordDesktop', {
   setSecureSession: (token) => ipcRenderer.invoke('desktop:secure-session-set', token),
   deleteSecureSession: () => ipcRenderer.invoke('desktop:secure-session-delete'),
   getDisplaySources: () => ipcRenderer.invoke('desktop:display-sources'),
-  selectDisplaySource: (sourceId) => ipcRenderer.invoke('desktop:display-source-select', sourceId)
+  selectDisplaySource: (sourceId) => ipcRenderer.invoke('desktop:display-source-select', sourceId),
+  onUpdateStatus: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => callback(payload || {});
+    ipcRenderer.on('desktop:update-status', handler);
+    return () => ipcRenderer.removeListener('desktop:update-status', handler);
+  }
 });
