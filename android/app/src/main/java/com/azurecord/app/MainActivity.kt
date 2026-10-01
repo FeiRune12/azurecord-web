@@ -73,7 +73,8 @@ class MainActivity : Activity() {
         if (savedInstanceState == null) {
             webView.loadUrl(WEB_URL)
         } else {
-            webView.restoreState(savedInstanceState)
+            val restored = webView.restoreState(savedInstanceState)
+            if (restored == null) webView.loadUrl(WEB_URL)
         }
 
         if (intent?.action == AzurecordUpdater.ACTION_INSTALL_READY) {
@@ -111,7 +112,7 @@ class MainActivity : Activity() {
     private fun configureWebView() {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         webView.settings.apply {
             javaScriptEnabled = true
@@ -119,7 +120,7 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             allowFileAccess = false
-            allowContentAccess = false
+            allowContentAccess = true
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
             userAgentString = "$userAgentString AzurecordAndroid/${BuildConfig.VERSION_NAME}"
