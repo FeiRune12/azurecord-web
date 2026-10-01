@@ -3101,8 +3101,16 @@
       q('cropCancel').onclick=cleanup;
       q('cropApply').onclick=()=>{
         let quality=.88,out=canvas.toDataURL('image/webp',quality);
-        const maxChars=aspect>2?900000:520000;
-        while(out.length>maxChars&&quality>.5){quality-=.07;out=canvas.toDataURL('image/webp',quality);}
+        const maxChars=aspect>2?680000:410000;
+        while(out.length>maxChars&&quality>.46){quality-=.07;out=canvas.toDataURL('image/webp',quality);}
+        if(out.length>maxChars){
+          const ratio=Math.min(.96,Math.sqrt(maxChars/out.length));
+          const smaller=document.createElement('canvas');
+          smaller.width=Math.max(1,Math.round(canvas.width*ratio));
+          smaller.height=Math.max(1,Math.round(canvas.height*ratio));
+          smaller.getContext('2d').drawImage(canvas,0,0,smaller.width,smaller.height);
+          out=smaller.toDataURL('image/webp',.68);
+        }
         cleanup();onDone?.(out);
       };
     };
