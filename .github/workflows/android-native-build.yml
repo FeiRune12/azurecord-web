@@ -3,6 +3,7 @@ name: Android Native APK
 on:
   push:
     branches:
+      - main
       - fix/2.0.4-azurecall-native-android
     paths:
       - "android/**"
@@ -18,6 +19,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: azurecord-android-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:

@@ -101,6 +101,17 @@ jobs:
         run: |
           npx electron-builder --win nsis --publish never
 
+      - name: Salvar artefatos do instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: Azurecord-Windows-${{ env.AZURECORD_VERSION }}
+          path: |
+            desktop/release/Azurecord-Setup-${{ env.AZURECORD_VERSION }}.exe
+            desktop/release/Azurecord-Setup-${{ env.AZURECORD_VERSION }}.exe.blockmap
+            desktop/release/latest.yml
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publicar ou atualizar GitHub Release
         if: github.event_name != 'pull_request'
         working-directory: desktop
