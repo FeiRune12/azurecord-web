@@ -119,6 +119,8 @@
   let cloudRealtimeSocketReady = false;
   let cloudRealtimeReconnectTimer = null;
   let cloudRealtimeHeartbeatTimer = null;
+  let cloudRealtimeWatchdogTimer = null;
+  let cloudRealtimeLastPongAt = 0;
   let cloudRealtimeReconnectAttempt = 0;
   const cloudRealtimeSeenEvents = new Set();
   let cloudSearchEpoch = 0;
@@ -561,6 +563,8 @@
   function stopCloudRealtimeSocket(){
     clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
     clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+    clearInterval(cloudRealtimeWatchdogTimer);cloudRealtimeWatchdogTimer=null;
+    cloudRealtimeLastPongAt=0;
     cloudRealtimeSocketReady=false;
     const ws=cloudRealtimeSocket;cloudRealtimeSocket=null;
     if(ws){
@@ -750,6 +754,8 @@
 
     clearTimeout(cloudRealtimeReconnectTimer);cloudRealtimeReconnectTimer=null;
     clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+    clearInterval(cloudRealtimeWatchdogTimer);cloudRealtimeWatchdogTimer=null;
+    cloudRealtimeLastPongAt=0;
     if(cloudRealtimeSocket){
       try{cloudRealtimeSocket.onopen=cloudRealtimeSocket.onmessage=cloudRealtimeSocket.onerror=cloudRealtimeSocket.onclose=null;cloudRealtimeSocket.close();}catch{}
     }
@@ -769,17 +775,30 @@
 
     ws.onopen=()=>{
       cloudRealtimeReconnectAttempt=0;
+      cloudRealtimeLastPongAt=Date.now();
       clearInterval(cloudRealtimeHeartbeatTimer);
+      clearInterval(cloudRealtimeWatchdogTimer);
       cloudRealtimeHeartbeatTimer=setInterval(()=>{
         if(ws.readyState===WebSocket.OPEN){
           try{ws.send(JSON.stringify({type:'ping',at:Date.now()}));publishPresence();}catch{}
         }
       },25000);
+      cloudRealtimeWatchdogTimer=setInterval(()=>{
+        if(cloudRealtimeSocket!==ws)return;
+        const stale=Date.now()-cloudRealtimeLastPongAt>65000;
+        if(ws.readyState!==WebSocket.OPEN||stale){
+          cloudRealtimeSocketReady=false;
+          try{ws.close(4000,stale?'heartbeat timeout':'socket unavailable');}catch{}
+          scheduleCloudRealtimeReconnect();
+          wakeCloudRealtimeSync({snapshot:true});
+        }
+      },15000);
     };
 
     ws.onmessage=(ev)=>{
       let event=null;
       try{event=JSON.parse(String(ev.data||''));}catch{return;}
+      cloudRealtimeLastPongAt=Date.now();
       handleCloudRealtimeEvent(event).catch(err=>console.warn('[Azurecord] Realtime event:',err?.message||err));
     };
 
@@ -789,6 +808,8 @@
       if(cloudRealtimeSocket===ws)cloudRealtimeSocket=null;
       cloudRealtimeSocketReady=false;
       clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
+      clearInterval(cloudRealtimeWatchdogTimer);cloudRealtimeWatchdogTimer=null;
+      cloudRealtimeLastPongAt=0;
       scheduleCloudRealtimeReconnect();
       wakeCloudRealtimeSync();
     };
@@ -800,6 +821,9 @@
       cloudRealtimeSocket.send(JSON.stringify(event));
       return true;
     }catch{
+      cloudRealtimeSocketReady=false;
+      scheduleCloudRealtimeReconnect();
+      wakeCloudRealtimeSync();
       return false;
     }
   }
@@ -811,7 +835,7 @@
     const activeConversation=(view.mode==='dm'&&view.dmUserId&&view.dmUserId!=='user-lola')||
       (view.mode==='server'&&view.serverId&&view.channelId);
     const base=connected
-      ? (activeConversation?30000:60000)
+      ? (activeConversation?1800:8000)
       : (activeConversation?900:2500);
     if(!cloudRealtimeFailures)return base;
     return Math.min(15000,base*Math.pow(1.7,Math.min(cloudRealtimeFailures,5)));
@@ -848,7 +872,7 @@
       const stamp=Date.now();
       // O snapshot social mantém amigos, DMs recentes, servidores e badges em sincronia,
       // mas não precisa rodar na mesma velocidade da conversa aberta.
-      if(stamp-cloudSocialSnapshotAt>=(cloudRealtimeConnected()?60000:5000)){
+      if(stamp-cloudSocialSnapshotAt>=(cloudRealtimeConnected()?12000:5000)){
         const snapshotOk=await hydrateFromCloudSocial({quiet:true});
         if(snapshotOk)cloudSocialSnapshotAt=Date.now();
         else ok=false;
