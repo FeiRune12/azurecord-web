@@ -36,6 +36,8 @@ class MainActivity : Activity() {
         private const val REQ_MEDIA_PROJECTION = 902
         private const val REQ_CALL_PERMISSIONS = 904
         private const val REQ_FILE_CHOOSER = 905
+        private const val REQ_STARTUP_MEDIA = 906
+        private const val REQ_NOTIFICATIONS = 903
         private const val CALL_CHANNEL = "azurecord_calls"
         private const val CALL_NOTIFICATION_ID = 3107
     }
@@ -59,7 +61,7 @@ class MainActivity : Activity() {
         setContentView(webView)
         configureWebView()
         AzurecordUpdater.schedule(this)
-        requestNotificationPermissionIfNeeded()
+        requestStartupMediaPermissions()
 
         AzurecordNativeEvents.sink = { json ->
             runOnUiThread {
@@ -82,11 +84,28 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun requestStartupMediaPermissions() {
+        val missing = mutableListOf<String>()
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missing += Manifest.permission.RECORD_AUDIO
+        }
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            missing += Manifest.permission.CAMERA
+        }
+
+        if (missing.isEmpty()) {
+            requestNotificationPermissionIfNeeded()
+            return
+        }
+
+        requestPermissions(missing.toTypedArray(), REQ_STARTUP_MEDIA)
+    }
+
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 903)
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATIONS)
         }
     }
 
@@ -247,6 +266,13 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
+        if (requestCode == REQ_STARTUP_MEDIA) {
+            requestNotificationPermissionIfNeeded()
+            return
+        }
+
+        if (requestCode == REQ_NOTIFICATIONS) return
+
         if (requestCode == REQ_CALL_PERMISSIONS) {
             val requested = pendingCallPermissions
             pendingCallPermissions = emptyArray()
@@ -274,6 +300,13 @@ class MainActivity : Activity() {
             checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
         }
         if (allGranted && requestedResources.isNotEmpty()) request.grant(requestedResources) else request.deny()
+    }
+
+    fun hasCallPermissions(includeCamera: Boolean): Boolean {
+        val audioGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val cameraGranted = !includeCamera ||
+            checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        return audioGranted && cameraGranted
     }
 
     fun requestCallPermissions(includeCamera: Boolean) {
