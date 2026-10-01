@@ -53,8 +53,8 @@ test('2.0.8: ícones críticos são SVG e a versão Android está alinhada',()=>
   assert.match(app,/function uiIcon/);
   assert.match(app,/uiIcon\('home',20\)/);
   assert.match(css,/\.ui-icon/);
-  assert.match(gradle,/versionCode = 303/);
-  assert.match(gradle,/versionName = "3\.0\.3"/);
+  assert.match(gradle,/versionCode = 304/);
+  assert.match(gradle,/versionName = "3\.0\.4"/);
 });
 
 test('2.0.8: contas salvas podem ser esquecidas sem apagar a conta Cloud',()=>{
