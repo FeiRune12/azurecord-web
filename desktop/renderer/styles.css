@@ -1325,3 +1325,29 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
     left:auto;right:10px;top:10px!important;bottom:auto;width:min(210px,56vw)
   }
 }
+
+
+/* ===== Azurecord 2.0.2: API-backed screen share ===== */
+.toast.clickable{
+  pointer-events:auto!important;
+  cursor:pointer;
+  touch-action:manipulation;
+  padding-right:18px;
+  border-color:color-mix(in srgb,var(--accent) 68%,white 8%);
+}
+.toast.clickable:hover,.toast.clickable:focus-visible{
+  background:#142236;
+  box-shadow:0 0 0 3px rgba(0,102,255,.12),var(--shadow)
+}
+.toast.clickable::after{
+  content:'  ↗';
+  color:var(--accent);
+  font-weight:900
+}
+@media(max-width:720px){
+  .toast.clickable{
+    left:10px;right:10px;bottom:10px;
+    text-align:center;
+    font-size:11px;
+  }
+}

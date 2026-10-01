@@ -39,7 +39,7 @@ test('1.0.8: sinalização aceita accepted, ice-restart e signalId',()=>{
   const worker=fs.readFileSync(path.resolve(root,'..','realtime','worker.js'),'utf8');
   assert.match(api,/ice-restart","accepted/);
   assert.match(api,/signalId/);
-  assert.match(api,/version: "0\.8\.4"/);
+  assert.match(api,/version: "0\.8\.5"/);
   assert.match(worker,/ice-restart","accepted/);
   assert.match(worker,/signalId/);
   assert.match(worker,/version: "1\.5\.0"/);

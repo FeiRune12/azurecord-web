@@ -851,6 +851,18 @@ async function ensureSocialSchema(env) {
     )
   `).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_realtime_signals_target_created ON realtime_signals(target_user_id, created_at)`).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS call_share_state (
+      call_id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      peer_user_id TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 0,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_call_share_peer ON call_share_state(peer_user_id, updated_at)`).run();
   await addColumnIfMissing(env, "channels", "topic", "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(env, "servers", "icon", "TEXT");
   await addColumnIfMissing(env, "servers", "banner_url", "TEXT");
@@ -1158,13 +1170,56 @@ function cleanCallSignal(value) {
   const kind = String(value.kind || "");
   const callId = String(value.callId || "").slice(0, 120);
   const callType = ["voice","video","screen"].includes(String(value.callType)) ? String(value.callType) : "voice";
-  if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy"].includes(kind)) return null;
+  if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer"].includes(kind)) return null;
   const signalId = String(value.signalId || "").slice(0, 120);
   const out = { kind, callId, callType, signalId };
-  if ((kind === "offer" || kind === "answer") && value.description && typeof value.description === "object") out.description = value.description;
+  if ((kind === "offer" || kind === "answer" || kind === "screen-offer" || kind === "screen-answer") && value.description && typeof value.description === "object") out.description = value.description;
+  if (Number.isFinite(Number(value.shareRevision))) out.shareRevision = Math.max(0, Math.floor(Number(value.shareRevision)));
   if (kind === "ice" && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
   if (value.reason) out.reason = String(value.reason).slice(0, 80);
   return JSON.stringify(out).length <= 180000 ? out : null;
+}
+
+
+async function updateCallShareState(env, { callId, ownerUserId, peerUserId, active }) {
+  const stamp = nowIso();
+  const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const existing = await env.DB.prepare(`SELECT revision FROM call_share_state WHERE call_id = ? LIMIT 1`).bind(callId).first();
+  const revision = Math.max(1, Number(existing?.revision || 0) + 1);
+  await env.DB.prepare(`
+    INSERT INTO call_share_state (call_id, owner_user_id, peer_user_id, active, revision, updated_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(call_id) DO UPDATE SET
+      owner_user_id = excluded.owner_user_id,
+      peer_user_id = excluded.peer_user_id,
+      active = excluded.active,
+      revision = excluded.revision,
+      updated_at = excluded.updated_at,
+      expires_at = excluded.expires_at
+  `).bind(callId, ownerUserId, peerUserId, active ? 1 : 0, revision, stamp, expiresAt).run();
+  return { callId, ownerUserId, peerUserId, active: !!active, revision, updatedAt: stamp, expiresAt };
+}
+
+async function readCallShareState(env, callId, userId) {
+  const row = await env.DB.prepare(`
+    SELECT call_id, owner_user_id, peer_user_id, active, revision, updated_at, expires_at
+    FROM call_share_state WHERE call_id = ? LIMIT 1
+  `).bind(callId).first();
+  if (!row) return null;
+  if (row.owner_user_id !== userId && row.peer_user_id !== userId) return null;
+  if (Date.parse(row.expires_at || 0) < Date.now()) {
+    await env.DB.prepare(`DELETE FROM call_share_state WHERE call_id = ?`).bind(callId).run();
+    return null;
+  }
+  return {
+    callId: row.call_id,
+    ownerUserId: row.owner_user_id,
+    peerUserId: row.peer_user_id,
+    active: !!row.active,
+    revision: Number(row.revision || 0),
+    updatedAt: row.updated_at,
+    expiresAt: row.expires_at,
+  };
 }
 
 async function serverPublic(env, row, userId) {
@@ -1270,6 +1325,13 @@ async function handleSocial(request, env, url, path) {
     return json({ ok: true, peers: await realtimePeerIds(env, userId) });
   }
 
+  if (parts[0] === "api" && parts[1] === "realtime" && parts[2] === "calls" && parts[3] && parts[4] === "share" && method === "GET") {
+    const callId = String(parts[3] || "");
+    const state = await readCallShareState(env, callId, userId);
+    if (!state) return json({ ok: true, state: null });
+    return json({ ok: true, state });
+  }
+
   if (path === "/api/realtime/signals" && method === "POST") {
     const body = await readJson(request) || {};
     const targetUserId = String(body.targetUserId || "");
@@ -1277,9 +1339,23 @@ async function handleSocial(request, env, url, path) {
     if (!targetUserId || targetUserId === userId || !signal) return json({ error: "invalid_signal", message: "Sinal de chamada inválido." }, 400);
     if (!(await friendshipExists(env, userId, targetUserId))) return json({ error: "forbidden", message: "Chamadas são permitidas entre amigos." }, 403);
     const stamp = nowIso();
+    if (signal.kind === "screen-share-start" || signal.kind === "screen-offer") {
+      const share = await updateCallShareState(env, { callId: signal.callId, ownerUserId: userId, peerUserId: targetUserId, active: true });
+      signal.shareRevision = share.revision;
+    } else if (signal.kind === "screen-share-stop") {
+      const current = await readCallShareState(env, signal.callId, userId);
+      const ownerUserId = current?.ownerUserId || userId;
+      const peerUserId = current?.peerUserId || targetUserId;
+      const share = await updateCallShareState(env, { callId: signal.callId, ownerUserId, peerUserId, active: false });
+      signal.shareRevision = share.revision;
+    } else if (signal.kind === "hangup") {
+      const current = await readCallShareState(env, signal.callId, userId);
+      if (current) await updateCallShareState(env, { callId: signal.callId, ownerUserId: current.ownerUserId, peerUserId: current.peerUserId, active: false });
+    }
     const expiresAt = new Date(Date.now() + 90_000).toISOString();
     const id = crypto.randomUUID();
     await env.DB.prepare(`DELETE FROM realtime_signals WHERE expires_at < ?`).bind(stamp).run();
+    await env.DB.prepare(`DELETE FROM call_share_state WHERE expires_at < ?`).bind(stamp).run();
     await env.DB.prepare(`
       INSERT INTO realtime_signals (id, target_user_id, source_user_id, payload_json, created_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -2497,7 +2573,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "0.8.4",
+          version: "0.8.5",
         });
       }
 
@@ -2507,7 +2583,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "0.8.4",
+          version: "0.8.5",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
@@ -2531,6 +2607,7 @@ export default {
         serverMemberList: true,
         cloudPolls: true,
         azureCallV2: true,
+        azureCallShareState: true,
         largeAttachments: Boolean(env.ATTACHMENTS),
         attachmentStorage: env.ATTACHMENTS ? "r2-multipart" : "disabled",
           },

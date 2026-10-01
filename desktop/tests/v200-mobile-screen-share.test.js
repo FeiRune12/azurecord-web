@@ -31,12 +31,15 @@ test('2.0.1: câmera e tela usam slots WebRTC separados desde a oferta inicial',
   assert.match(app,/bindAnswererVideoSlots/);
 });
 
-test('2.0.1: quem atendeu pode compartilhar sem renegociação obrigatória',()=>{
+test('2.0.2: quem atendeu compartilha com renegociação garantida pela API',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   const start=app.slice(app.indexOf('async function toggleCallScreen'),app.indexOf('function endActiveCall',app.indexOf('async function toggleCallScreen')));
   assert.match(start,/prepareCallVideoSender\(call,track,'screen'\)/);
-  assert.match(start,/if\(prepared\.needsRenegotiation\)await renegotiateCall/);
-  assert.doesNotMatch(start,/await renegotiateCall\(\{reason:'screen-share-start'\}\)/);
+  assert.match(start,/renegotiateScreenShareViaApi\(call\)/);
+  assert.match(app,/screen-offer/);
+  assert.match(app,/screen-answer/);
+  assert.match(app,/screen-share-start/);
+  assert.match(app,/screen-share-stop/);
 });
 
 test('2.0.1: recebimento separa câmera e live para evitar vídeo arbitrário',()=>{
@@ -58,9 +61,9 @@ test('2.0.1: aviso remoto continua clicável e abre a live',()=>{
   assert.match(css,/\.remote-share-focused \.azure-call-remote/);
 });
 
-test('2.0.1: versão segue rollover .9 para próxima geração',()=>{
+test('2.0.2: versão segue rollover .9 para próxima geração',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'2.0.1');
+  assert.equal(pkg.version,'2.0.2');
   const parts=String(pkg.version).split('.').map(Number);
   assert.equal(parts[1],0);
   assert.ok(parts[2]>=0&&parts[2]<=9);

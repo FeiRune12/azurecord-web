@@ -18,13 +18,15 @@ test('1.0.9: compartilhamento remoto aparece no Web com áudio separado',()=>{
   assert.match(app,/displayStream=remoteSharing/);
 });
 
-test('1.0.9: AzureCall sinaliza screen share pelo DataChannel sem depender da API',()=>{
+test('2.0.2: AzureCall mantém DataChannel rápido e API como trilho confiável',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   assert.match(app,/createDataChannel\('azurecall-control'/);
   assert.match(app,/pc\.ondatachannel/);
   assert.match(app,/type:'screen-share'/);
   assert.match(app,/remoteScreenSharing/);
   assert.match(app,/publishLocalScreenState/);
+  assert.match(app,/postScreenShareApiSignal/);
+  assert.match(app,/syncScreenShareApiState/);
 });
 
 test('1.0.9: layout de compartilhamento é maior e mostra o nome',()=>{
@@ -39,7 +41,7 @@ test('2.0: renderização e seletor desktop/mobile foram otimizados',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   const main=fs.readFileSync(path.join(root,'main.js'),'utf8');
   assert.match(app,/requestAnimationFrame/);
-  assert.match(app,/cloudRealtimeConnected\(\)\?2200:650/);
+  assert.match(app,/const delay=activeCall\?900:3000/);
   assert.match(app,/maxBitrate:mobile\?1800000:2800000/);
   assert.match(main,/AZURECORD_DISABLE_GPU/);
   assert.match(main,/width: 224, height: 126/);

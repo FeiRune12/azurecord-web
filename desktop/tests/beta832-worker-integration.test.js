@@ -39,7 +39,7 @@ async function call(w,env,method,p,body,token){const h={};if(body!==undefined)h[
 
 test('Beta8 renderer usa Social Cloud',()=>{assert.match(appSource,/socialCloudReady/);assert.match(appSource,/hydrateFromCloudSocial/);assert.match(appSource,/\/api\/social\/snapshot/);assert.match(appSource,/socialRequest/);});
 
-test('Worker 0.8.4 anuncia realtime fallback, presença, membros, enquetes e anexos R2',async()=>{const d=new DB();schema(d);const w=await worker();const r=await call(w,{DB:d},'GET','/health');assert.equal(r.status,200);assert.equal(r.data.version,'0.8.4');assert.equal(r.data.capabilities.socialCloud,true);assert.equal(r.data.capabilities.friendSearchV2,true);assert.equal(r.data.capabilities.reliableMessaging,true);assert.equal(r.data.capabilities.realtimeHttpFallback,true);assert.equal(r.data.capabilities.livePresence,true);assert.equal(r.data.capabilities.serverMemberList,true);assert.equal(r.data.capabilities.cloudPolls,true);assert.equal(r.data.capabilities.largeAttachments,false);assert.equal(r.data.capabilities.attachmentStorage,'disabled');});
+test('Worker 0.8.5 anuncia realtime fallback, presença, membros, enquetes e anexos R2',async()=>{const d=new DB();schema(d);const w=await worker();const r=await call(w,{DB:d},'GET','/health');assert.equal(r.status,200);assert.equal(r.data.version,'0.8.5');assert.equal(r.data.capabilities.socialCloud,true);assert.equal(r.data.capabilities.friendSearchV2,true);assert.equal(r.data.capabilities.reliableMessaging,true);assert.equal(r.data.capabilities.realtimeHttpFallback,true);assert.equal(r.data.capabilities.livePresence,true);assert.equal(r.data.capabilities.serverMemberList,true);assert.equal(r.data.capabilities.cloudPolls,true);assert.equal(r.data.capabilities.azureCallShareState,true);assert.equal(r.data.capabilities.largeAttachments,false);assert.equal(r.data.capabilities.attachmentStorage,'disabled');});
 
 test('duas contas viram amigas, trocam DM e compartilham servidor',async()=>{const d=new DB();schema(d);const w=await worker(),env={DB:d};
  const a=await call(w,env,'POST','/auth/register',{username:'Alice',email:'alice@test.dev',password:'SenhaAlice123!'});
@@ -82,4 +82,28 @@ test('Lola usa o binding Workers AI com a mesma sessao cloud',async()=>{
  assert.equal(ai.status,200);assert.equal(ai.data.provider,'cloudflare-workers-ai');assert.equal(ai.data.reply,'Resposta da Lola no Workers AI. 💙');
  assert.equal(called.model,'@cf/meta/llama-4-scout-17b-16e-instruct');assert.ok(Array.isArray(called.payload.messages));
  const hist=await call(w,env,'GET','/api/dms/user-lola',undefined,token);assert.equal(hist.status,200);assert.equal(hist.data.messages.length,2);assert.equal(hist.data.messages[1].senderId,'user-lola');
+});
+
+
+test('AzureCall 2.0.2 persiste estado de screen share e entrega renegociação pela API',async()=>{
+ const d=new DB();schema(d);const w=await worker(),env={DB:d};
+ const a=await call(w,env,'POST','/auth/register',{username:'ShareA',email:'sharea@test.dev',password:'SenhaShare123!'});
+ const b=await call(w,env,'POST','/auth/register',{username:'ShareB',email:'shareb@test.dev',password:'SenhaShare123!'});
+ const ta=a.data.session.token,tb=b.data.session.token;
+ const req=await call(w,env,'POST','/api/friends/requests',{toUserId:b.data.user.id},ta);
+ await call(w,env,'POST',`/api/friends/requests/${req.data.request.id}/accept`,{},tb);
+ const callId='call-share-api-1';
+ const start=await call(w,env,'POST','/api/realtime/signals',{targetUserId:b.data.user.id,signal:{kind:'screen-share-start',callId,callType:'voice',signalId:'ss1'}},ta);
+ assert.equal(start.status,201);
+ const stateOn=await call(w,env,'GET',`/api/realtime/calls/${callId}/share`,undefined,tb);
+ assert.equal(stateOn.status,200);assert.equal(stateOn.data.state.active,true);assert.equal(stateOn.data.state.ownerUserId,a.data.user.id);
+ const offer=await call(w,env,'POST','/api/realtime/signals',{targetUserId:b.data.user.id,signal:{kind:'screen-offer',callId,callType:'voice',signalId:'ss2',description:{type:'offer',sdp:'v=0\r\n'}}},ta);
+ assert.equal(offer.status,201);
+ const inbox=await call(w,env,'GET','/api/realtime/signals?since=0',undefined,tb);
+ assert.ok(inbox.data.signals.some(x=>x.signal.kind==='screen-share-start'));
+ assert.ok(inbox.data.signals.some(x=>x.signal.kind==='screen-offer'));
+ const stop=await call(w,env,'POST','/api/realtime/signals',{targetUserId:b.data.user.id,signal:{kind:'screen-share-stop',callId,callType:'voice',signalId:'ss3'}},ta);
+ assert.equal(stop.status,201);
+ const stateOff=await call(w,env,'GET',`/api/realtime/calls/${callId}/share`,undefined,tb);
+ assert.equal(stateOff.data.state.active,false);
 });
