@@ -143,17 +143,29 @@
   let azureCallIceConfigPromise = null;
 
   async function cloudRequest(path, options = {}){
-    const {auth=true, ...fetchOptions} = options;
+    const {auth=true, timeoutMs=20000, ...fetchOptions} = options;
     const headers = {'Content-Type':'application/json', ...(fetchOptions.headers||{})};
     if(auth && cloudToken) headers.Authorization = `Bearer ${cloudToken}`;
-    const response = await fetch(`${CLOUD_API_URL}${path}`, {...fetchOptions, headers});
+    const externalSignal=fetchOptions.signal||null;
+    const controller=externalSignal?null:new AbortController();
+    const timer=controller&&timeoutMs>0?setTimeout(()=>controller.abort(),timeoutMs):null;
+    let response;
+    try{
+      response=await fetch(`${CLOUD_API_URL}${path}`, {...fetchOptions, headers, signal:externalSignal||controller?.signal});
+    }catch(err){
+      const timeout=err?.name==='AbortError';
+      const error=new Error(timeout?'O Azurecord Cloud demorou demais para responder.':'Não foi possível alcançar o Azurecord Cloud. Verifique a internet e tente novamente.');
+      error.status=0;error.code=timeout?'cloud_timeout':'cloud_network_error';error.cause=err;
+      throw error;
+    }finally{if(timer)clearTimeout(timer);}
     let data = {};
     try { data = await response.json(); } catch {}
     if(!response.ok){
       const error = new Error(data.message || data.error || `HTTP ${response.status}`);
-      error.status=response.status; error.code=data.error || 'http_error'; error.debug=data.debug || null;
+      error.status=response.status; error.code=data.error || 'http_error'; error.debug=data.debug || null; error.data=data;
       throw error;
     }
+    cloudOnline=true;
     return data;
   }
 
@@ -218,6 +230,28 @@
       throw error;
     }
     return data;
+  }
+
+  async function bootstrapCloudSession({quiet=true}={}){
+    if(!cloudToken||!cloudVerifiedAccountId||cloudVerifiedAccountId!==state.currentAccountId)return false;
+    try{
+      const data=await cloudRequest('/api/bootstrap',{timeoutMs:15000});
+      if(data?.user){
+        const account=applyCloudUser(data.user);
+        if(account?.id){cloudVerifiedAccountId=account.id;state.cloudAccountId=account.id;state.currentAccountId=account.id;}
+      }
+      if(data?.lolaSessionId){
+        state.lolaSessionInfo[state.currentAccountId]={id:String(data.lolaSessionId),pendingReset:false};
+      }
+      if(data?.settings&&typeof data.settings==='object'){
+        state.cloudSettings={...state.cloudSettings,...data.settings};
+      }
+      saveNow();
+      return true;
+    }catch(err){
+      if(err.status!==404&&!quiet)showToast(err.message||'Não foi possível preparar sua sessão Cloud.');
+      return false;
+    }
   }
 
   function socialCloudReady(){
@@ -395,8 +429,9 @@
       cloudOnline=true;
       save();
       if(account._needsCloudProfileSync)syncCloudProfile(account,{quiet:true,profileComplete:true}).catch(()=>{});
+      await bootstrapCloudSession({quiet:true});
       hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});
-      if(cloudInfo?.capabilities?.settingsCloud)fetchCloudSettings({rerender:false}).catch(()=>{});
+      fetchCloudSettings({rerender:false}).catch(()=>{});
       return true;
     }catch(err){
       if(err.status===401){
@@ -483,10 +518,8 @@
   }
 
   async function askLolaAi(userText, recentMessages, attachments=[], proactive=false){
-    if(!lolaCloudReady()){
-      return {failed:true,code:'login_required'};
-    }
-    const controller = new AbortController();
+    if(!lolaCloudReady())return {failed:true,code:'login_required'};
+    const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),90000);
     try{
       const recent=Array.isArray(recentMessages)?recentMessages.slice(-48).map(m=>({
@@ -494,16 +527,32 @@
         text:String(m?.text||'').slice(0,5000),
         images:(Array.isArray(m?.files)?m.files:[]).filter(f=>String(f?.type||'').startsWith('image/')&&(f?.dataUrl||f?.url)).slice(0,2).map(f=>({dataUrl:f.dataUrl||'',url:f.url||'',name:f.name,type:f.type}))
       })).filter(m=>m.text||m.images.length):[];
-      const sessionId=await ensureLolaSession();
-      const data=await cloudRequest('/api/ai/chat',{method:'POST',signal:controller.signal,body:JSON.stringify({
-        proactive,...(sessionId?{sessionId}:{}),
+      const payloadBase={
+        proactive,
         userText:String(userText||'').slice(0,7000),
         recent,
-        attachments:(attachments||[]).slice(0,3).map(f=>({
-          dataUrl:f?.dataUrl||'',url:f?.url||'',name:f?.name||'',type:f?.type||'',visual:f?.visual||null
-        })),
+        attachments:(attachments||[]).slice(0,3).map(f=>({dataUrl:f?.dataUrl||'',url:f?.url||'',name:f?.name||'',type:f?.type||'',visual:f?.visual||null})),
         memory:memoryContext(getLolaMemory())
-      })});
+      };
+      let sessionId=await ensureLolaSession();
+      let data=null;
+      for(let attempt=0;attempt<2;attempt++){
+        try{
+          data=await cloudRequest('/api/ai/chat',{method:'POST',signal:controller.signal,body:JSON.stringify({...payloadBase,...(sessionId?{sessionId}:{})})});
+          break;
+        }catch(err){
+          if(err.code==='conversation_changed'&&attempt===0){
+            const replacement=String(err.data?.sessionId||'').trim();
+            if(replacement){
+              sessionId=replacement;
+              state.lolaSessionInfo[state.currentAccountId]={id:replacement,pendingReset:false};
+              saveNow();
+              continue;
+            }
+          }
+          throw err;
+        }
+      }
       if(data?.sessionId){
         state.lolaSessionInfo[state.currentAccountId]={id:String(data.sessionId),pendingReset:false};
         saveNow();
@@ -511,9 +560,8 @@
       return data?.reply?{text:String(data.reply).trim(),message:data.message||null,
         model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}:null;
     }catch(err){
-      if(err.code==='conversation_changed')return {discarded:true};
-      console.warn('[Azurecord] Workers AI indisponível; modo local transparente:',err?.message||err);
-      return {failed:true, code:err.code||'ai_error', reason:err.message||''};
+      console.warn('[Azurecord] Lola Cloud:',err?.message||err);
+      return {failed:true,code:err.code||'ai_error',reason:err.message||''};
     }finally{clearTimeout(timeout);}
   }
 
@@ -1467,7 +1515,7 @@
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=()=>startDmCall('voice'); $('videoBtn').onclick=()=>startDmCall('video'); $('screenBtn').onclick=()=>activeCall?toggleCallScreen():startDmCall('screen'); $('searchBtn').onclick=openChannelSearch;
     $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callRemoteShareTag').onclick=openRemoteSharedScreen; $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -1506,8 +1554,8 @@
     const submit=$('authSubmit');if(submit.disabled)return;submit.disabled=true;
     try{
       showAuthNotice(authMode==='signup'?'Criando sua conta na nuvem...':'Entrando na sua conta...');
-      if(!cloudOnline)await initCloudAuth();
-      if(!cloudOnline){showAuthNotice('O Azurecord Cloud está indisponível agora. Nenhuma conta nova foi criada.',true);return;}
+      // /health é diagnóstico, não deve bloquear login/cadastro. O endpoint de auth é a fonte de verdade.
+      if(!cloudOnline)void initCloudAuth();
       if(authMode==='signup'){
         const cached=state.accounts.find(a=>window.AzurecordAuthRecovery.emailKey(a.email)===email);
         if(cached?.cloud){showAuthNotice('Esse email já está salvo neste computador. Use Entrar.',true);return;}
@@ -1531,7 +1579,7 @@
     stopCloudRealtimeSocket();
     const token=data?.session?.token||data?.token;
     if(!token||!data?.user?.id)throw new Error('O Azurecord Cloud não retornou uma sessão válida.');
-    cloudToken=token; cloudVerifiedAccountId=data.user.id;
+    cloudToken=token; cloudVerifiedAccountId=data.user.id; cloudOnline=true;
     state.cloudAccountId=data.user.id;
     const account=applyCloudUser(data.user); account.lastLogin=now();account.status='online';
     state.currentAccountId=account.id;
@@ -1539,8 +1587,9 @@
     if($('rememberLogin').checked){window.azurecordDesktop?.setSecureSession?.(token).catch?.(()=>{});}else{window.azurecordDesktop?.deleteSecureSession?.().catch?.(()=>{});}
     saveNow();
     if(account._needsCloudProfileSync)syncCloudProfile(account,{quiet:true,profileComplete:true}).catch(()=>{});
-    if(cloudInfo?.capabilities?.socialCloud){hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});}
-    if(cloudInfo?.capabilities?.settingsCloud){fetchCloudSettings({rerender:false}).catch(()=>{});}
+    bootstrapCloudSession({quiet:true}).catch(()=>{});
+    hydrateFromCloudSocial({quiet:true}).then(()=>startCloudSocialPolling()).catch(()=>{});
+    fetchCloudSettings({rerender:false}).catch(()=>{});
     $('passwordInput').value='';$('confirmInput').value='';showAuthNotice('');
     return account;
   }
@@ -2656,8 +2705,8 @@
   function formatText(text,username){ let s=esc(text);s=s.replace(/@([\w\d_]+)/g,(m,n)=>`<span class="mention">@${esc(n)}</span>`); if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`; return s; }
   async function sendDmToBackend(m,id){
     if(!m || m.sending || m.serverId || !id)return !!m?.serverId;
-    const fail=(reason)=>{
-      m.pending=true;m.failed=true;m.lastError=reason||'Falha de conexão';saveNow();
+    const fail=(reason,{retryable=true}={})=>{
+      m.pending=true;m.failed=true;m.retryable=retryable;m.lastError=reason||'Falha de conexão';saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
       return false;
     };
@@ -2683,14 +2732,23 @@
         {timeoutMs:15000,retries:1}
       );
       if(!response?.message?.id)throw new Error('O servidor não confirmou a mensagem.');
-      m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();
+      m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;m.retryable=false;delete m.lastError;delete m._lolaSessionRetried;saveNow();
       if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
       if(id!=='user-lola')commitCloudRealtime({type:'dm.commit',targetUserId:id,messageId:m.serverId,clientId:m.id,commitId:uid('dm-commit')});
       wakeCloudRealtimeSync();
       return true;
     }catch(err){
+      if(id==='user-lola'&&err.code==='conversation_changed'&&!m._lolaSessionRetried){
+        const replacement=String(err.data?.sessionId||'').trim();
+        if(replacement){
+          state.lolaSessionInfo[state.currentAccountId]={id:replacement,pendingReset:false};
+          m.lolaSessionId=replacement;m._lolaSessionRetried=true;m.sending=false;saveNow();
+          return sendDmToBackend(m,id);
+        }
+      }
       const reason=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha de conexão');
-      fail(reason);
+      const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout';
+      fail(reason,{retryable});
       showToast(`DM não enviada: ${reason}`);
       return false;
     }finally{
@@ -2704,12 +2762,68 @@
       const users=key.split('|'); if(!users.includes(me))continue;
       const other=users.find(x=>x!==me);if(!other||(onlyId&&other!==onlyId))continue;
       for(const message of messages){
-        if(message.author!==me||!message.pending||message.failed||message.serverId||message.sending)continue;
-        if(other==='user-lola' && message.lolaSessionId!==(state.lolaSessionInfo?.[me]?.id||'legacy'))continue;
+        if(message.author!==me||!message.pending||message.serverId||message.sending)continue;
+        if(message.failed&&message.retryable===false)continue;
+        if(other==='user-lola'){
+          const currentSession=state.lolaSessionInfo?.[me]?.id||await ensureLolaSession();
+          if(currentSession)message.lolaSessionId=currentSession;
+        }
         await sendDmToBackend(message,other);
       }
     }
   }
+  async function sendChannelMessageToBackend(m,serverId,channelId,{quiet=false}={}){
+    if(!m||m.sending||m.serverId)return !!m?.serverId;
+    const srv=getServer(serverId),ch=getChannel(serverId,channelId);
+    if(!srv||!ch)return false;
+    const inView=()=>view.mode==='server'&&view.serverId===serverId&&view.channelId===channelId;
+    const fail=(reason,{retryable=true}={})=>{
+      m.pending=true;m.failed=true;m.retryable=retryable;m.lastError=reason||'Falha no envio';saveNow();
+      if(inView())renderMessages();
+      if(!quiet)showToast('Canal: '+m.lastError);
+      return false;
+    };
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return fail('Sem conexão com a internet.');
+    if(!socialReady())return fail('Azurecord Cloud indisponível.');
+
+    m.sending=true;m.pending=true;m.failed=false;delete m.lastError;saveNow();
+    if(inView())renderMessages();
+    try{
+      const result=await cloudPostMessageWithRetry(
+        `/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,
+        {text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id},
+        {timeoutMs:15000,retries:1}
+      );
+      if(!result?.message?.id)throw new Error('O servidor não confirmou a mensagem.');
+      m.serverId=result.message.id;m.pending=false;m.failed=false;m.retryable=false;delete m.lastError;saveNow();
+      if(inView())renderMessages();
+      commitCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id,commitId:uid('channel-commit')});
+      wakeCloudRealtimeSync();
+      return true;
+    }catch(err){
+      const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout';
+      return fail(err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio'),{retryable});
+    }finally{m.sending=false;}
+  }
+
+  async function flushPendingChannels(){
+    if(!socialReady()||!state.currentAccountId)return;
+    for(const [key,messages] of Object.entries(state.channelMessages||{})){
+      const sep=key.indexOf('|');if(sep<=0)continue;
+      const serverId=key.slice(0,sep),channelId=key.slice(sep+1);
+      for(const message of messages||[]){
+        if(message.author!==state.currentAccountId||!message.pending||message.serverId||message.sending)continue;
+        if(message.failed&&message.retryable===false)continue;
+        await sendChannelMessageToBackend(message,serverId,channelId,{quiet:true});
+      }
+    }
+  }
+
+  async function flushPendingOutbox(){
+    await flushPendingDms();
+    await flushPendingChannels();
+  }
+
   async function sendMessage(e){
     e.preventDefault();
     const input=$('messageInput'),text=input.value.trim();
@@ -2758,23 +2872,8 @@
         m.pending=false;save();simulateLolaReply(m).catch(()=>{});
       }else{m.pending=true;m.failed=true;saveNow();renderMessages();showToast('DM guardada localmente; faça login para enviá-la.');}
     }else if(mode==='server'){
-      const srv=getServer(serverId),ch=getChannel(serverId,channelId);
-      if(srv&&ch){
-        m.pending=true;m.failed=false;saveNow();renderMessages();
-        if(typeof navigator!=='undefined'&&navigator.onLine===false){
-          m.failed=true;m.lastError='Sem conexão com a internet.';saveNow();renderMessages();
-        }else if(socialReady()){
-          cloudPostMessageWithRetry(
-            `/api/servers/${encodeURIComponent(srv.backendId||srv.id)}/channels/${encodeURIComponent(ch.backendId||ch.id)}/messages`,
-            {text:m.text,files:m.files||[],replyTo:m.replyTo||null,clientId:m.id},
-            {timeoutMs:15000,retries:1}
-          )
-            .then(result=>{if(result?.message?.id){m.serverId=result.message.id;m.pending=false;m.failed=false;delete m.lastError;saveNow();renderMessages();commitCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:m.serverId,clientId:m.id,commitId:uid('channel-commit')});wakeCloudRealtimeSync();}else throw new Error('O servidor não confirmou a mensagem.');})
-            .catch(err=>{m.pending=true;m.failed=true;m.lastError=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio');saveNow();renderMessages();showToast('Canal: '+m.lastError);});
-        }else{
-          m.failed=true;m.lastError='Azurecord Cloud indisponível.';saveNow();renderMessages();
-        }
-      }
+      m.pending=true;m.failed=false;m.retryable=true;saveNow();renderMessages();
+      void sendChannelMessageToBackend(m,serverId,channelId);
     }
   }
   function insertAtCursor(txt){ const i=$('messageInput');const s=i.selectionStart??i.value.length; i.value=i.value.slice(0,s)+txt+i.value.slice(i.selectionEnd);i.focus();i.selectionStart=i.selectionEnd=s+txt.length; }
@@ -3561,6 +3660,15 @@
   function isNativeAndroidCallDevice(){
     return !!window.AzurecordNative || /AzurecordAndroid\//i.test(navigator.userAgent||'');
   }
+  function setNativeAndroidCallActive(active){
+    try{window.AzurecordNative?.setCallActive?.(!!active);}catch{}
+  }
+  function notifyNativeIncomingCall(call){
+    try{
+      const name=getProfile(call?.peerId)?.username||'Alguém';
+      window.AzurecordNative?.notifyIncomingCall?.(name,String(call?.id||''),String(call?.type||'voice'));
+    }catch{}
+  }
   function nativeAndroidScreenBridge(){
     const bridge=window.AzurecordNative;
     return bridge&&typeof bridge.startScreenShare==='function'&&typeof bridge.stopScreenShare==='function'?bridge:null;
@@ -3883,7 +3991,7 @@
     }
     await ensureAzureCallIceConfig();
     const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,nativeScreenSharing:false,nativeScreenRequested:false,nativeScreenAutoStart:type==='screen'&&nativeAndroidScreenSupported(),nativeScreenPc:null,nativeScreenPendingIce:[],nativeRemoteScreenTrack:null,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
-    activeCall=call;scheduleCallSignalPoll();updateCallUi();
+    activeCall=call;setNativeAndroidCallActive(true);scheduleCallSignalPoll();updateCallUi();
     try{
       if(initialScreenCapture){
         const captured=await initialScreenCapture;
@@ -3905,7 +4013,7 @@
   }
   async function acceptIncomingCall(){
     const call=activeCall;if(!call||call.direction!=='incoming'||call.status!=='ringing')return;
-    clearTimeout(call.ringTimer);clearCallConnectTimer(call);call.status='connecting';updateCallUi();
+    clearTimeout(call.ringTimer);clearCallConnectTimer(call);call.status='connecting';setNativeAndroidCallActive(true);updateCallUi();
     try{
       await ensureAzureCallIceConfig();
       await acquireCallMedia(call,{incoming:true});createCallPeer(call,{offerer:false});
@@ -3985,7 +4093,7 @@
     try{call.controlChannel?.close?.();}catch{}try{call.pc?.close();}catch{}
     if(call.uiFrame)cancelAnimationFrame(call.uiFrame);
     const remote=$('remoteCallVideo'),remoteAudio=$('remoteCallAudio'),local=$('localCallVideo');if(remote)remote.srcObject=null;if(remoteAudio)remoteAudio.srcObject=null;if(local)local.srcObject=null;
-    activeCall=null;scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
+    activeCall=null;setNativeAndroidCallActive(false);scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
   }
   async function handleCallSignalEvent(event){
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
@@ -3998,7 +4106,7 @@
       if(!isFriend(from))return;
       activeCall={id:callId,peerId:from,type:['voice','video','screen'].includes(signal.callType)?signal.callType:'voice',direction:'incoming',status:'ringing',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:signal.callType==='screen',remoteShareFocused:false,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
       activeCall.ringTimer=setTimeout(()=>{if(activeCall?.id===callId)declineIncomingCall();},45000);
-      updateCallUi();showToast(`${getProfile(from)?.username||'Alguém'} está ligando…`);
+      updateCallUi();notifyNativeIncomingCall(activeCall);showToast(`${getProfile(from)?.username||'Alguém'} está ligando…`);
       try{window.azurecordDesktop?.notify?.('AzureCall',`${getProfile(from)?.username||'Alguém'} está ligando para você.`);}catch{}
     }
     const call=activeCall;if(!call||call.id!==callId||call.peerId!==from)return;
@@ -4020,7 +4128,7 @@
     if(kind==='screen-offer'){try{call.remoteScreenSharing=true;call.shareRevision=Math.max(Number(call.shareRevision||0),Number(signal.shareRevision||0));await handleScreenShareApiOffer(call,signal.description);}catch(err){console.warn('[AzureCall] screen offer:',err?.message||err);showToast('A transmissão não conseguiu negociar o vídeo.');}return;}
     if(kind==='screen-answer'){try{await handleScreenShareApiAnswer(call,signal.description);}catch(err){console.warn('[AzureCall] screen answer:',err?.message||err);}return;}
     if(kind==='offer'){try{await handleCallOffer(call,signal.description);}catch(err){console.warn('[AzureCall] offer:',err);endActiveCall({notify:true,message:'A chamada não conseguiu conectar.'});}return;}
-    if(kind==='answer'){try{if(call.pc){await call.pc.setRemoteDescription(signal.description);await flushCallIce(call);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);syncCallPeerState(call);}}catch(err){console.warn('[AzureCall] answer:',err);}return;}
+    if(kind==='answer'){clearTimeout(call.ringTimer);try{if(call.pc){await call.pc.setRemoteDescription(signal.description);await flushCallIce(call);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);syncCallPeerState(call);}}catch(err){console.warn('[AzureCall] answer:',err);}return;}
     if(kind==='ice'){if(signal.candidate){if(call.pc?.remoteDescription){try{await call.pc.addIceCandidate(signal.candidate);syncCallPeerState(call);}catch(err){console.warn('[AzureCall] ICE candidate:',err?.message||err);}}else call.pendingIce.push(signal.candidate);}return;}
     if(kind==='ice-restart'){if(call.offerer)void restartCallIce(call);return;}
     if(kind==='decline'){endActiveCall({notify:false,message:'A chamada foi recusada.'});return;}

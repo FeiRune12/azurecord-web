@@ -2,10 +2,15 @@ package com.azurecord.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -18,6 +23,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.WindowManager
 import org.json.JSONObject
 
 class MainActivity : Activity() {
@@ -27,10 +33,14 @@ class MainActivity : Activity() {
         private const val WEB_PATH_PREFIX = "/azurecord-web/"
         private const val REQ_WEB_MEDIA = 901
         private const val REQ_MEDIA_PROJECTION = 902
+        private const val CALL_CHANNEL = "azurecord_calls"
+        private const val CALL_NOTIFICATION_ID = 3107
     }
 
     private lateinit var webView: WebView
     private lateinit var projectionManager: MediaProjectionManager
+    private lateinit var audioManager: AudioManager
+    private var nativeCallActive = false
     private var pendingProjectionPayload: JSONObject? = null
     private var pendingWebPermissionRequest: PermissionRequest? = null
     private var pendingWebResources: Array<String> = emptyArray()
@@ -39,6 +49,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         webView = WebView(this)
         setContentView(webView)
         configureWebView()
@@ -83,7 +94,13 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (::webView.isInitialized) webView.onResume()
         AzurecordUpdater.resumePendingInstall(this)
+    }
+
+    override fun onPause() {
+        if (::webView.isInitialized && !nativeCallActive) webView.onPause()
+        super.onPause()
     }
 
     private fun configureWebView() {
@@ -188,6 +205,68 @@ class MainActivity : Activity() {
         pendingWebResources = emptyArray()
     }
 
+    fun setNativeCallActive(active: Boolean) {
+        nativeCallActive = active
+        runOnUiThread {
+            val notifications = getSystemService(NotificationManager::class.java)
+            notifications.cancel(CALL_NOTIFICATION_ID)
+            if (active) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                try { audioManager.mode = AudioManager.MODE_IN_COMMUNICATION } catch (_: Exception) {}
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                try { audioManager.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun notifyIncomingCall(name: String, callId: String, type: String) {
+        runOnUiThread {
+            val manager = getSystemService(NotificationManager::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        CALL_CHANNEL,
+                        "Chamadas AzureCall",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "Chamadas recebidas no Azurecord"
+                        lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                    }
+                )
+            }
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) return@runOnUiThread
+
+            val openIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra("azurecord_call_id", callId)
+            }
+            val pending = PendingIntent.getActivity(
+                this,
+                3107,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val kind = when (type) {
+                "video" -> "videochamada"
+                "screen" -> "chamada com compartilhamento"
+                else -> "chamada"
+            }
+            val notification = Notification.Builder(this, CALL_CHANNEL)
+                .setSmallIcon(R.drawable.ic_azurecord)
+                .setContentTitle("$name está ligando")
+                .setContentText("Toque para abrir a $kind no Azurecord.")
+                .setCategory(Notification.CATEGORY_CALL)
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+            manager.notify(CALL_NOTIFICATION_ID, notification)
+        }
+    }
+
     fun requestNativeScreenShare(payload: String) {
         val parsed = try { JSONObject(payload) } catch (_: Exception) { null }
         if (parsed == null ||
@@ -287,6 +366,12 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        try {
+            nativeCallActive = false
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            if (::audioManager.isInitialized) audioManager.mode = AudioManager.MODE_NORMAL
+            getSystemService(NotificationManager::class.java).cancel(CALL_NOTIFICATION_ID)
+        } catch (_: Exception) {}
         if (AzurecordNativeEvents.sink != null) AzurecordNativeEvents.sink = null
         pendingWebPermissionRequest?.deny()
         pendingWebPermissionRequest = null

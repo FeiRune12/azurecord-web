@@ -16,6 +16,18 @@ class AzurecordBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun setCallActive(active: Boolean): Boolean {
+        activity.setNativeCallActive(active)
+        return true
+    }
+
+    @JavascriptInterface
+    fun notifyIncomingCall(name: String, callId: String, type: String): Boolean {
+        activity.notifyIncomingCall(name, callId, type)
+        return true
+    }
+
+    @JavascriptInterface
     fun isNativeAndroid(): Boolean = true
 }
 

@@ -6,7 +6,7 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
 
-test('2.0.6: Lola usa sessão autenticada e não capability stale do health',()=>{
+test('2.0.7: Lola usa sessão autenticada e não capability stale do health',()=>{
   const start=app.indexOf('function lolaCloudReady()');
   const ready=app.slice(start,app.indexOf('function pointsCloudReady',start));
   const askStart=app.indexOf('async function askLolaAi');
@@ -18,14 +18,14 @@ test('2.0.6: Lola usa sessão autenticada e não capability stale do health',()=
   assert.doesNotMatch(ask,/capabilities\?\.lolaWorkersAI/);
 });
 
-test('2.0.6: Lola recupera sessão real e nunca envia legacy para API',()=>{
+test('2.0.7: Lola recupera sessão real e nunca envia legacy para API',()=>{
   assert.match(app,/async function ensureLolaSession/);
   assert.match(app,/\/api\/ai\/conversations/);
   assert.match(app,/\.\.\.\(sessionId\?\{sessionId\}:\{\}\)/);
   assert.doesNotMatch(app,/sessionId:m\.lolaSessionId\|\|'legacy'/);
 });
 
-test('2.0.6: mensagens têm retry transitório idempotente e confirmação do servidor',()=>{
+test('2.0.7: mensagens têm retry transitório idempotente e confirmação do servidor',()=>{
   assert.match(app,/async function cloudPostMessageWithRetry/);
   assert.match(app,/retryableCloudMessageError/);
   assert.match(app,/retries=1/);
@@ -33,14 +33,14 @@ test('2.0.6: mensagens têm retry transitório idempotente e confirmação do se
   assert.match(app,/O servidor não confirmou a mensagem/);
 });
 
-test('2.0.6: Android usa adaptive launcher icon e versão alinhada',()=>{
+test('2.0.7: Android usa adaptive launcher icon e versão alinhada',()=>{
   const manifest=fs.readFileSync(path.resolve(root,'..','android','app','src','main','AndroidManifest.xml'),'utf8');
   const gradle=fs.readFileSync(path.resolve(root,'..','android','app','build.gradle.kts'),'utf8');
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
   assert.match(manifest,/android:icon="@mipmap\/ic_launcher"/);
   assert.match(manifest,/android:roundIcon="@mipmap\/ic_launcher_round"/);
   assert.match(gradle,/versionName = "2\.0\.6"/);
-  assert.equal(pkg.version,'2.0.6');
+  assert.equal(pkg.version,'2.0.7');
   assert.ok(fs.existsSync(path.resolve(root,'..','android','app','src','main','res','mipmap-anydpi-v26','ic_launcher.xml')));
   assert.ok(fs.existsSync(path.resolve(root,'..','android','app','src','main','res','mipmap-anydpi-v26','ic_launcher_round.xml')));
 });
