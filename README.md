@@ -2,7 +2,7 @@
 
 Este repositório pode hospedar ao mesmo tempo o Azurecord Web/PWA e o código do app Windows.
 
-- `docs/`: site estático e PWA. No Vercel, use `docs` como Root Directory.
+- `docs/`: site estático e PWA. No Vercel, use `docs` como Root Directory. Deploys automáticos por Git ficam desativados em `docs/vercel.json` para não gastar o limite diário do plano Free; publique manualmente no Vercel quando quiser promover uma correção ou release.
 - `desktop/`: Electron para Windows.
 - `.github/workflows/windows-release.yml`: gera e publica automaticamente um instalador `.exe` em GitHub Releases quando `docs/` ou `desktop/` muda na branch `main`.
 
