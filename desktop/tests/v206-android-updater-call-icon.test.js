@@ -47,3 +47,23 @@ test('2.0.6: launcher usa o símbolo completo do desktop',()=>{
   assert.match(icon,/#D5D5D5/);
   assert.ok(icon.length>1800);
 });
+
+
+test('3.0.9: Android aplica update pronto ao abrir e confirma nova versão',()=>{
+  const updater=fs.readFileSync(path.resolve(root,'..','android','app','src','main','java','com','azurecord','app','AzurecordUpdater.kt'),'utf8');
+  const main=fs.readFileSync(path.resolve(root,'..','android','app','src','main','java','com','azurecord','app','MainActivity.kt'),'utf8');
+  assert.match(main,/installReadyUpdate\(this, finishAfterRequest = false\)/);
+  assert.match(main,/scheduleLaunchUpdateInstall/);
+  assert.match(main,/Azurecord atualizado para \$version/);
+  assert.match(updater,/consumeUpdatedVersion/);
+  assert.match(updater,/permission.*denied|denied.*permission/i);
+});
+
+test('3.0.9: desktop instala update automaticamente e avisa após reiniciar',()=>{
+  const updater=fs.readFileSync(path.join(root,'updater.js'),'utf8');
+  const preload=fs.readFileSync(path.join(root,'preload.js'),'utf8');
+  assert.match(updater,/autoUpdater\.quitAndInstall/);
+  assert.match(updater,/state: 'updated'/);
+  assert.match(updater,/setTimeout\(checkNow, 1500\)/);
+  assert.match(preload,/onUpdateStatus/);
+});
