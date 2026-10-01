@@ -1446,3 +1446,29 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 
 /* 3.0.3 profile presence selector */
 .profile-edit-grid select{width:100%;background:rgba(8,12,18,.72);border:1px solid var(--line);color:var(--text);padding:12px;border-radius:11px;outline:none}.profile-edit-grid select:focus{border-color:rgba(0,102,255,.55);box-shadow:0 0 0 3px rgba(0,102,255,.08)}
+
+
+/* 3.0.5 hotfix: custom status gets its own row */
+.profile-main-head{align-items:flex-end}
+.profile-head-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding-bottom:8px}
+.profile-head-copy .profile-title-block{padding-bottom:0}
+.profile-status-row{display:flex;align-items:flex-start;min-width:0}
+.profile-status-bubble{
+  position:static!important;left:auto!important;top:auto!important;transform:none!important;
+  display:inline-flex;align-items:center;gap:6px;
+  width:max-content;max-width:min(100%,320px);min-height:34px;padding:7px 11px;
+  margin:0;border-radius:16px;
+  white-space:nowrap;overflow:hidden
+}
+.profile-status-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-avatar-status-wrap{align-self:flex-end}
+@media(max-width:820px){
+  .profile-main-head{align-items:flex-end;flex-wrap:nowrap}
+  .profile-head-copy{min-width:0;flex:1}
+  .profile-status-bubble{max-width:100%}
+}
+@media(max-width:560px){
+  .profile-main-head{gap:12px;padding-left:16px;padding-right:16px}
+  .profile-avatar-large{width:88px!important;height:88px!important}
+  .profile-status-bubble{font-size:9px;min-height:32px;padding:6px 9px}
+}
