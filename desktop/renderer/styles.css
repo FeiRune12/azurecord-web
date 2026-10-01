@@ -1275,3 +1275,53 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .remote-screen-share .azure-call-local{right:10px;bottom:72px;width:130px;max-width:130px}
   .local-screen-share .azure-call-fallback{right:10px;bottom:72px;width:130px}
 }
+
+
+/* ===== Azurecord 2.0: mobile screen share + clickable share viewer ===== */
+.call-share-tag.remote{
+  appearance:none;
+  color:var(--text);
+  text-align:left;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+.call-share-tag.remote:hover,.call-share-tag.remote:focus-visible{
+  border-color:color-mix(in srgb,var(--accent) 72%,white 10%);
+  background:rgba(19,31,46,.98);
+  outline:none;
+  box-shadow:0 0 0 3px rgba(0,102,255,.12),0 12px 28px rgba(0,0,0,.28)
+}
+.call-share-tag.remote span::after{content:'  ↗';color:var(--accent)}
+.call-share-focus-exit{
+  position:absolute;z-index:12;left:18px;top:18px;
+  border:1px solid rgba(255,255,255,.12);border-radius:12px;
+  padding:9px 12px;background:rgba(10,15,22,.92);color:#fff;
+  font-size:10px;font-weight:800;cursor:pointer;backdrop-filter:none
+}
+.call-share-focus-exit[hidden]{display:none!important}
+.remote-share-focused .azure-call-stage{background:#000}
+.remote-share-focused .azure-call-remote{
+  inset:0!important;width:100%!important;height:100%!important;
+  max-width:none!important;max-height:none!important;border-radius:0!important;
+  object-fit:contain!important;box-shadow:none!important
+}
+.remote-share-focused .azure-call-local{display:none!important}
+.remote-share-focused .azure-call-fallback{display:none!important}
+.remote-share-focused .call-share-tag.remote{
+  position:absolute;left:auto;right:18px;top:18px;bottom:auto;width:min(250px,42vw)
+}
+.remote-share-focused .call-share-tag.local{display:none!important}
+#callShareBtn{touch-action:manipulation}
+@media(max-width:720px){
+  #voiceBtn:not([hidden]),#videoBtn:not([hidden]),#screenBtn:not([hidden]){
+    display:grid!important;place-items:center!important;
+    width:34px!important;height:34px!important;padding:0!important;font-size:0!important
+  }
+  #screenBtn:not([hidden])::before{content:'▤';font-size:15px}
+  .azure-call-actions{max-width:100%;flex-wrap:wrap}
+  #callShareBtn{display:grid!important}
+  .call-share-focus-exit{left:10px;top:10px;padding:8px 10px;font-size:9px}
+  .remote-share-focused .call-share-tag.remote{
+    left:auto;right:10px;top:10px!important;bottom:auto;width:min(210px,56vw)
+  }
+}

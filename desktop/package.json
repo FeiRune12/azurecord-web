@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "1.0.9",
+  "version": "2.0.0",
   "private": true,
-  "description": "Azurecord 1.0: compartilhamento de tela maior, visível no Web e otimizado no AzureCall.",
+  "description": "Azurecord 2.0: compartilhamento de tela mobile, aviso clicável e visualização focada.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

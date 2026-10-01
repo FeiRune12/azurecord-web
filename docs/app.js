@@ -1321,8 +1321,8 @@
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=()=>startDmCall('voice'); $('videoBtn').onclick=()=>startDmCall('video'); $('screenBtn').onclick=()=>activeCall?toggleCallScreen():startDmCall('screen'); $('searchBtn').onclick=openChannelSearch;
-    $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callRemoteShareTag').onclick=openRemoteSharedScreen; $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -2902,8 +2902,8 @@
     if(tab==='lola')return `<div class="settings-section"><h3>Lola / Workers AI</h3>${settingsToggleRow('lolaEnabledV83','Ativar Lola','Permite conversar com a assistente do Azurecord.',cs.lolaEnabled!==false)}${settingsToggleRow('lolaMemoryV83','Memória da Lola','Permite usar memória de contexto quando disponível.',cs.lolaMemoryEnabled!==false)}<div class="settings-option"><div><strong>Modelo</strong><span>${esc(cloudInfo?.capabilities?.lolaWorkersAI?'Cloudflare Workers AI ativo':'Workers AI indisponível')}</span></div><span class="pill">Llama 4 Scout</span></div><div class="settings-actions"><button class="btn btn-primary" id="openLolaFromSettings">Abrir Lola</button><button class="btn btn-ghost" id="newLolaFromSettings">Nova conversa</button></div></div>`;
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
     if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Uploads grandes</strong><p>A interface já está preparada para a futura migração para Cloudflare R2. Até essa etapa, os limites atuais continuam para não sobrecarregar o D1.</p></div></div>`;
-    if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>Chamadas estão no roadmap</strong><p>A futura implementação usará WebRTC para voz, vídeo e compartilhamento de tela, com sinalização Cloud.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn" disabled>▣ Vídeo</button><button class="choice-btn" disabled>▤ Tela</button></div></div></div>`;
-    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 1.0</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
+    if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>Chamadas WebRTC ativas</strong><p>Voz, vídeo e compartilhamento de tela entre dispositivos compatíveis, incluindo captura móvel quando o navegador oferece suporte.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn" disabled>▣ Vídeo</button><button class="choice-btn" disabled>▤ Tela</button></div></div></div>`;
+    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 2.0</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
   function bindAppSettings(tab){
@@ -3201,12 +3201,15 @@
     }else{if(local.srcObject)local.srcObject=null;local.hidden=true;}
 
     const remoteSharing=!!call.remoteScreenSharing || (call.type==='screen'&&call.direction==='incoming'&&hasRemoteVideo);
+    if(!remoteSharing&&call.remoteShareFocused)call.remoteShareFocused=false;
     const localSharing=!!call.screenTrack;
     const shareMode=remoteSharing||localSharing;
     const shell=overlay.querySelector('.azure-call-shell');
     shell?.classList.toggle('screen-share-mode',shareMode);
     shell?.classList.toggle('remote-screen-share',remoteSharing);
     shell?.classList.toggle('local-screen-share',localSharing&&!remoteSharing);
+    shell?.classList.toggle('remote-share-focused',remoteSharing&&!!call.remoteShareFocused);
+    const focusExit=$('callShareFocusExit');if(focusExit)focusExit.hidden=!(remoteSharing&&call.remoteShareFocused);
     const remoteTag=$('callRemoteShareTag'),localTag=$('callLocalShareTag');
     if(remoteTag){remoteTag.hidden=!remoteSharing;$('callRemoteShareName').textContent=peer.username||'Usuário';}
     if(localTag){localTag.hidden=!localSharing;$('callLocalShareName').textContent=own.username||own.displayName||'Você';}
@@ -3282,12 +3285,35 @@
       document.body.appendChild(layer);
     });
   }
+  function isMobileCallDevice(){
+    return !!(navigator.userAgentData?.mobile || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'') || (matchMedia?.('(pointer:coarse)')?.matches&&innerWidth<=1000));
+  }
+  function screenCaptureGetter(){
+    if(typeof navigator.mediaDevices?.getDisplayMedia==='function')return constraints=>navigator.mediaDevices.getDisplayMedia(constraints);
+    if(typeof navigator.getDisplayMedia==='function')return constraints=>navigator.getDisplayMedia(constraints);
+    return null;
+  }
+  function screenCaptureSupported(){return !!screenCaptureGetter();}
   async function requestAzureDisplayMedia(){
     if(window.azurecordDesktop?.getDisplaySources&&window.azurecordDesktop?.selectDisplaySource){
       const selected=await chooseDesktopDisplaySource();
       if(!selected){const err=new Error('Compartilhamento cancelado.');err.name='NotAllowedError';throw err;}
     }
-    return await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:24,max:30},width:{ideal:1920,max:1920},height:{ideal:1080,max:1080}},audio:false});
+    const capture=screenCaptureGetter();
+    if(!capture){
+      const err=new Error('Este navegador do celular não oferece captura de tela para chamadas WebRTC.');
+      err.name='NotSupportedError';throw err;
+    }
+    const mobile=isMobileCallDevice();
+    const stream=await capture({video:true,audio:false});
+    const track=stream?.getVideoTracks?.()[0];
+    if(track?.applyConstraints){
+      const limits=mobile
+        ? {frameRate:{ideal:15,max:24},width:{ideal:1280,max:1920},height:{ideal:720,max:1080}}
+        : {frameRate:{ideal:24,max:30},width:{ideal:1920,max:1920},height:{ideal:1080,max:1080}};
+      try{await track.applyConstraints(limits);}catch{}
+    }
+    return stream;
   }
   async function acquireCallMedia(call,{incoming=false}={}){
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este dispositivo não oferece acesso ao microfone/câmera.');
@@ -3295,7 +3321,7 @@
     call.localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:wantsCamera});
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
     if(call.type==='screen'&&!incoming){
-      if(!navigator.mediaDevices.getDisplayMedia)throw new Error('Compartilhamento de tela não disponível neste dispositivo.');
+      if(!screenCaptureSupported())throw new Error('Este navegador não oferece compartilhamento de tela.');
       call.screenStream=await requestAzureDisplayMedia();
       call.screenTrack=call.screenStream.getVideoTracks()[0]||null;
       if(call.screenTrack)call.screenTrack.onended=()=>{if(activeCall===call)stopCallScreenShare().catch(()=>{});};
@@ -3313,10 +3339,21 @@
     channel.onopen=()=>publishLocalScreenState(call);
     channel.onmessage=event=>{
       let payload=null;try{payload=JSON.parse(String(event.data||''));}catch{return;}
-      if(payload?.type==='screen-share'){call.remoteScreenSharing=!!payload.active;updateCallUi();}
+      if(payload?.type==='screen-share'){const was=!!call.remoteScreenSharing;call.remoteScreenSharing=!!payload.active;if(call.remoteScreenSharing&&!was)showToast(`${getProfile(call.peerId)?.username||'A outra pessoa'} começou a compartilhar a tela. Clique no aviso para abrir.`);if(!call.remoteScreenSharing&&call.remoteShareFocused)closeRemoteSharedScreen({exitFullscreen:true});updateCallUi();}
     };
     channel.onclose=()=>{if(call.controlChannel===channel)call.controlChannel=null;};
     channel.onerror=()=>{};
+  }
+  async function openRemoteSharedScreen(){
+    const call=activeCall;if(!call?.remoteScreenSharing)return;
+    call.remoteShareFocused=true;updateCallUi();
+    const stage=$('callStage');
+    if(stage?.requestFullscreen&&!document.fullscreenElement){try{await stage.requestFullscreen();}catch{}}
+  }
+  async function closeRemoteSharedScreen({exitFullscreen=false}={}){
+    const call=activeCall;if(call)call.remoteShareFocused=false;
+    if(exitFullscreen&&document.fullscreenElement){try{await document.exitFullscreen();}catch{}}
+    updateCallUi();
   }
   function clearCallConnectTimer(call){if(call?.connectTimer){clearTimeout(call.connectTimer);call.connectTimer=null;}}
   function markCallConnected(call){if(activeCall!==call)return;clearCallConnectTimer(call);call.connectAttempts=0;call.iceRestarting=false;if(call.status!=='active')setCallStatus('active');}
@@ -3436,7 +3473,7 @@
     const realtime=await ensureAzureCallRealtime();
     if(!realtime.ok){showToast(explainAzureCallRealtimeFailure(realtime));return;}
     if(typeof RTCPeerConnection==='undefined'){showToast('WebRTC não está disponível neste dispositivo.');return;}
-    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,uiFrame:0};
+    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,uiFrame:0};
     activeCall=call;scheduleCallSignalPoll();updateCallUi();
     try{
       await acquireCallMedia(call,{incoming:false});
@@ -3480,7 +3517,7 @@
       const params=sender.getParameters()||{};
       params.degradationPreference='maintain-resolution';
       if(!params.encodings?.length)params.encodings=[{}];
-      params.encodings[0]={...params.encodings[0],maxBitrate:2800000,maxFramerate:30};
+      const mobile=isMobileCallDevice();params.encodings[0]={...params.encodings[0],maxBitrate:mobile?1800000:2800000,maxFramerate:mobile?24:30};
       await sender.setParameters(params);
     }catch(err){console.warn('[AzureCall] screen sender params:',err?.message||err);}
   }
@@ -3494,7 +3531,7 @@
   async function toggleCallScreen(){
     const call=activeCall;if(!call?.pc)return;
     if(call.screenTrack){await stopCallScreenShare();return;}
-    if(!navigator.mediaDevices?.getDisplayMedia){showToast('Compartilhamento de tela indisponível neste dispositivo.');return;}
+    if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'Este navegador do celular ainda não permite compartilhar a tela. Tente um navegador compatível.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
     try{
       const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
       call.screenStream=stream;call.screenTrack=track;let sender=getCallVideoSender(call);
@@ -3522,7 +3559,7 @@
     }
     if(!activeCall&&(kind==='ring'||kind==='offer')){
       if(!isFriend(from))return;
-      activeCall={id:callId,peerId:from,type:['voice','video','screen'].includes(signal.callType)?signal.callType:'voice',direction:'incoming',status:'ringing',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:signal.callType==='screen',uiFrame:0};
+      activeCall={id:callId,peerId:from,type:['voice','video','screen'].includes(signal.callType)?signal.callType:'voice',direction:'incoming',status:'ringing',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:signal.callType==='screen',remoteShareFocused:false,uiFrame:0};
       activeCall.ringTimer=setTimeout(()=>{if(activeCall?.id===callId)declineIncomingCall();},45000);
       updateCallUi();showToast(`${getProfile(from)?.username||'Alguém'} está ligando…`);
       try{window.azurecordDesktop?.notify?.('AzureCall',`${getProfile(from)?.username||'Alguém'} está ligando para você.`);}catch{}
