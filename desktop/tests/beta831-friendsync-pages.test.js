@@ -9,7 +9,8 @@ const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 
 test('Social Cloud usa realtime sem forçar snapshot pesado ao abrir Amigos', () => {
   assert.match(app, /if\(socialCloudReady\(\)\)wakeCloudRealtimeSync\(\{snapshot:false\}\)/);
-  assert.match(app, /cloudRealtimeConnected\(\)\?60000:5000/);
+  assert.match(app, /function cloudRealtimeDelay\(\)/);
+  assert.match(app, /cloudRealtimeConnected\(\)\?12000:5000/);
   assert.match(app, /socialSnapshotSignature/);
   assert.match(app, /if\(!socialCloudReady\(\)\)/);
   assert.match(app, /return cloudRequest\(path,options\)/);

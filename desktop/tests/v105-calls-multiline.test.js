@@ -22,7 +22,8 @@ test('1.0.5: AzureCall 1:1 usa WebRTC e sinalização realtime',()=>{
   const worker=fs.readFileSync(path.resolve(root,'..','realtime','worker.js'),'utf8');
   assert.match(html,/id="callOverlay"/);
   assert.match(html,/id="remoteCallVideo"/);
-  assert.match(app,/new RTCPeerConnection\(AZURECALL_RTC_CONFIG\)/);
+  assert.match(app,/ensureAzureCallIceConfig/);
+  assert.match(app,/new RTCPeerConnection\(azureCallRtcConfig\)/);
   assert.match(app,/navigator\.mediaDevices\.getUserMedia/);
   assert.match(app,/navigator\.mediaDevices\.getDisplayMedia/);
   assert.match(app,/type:'call\.signal'/);

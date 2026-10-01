@@ -6,6 +6,13 @@ on:
     paths:
       - 'docs/**'
       - 'desktop/**'
+      - 'realtime/**'
+      - '.github/workflows/windows-release.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'desktop/**'
+      - 'realtime/**'
       - '.github/workflows/windows-release.yml'
   workflow_dispatch:
 
@@ -66,6 +73,7 @@ jobs:
         run: npm test
 
       - name: Atualizar tag da versão
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
@@ -94,6 +102,7 @@ jobs:
           npx electron-builder --win nsis --publish never
 
       - name: Publicar ou atualizar GitHub Release
+        if: github.event_name != 'pull_request'
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -38,7 +38,11 @@ test('2.0.2: quem não iniciou a chamada também força nova oferta de tela',()=
   assert.doesNotMatch(share,/prepared\.needsRenegotiation/);
 });
 
-test('2.0.2: versão do cliente está correta',()=>{
+test('2.0.2+: versão do cliente permanece sincronizada nos artefatos',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'2.0.2');
+  const versionFile=fs.readFileSync(path.join(root,'VERSION.txt'),'utf8');
+  const html=fs.readFileSync(path.join(root,'renderer','index.html'),'utf8');
+  assert.match(pkg.version,/^\d+\.\d+\.\d+$/);
+  assert.ok(versionFile.includes(pkg.version));
+  assert.ok(html.includes(`styles.css?v=${pkg.version}`));
 });
