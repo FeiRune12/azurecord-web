@@ -144,6 +144,15 @@ class MainActivity : Activity() {
                 runOnUiThread { handleWebMediaPermission(request) }
             }
 
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                runOnUiThread {
+                    if (pendingWebPermissionRequest === request) {
+                        pendingWebPermissionRequest = null
+                        pendingWebResources = emptyArray()
+                    }
+                }
+            }
+
             override fun onShowFileChooser(
                 webView: WebView?,
                 filePathCallback: ValueCallback<Array<Uri>>?,
@@ -174,9 +183,15 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun isTrustedAzurecordOrigin(uri: Uri?): Boolean {
+        return uri != null &&
+            uri.scheme.equals("https", ignoreCase = true) &&
+            uri.host.equals(WEB_HOST, ignoreCase = true)
+    }
+
     private fun isTrustedAzurecordUri(uri: Uri?): Boolean {
-        if (uri == null || uri.scheme != "https" || !uri.host.equals(WEB_HOST, ignoreCase = true)) return false
-        val path = uri.path ?: "/"
+        if (!isTrustedAzurecordOrigin(uri)) return false
+        val path = uri?.path ?: "/"
         return path == "/azurecord-web" || path.startsWith(WEB_PATH_PREFIX)
     }
 
@@ -192,7 +207,10 @@ class MainActivity : Activity() {
     }
 
     private fun handleWebMediaPermission(request: PermissionRequest) {
-        if (!isTrustedAzurecordUri(request.origin)) {
+        // PermissionRequest.origin contains only the web origin (scheme + host + port),
+        // not the current page path. Requiring /azurecord-web/ here made every valid
+        // getUserMedia request look untrusted even when Android permissions were granted.
+        if (!isTrustedAzurecordOrigin(request.origin)) {
             request.deny()
             return
         }
@@ -250,9 +268,12 @@ class MainActivity : Activity() {
         pendingWebPermissionRequest = null
         if (request == null) return
 
-        val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
-        if (allGranted) request.grant(pendingWebResources) else request.deny()
+        val requestedResources = pendingWebResources
         pendingWebResources = emptyArray()
+        val allGranted = permissions.isNotEmpty() && permissions.all {
+            checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted && requestedResources.isNotEmpty()) request.grant(requestedResources) else request.deny()
     }
 
     fun requestCallPermissions(includeCamera: Boolean) {
