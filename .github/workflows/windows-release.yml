@@ -46,74 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          if ($version -notmatch '^\d+\.\d+\.\d+
-
-      - name: Instalar dependências
-        working-directory: desktop
-        run: npm install --no-audit --no-fund
-
-      - name: Validar JavaScript
-        working-directory: desktop
-        run: npm run check
-
-      - name: Testes
-        working-directory: desktop
-        run: npm test
-
-      - name: Atualizar tag da versão
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --tags --force
-
-          $localTag = git tag -l "$env:AZURECORD_TAG"
-          if ($localTag) {
-            git tag -d "$env:AZURECORD_TAG"
-          }
-
-          $remoteTag = git ls-remote --tags origin "refs/tags/$env:AZURECORD_TAG"
-          if ($remoteTag) {
-            git push origin ":refs/tags/$env:AZURECORD_TAG"
-          }
-
-          git tag "$env:AZURECORD_TAG" "$env:GITHUB_SHA"
-          git push origin "$env:AZURECORD_TAG"
-
-      - name: Gerar instalador EXE
-        working-directory: desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          npx electron-builder --win nsis --publish never
-
-      - name: Publicar ou atualizar GitHub Release
-        working-directory: desktop
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
-        run: |
-          $exe = "release/Azurecord-Setup-$env:AZURECORD_VERSION.exe"
-          $blockmap = "$exe.blockmap"
-          $latest = "release/latest.yml"
-
-          foreach ($file in @($exe, $blockmap, $latest)) {
-            if (-not (Test-Path $file)) {
-              throw "Artefato obrigatório não encontrado: $file"
-            }
-          }
-
-          gh release view "$env:AZURECORD_TAG" *> $null
-          $exists = $LASTEXITCODE -eq 0
-
-          if ($exists) {
-            gh release edit "$env:AZURECORD_TAG" --title "Azurecord $env:AZURECORD_VERSION" --draft=false --prerelease=false
-            gh release upload "$env:AZURECORD_TAG" $exe $blockmap $latest --clobber
-          } else {
-            gh release create "$env:AZURECORD_TAG" $exe $blockmap $latest --title "Azurecord $env:AZURECORD_VERSION" --notes "Azurecord $env:AZURECORD_VERSION stable release."
-          }
-) {
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Versão inválida no desktop/package.json: $version"
           }
           Write-Host "Versão: $version"
