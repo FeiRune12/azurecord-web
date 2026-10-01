@@ -21,13 +21,14 @@ test('2.0.2: screen share usa API para estado e renegociação',()=>{
   assert.match(api,/azureCallShareState: true/);
 });
 
-test('2.0.2: aviso de transmissão é clicável',()=>{
+test('3.0.8: transmissão não usa toast persistente nem aviso clicável',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
-  const css=fs.readFileSync(path.join(root,'renderer','styles.css'),'utf8');
-  assert.match(app,/showToast\(text,options=\{\}\)/);
-  assert.match(app,/showRemoteShareNotice/);
-  assert.match(app,/onClick:\(\)=>openRemoteSharedScreen\(\)/);
-  assert.match(css,/\.toast\.clickable/);
+  const html=fs.readFileSync(path.join(root,'renderer','index.html'),'utf8');
+  assert.match(app,/function showRemoteShareNotice\(call\)\{\}/);
+  assert.match(app,/function clearRemoteShareNotice\(call\)\{\}/);
+  assert.doesNotMatch(app,/onClick:\(\)=>openRemoteSharedScreen\(\)/);
+  assert.doesNotMatch(app,/remoteShareToastKey/);
+  assert.match(html,/<div id="callRemoteShareTag" class="call-share-tag remote"/);
 });
 
 test('2.0.2: quem não iniciou a chamada também força nova oferta de tela',()=>{
