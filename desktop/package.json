@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
-  "description": "Azurecord 2.0.3: realtime resiliente entre Web/Desktop, watchdog de WebSocket e AzureCall pronto para TURN.",
+  "description": "Azurecord 2.0.4: AzureCall com sinalização de tela via WebSocket, menor latência, aviso persistente e ponte Android nativa.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
