@@ -24,3 +24,15 @@ test('2.0.3: versao do cliente esta correta',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
   assert.equal(pkg.version,'2.0.3');
 });
+
+test('2.0.3: AzureCall busca ICE dinamico e API suporta TURN seguro',()=>{
+  const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
+  const api=fs.readFileSync(path.join(root,'cloud','worker-v0.8.1.js'),'utf8');
+  assert.match(app,/ensureAzureCallIceConfig/);
+  assert.match(app,/\/api\/realtime\/ice-servers/);
+  assert.match(app,/iceCandidatePoolSize:4/);
+  assert.match(api,/TURN_KEY_ID/);
+  assert.match(api,/TURN_KEY_API_TOKEN/);
+  assert.match(api,/generate-ice-servers/);
+  assert.match(api,/azureCallTurn:/);
+});
