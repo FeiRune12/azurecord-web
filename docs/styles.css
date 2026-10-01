@@ -1193,3 +1193,85 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .screen-source-grid{grid-template-columns:1fr;padding:12px}
   .screen-source-card img,.screen-source-placeholder{aspect-ratio:16/8}
 }
+
+
+/* ===== Azurecord 1.0.9: compartilhamento grande + call performance ===== */
+.azure-call-overlay{
+  background:rgba(3,6,10,.9)!important;
+  backdrop-filter:none!important
+}
+.azure-call-shell{
+  contain:layout paint;
+  transition:width .16s ease,height .16s ease,border-radius .16s ease
+}
+.azure-call-shell.screen-share-mode{
+  width:min(1500px,calc(100vw - 20px))!important;
+  height:min(940px,calc(100dvh - 20px))!important;
+  border-radius:18px
+}
+.azure-call-stage{contain:layout paint;background:#05070a}
+.azure-call-remote,.azure-call-local{
+  transform:translateZ(0);
+  backface-visibility:hidden
+}
+.azure-call-stage audio{display:none}
+.call-share-tag{
+  position:absolute;z-index:7;right:18px;width:196px;display:flex;flex-direction:column;gap:3px;
+  padding:10px 12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;
+  background:rgba(14,20,29,.94);box-shadow:0 10px 24px rgba(0,0,0,.24)
+}
+.call-share-tag[hidden]{display:none!important}
+.call-share-tag.remote{top:18px}
+.call-share-tag.local{top:78px}
+.call-share-tag strong{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.call-share-tag span{font-size:9px;color:var(--muted)}
+.call-share-tag span::before{content:'▤ ';color:var(--accent)}
+.screen-share-mode .azure-call-remote{
+  inset:12px 228px 12px 12px;
+  width:auto;height:auto;
+  max-width:calc(100% - 240px);
+  max-height:calc(100% - 24px);
+  border-radius:14px;
+  background:#020304;
+  box-shadow:0 0 0 1px rgba(255,255,255,.05)
+}
+.local-screen-share .azure-call-remote{opacity:0;pointer-events:none}
+.local-screen-share .azure-call-local.screen-main{
+  position:absolute;inset:12px 228px 12px 12px;
+  width:auto!important;height:auto!important;max-width:calc(100% - 240px)!important;
+  aspect-ratio:auto;object-fit:contain;border-radius:14px;
+  box-shadow:0 0 0 1px rgba(255,255,255,.05)
+}
+.remote-screen-share .azure-call-local{
+  right:18px;bottom:18px;width:196px;max-width:196px;border-radius:12px
+}
+.local-screen-share .azure-call-fallback{
+  position:absolute;z-index:6;right:18px;bottom:18px;width:196px;
+  padding:12px;border-radius:14px;background:rgba(14,20,29,.94)
+}
+.local-screen-share .azure-call-fallback .azure-call-avatar{
+  width:58px;height:58px;border-radius:18px;font-size:22px
+}
+.local-screen-share .azure-call-fallback strong{font-size:12px}
+.local-screen-share .azure-call-fallback span{font-size:9px}
+.screen-source-picker-layer{
+  background:rgba(3,6,10,.92)!important;
+  backdrop-filter:none!important
+}
+.screen-source-dialog{contain:layout paint}
+.screen-source-card img{content-visibility:auto}
+@media(max-width:900px){
+  .azure-call-shell.screen-share-mode{width:100vw!important;height:100dvh!important;border-radius:0}
+  .screen-share-mode .azure-call-remote,
+  .local-screen-share .azure-call-local.screen-main{
+    inset:8px 8px 94px 8px;
+    max-width:calc(100% - 16px)!important;
+    max-height:calc(100% - 102px)!important
+  }
+  .call-share-tag{
+    left:10px;right:auto;top:auto!important;bottom:14px;width:min(210px,48vw)
+  }
+  .call-share-tag.local{left:auto;right:10px}
+  .remote-screen-share .azure-call-local{right:10px;bottom:72px;width:130px;max-width:130px}
+  .local-screen-share .azure-call-fallback{right:10px;bottom:72px;width:130px}
+}

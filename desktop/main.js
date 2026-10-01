@@ -19,9 +19,12 @@ if (!gotSingleInstanceLock) {
   });
 }
 
-// Safe startup: avoid GPU-driver initialization issues on older/unstable systems.
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu-compositing');
+// Hardware acceleration stays enabled by default because AzureCall video/screen sharing benefits heavily from GPU decode/compositing.
+// Set AZURECORD_DISABLE_GPU=1 only as a troubleshooting fallback on problematic drivers.
+if (process.env.AZURECORD_DISABLE_GPU === '1') {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
 app.commandLine.appendSwitch('disable-http-cache');
 
 const LOG_FILE = path.join(app.getPath('temp'), 'azurecord-startup.log');
@@ -211,8 +214,8 @@ app.whenReady().then(async () => {
         try {
           const sources = await desktopCapturer.getSources({
             types: ['screen', 'window'],
-            thumbnailSize: { width: 320, height: 180 },
-            fetchWindowIcons: true
+            thumbnailSize: { width: 1, height: 1 },
+            fetchWindowIcons: false
           });
           const selected = sources.find(source => source.id === selectedDisplaySourceId) ||
             sources.find(source => String(source.id).startsWith('screen:')) ||
@@ -233,10 +236,10 @@ app.whenReady().then(async () => {
       try {
         const sources = await desktopCapturer.getSources({
           types: ['screen', 'window'],
-          thumbnailSize: { width: 320, height: 180 },
-          fetchWindowIcons: true
+          thumbnailSize: { width: 224, height: 126 },
+          fetchWindowIcons: false
         });
-        return sources.map(source => ({
+        return sources.slice(0, 30).map(source => ({
           id: source.id,
           name: source.name,
           displayId: source.display_id || '',
