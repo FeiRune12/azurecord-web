@@ -1839,6 +1839,7 @@
     view.mode='dm';view.dmUserId=id;$('homePanel').hidden=true;$('chatView').hidden=false;
     $('serverSide').hidden=true;$('homeSide').hidden=false;
     state.unread[key]=0;save();renderDms();renderChat();
+    if(socialCloudReady()&&!cloudRealtimeConnected())startCloudRealtimeSocket();
     // O input funciona ao abrir, sem precisar enviar uma mensagem de teste.
     $('messageInput').disabled=false;$('messageInput').readOnly=false;
     $('messageInput').focus();
@@ -3137,11 +3138,54 @@
     const call=activeCall;if(!call?.pc)return;
     const offer=await call.pc.createOffer();await call.pc.setLocalDescription(offer);sendCallSignal('offer',{description:call.pc.localDescription});
   }
+  async function azureCallRealtimeHealth(){
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),4500);
+    try{
+      const response=await fetch(`${CLOUD_REALTIME_URL}/health`,{cache:'no-store',signal:controller.signal});
+      if(!response.ok)return {ok:false,status:response.status,version:null};
+      const data=await response.json().catch(()=>({}));
+      return {ok:data?.ok!==false,version:String(data?.version||''),service:String(data?.service||'')};
+    }catch(err){
+      return {ok:false,version:null,error:err?.name==='AbortError'?'timeout':(err?.message||'network_error')};
+    }finally{clearTimeout(timer);}
+  }
+  function versionAtLeast(actual,minimum){
+    const a=String(actual||'').split('.').map(n=>Number(n)||0),b=String(minimum||'').split('.').map(n=>Number(n)||0);
+    for(let i=0;i<Math.max(a.length,b.length);i++){if((a[i]||0)>(b[i]||0))return true;if((a[i]||0)<(b[i]||0))return false;}
+    return true;
+  }
+  async function ensureAzureCallRealtime(timeoutMs=8000){
+    if(!socialCloudReady())return {ok:false,reason:'session'};
+    const health=await azureCallRealtimeHealth();
+    if(!health.ok)return {ok:false,reason:'health',health};
+    if(!versionAtLeast(health.version,'1.3.0'))return {ok:false,reason:'version',health};
+    if(cloudRealtimeConnected())return {ok:true,health};
+    startCloudRealtimeSocket(true);
+    const started=Date.now();let retried=false;
+    while(Date.now()-started<timeoutMs){
+      if(cloudRealtimeConnected())return {ok:true,health};
+      if(typeof navigator!=='undefined'&&navigator.onLine===false)return {ok:false,reason:'offline',health};
+      if(!retried&&Date.now()-started>3500&&(!cloudRealtimeSocket||cloudRealtimeSocket.readyState===WebSocket.CLOSED)){
+        retried=true;startCloudRealtimeSocket(true);
+      }
+      await new Promise(resolve=>setTimeout(resolve,160));
+    }
+    return {ok:cloudRealtimeConnected(),reason:'socket',health};
+  }
+  function explainAzureCallRealtimeFailure(result){
+    if(result?.reason==='offline')return 'Sem internet. Reconecte antes de iniciar a chamada.';
+    if(result?.reason==='session')return 'Sua sessão Cloud não está pronta. Saia e entre novamente no Azurecord.';
+    if(result?.reason==='version')return `Realtime Worker ${result.health?.version||'antigo'} detectado. Publique o Worker 1.3.0 para usar chamadas.`;
+    if(result?.reason==='health')return 'O Realtime Worker não respondeu. Verifique o deploy do Cloudflare.';
+    return 'O Realtime respondeu, mas o WebSocket não conectou. Tente novamente ou entre de novo na conta.';
+  }
   async function startDmCall(type='voice'){
     if(view.mode!=='dm'||!view.dmUserId||view.dmUserId==='user-lola'){showToast('Abra uma DM com um amigo para iniciar uma chamada.');return;}
     if(!isFriend(view.dmUserId)){showToast('Chamadas estão disponíveis entre amigos.');return;}
     if(activeCall){showToast('Você já está em uma chamada.');return;}
-    if(!cloudRealtimeConnected()){showToast('O realtime precisa estar conectado para iniciar a chamada.');return;}
+    const realtime=await ensureAzureCallRealtime();
+    if(!realtime.ok){showToast(explainAzureCallRealtimeFailure(realtime));return;}
     if(typeof RTCPeerConnection==='undefined'){showToast('WebRTC não está disponível neste dispositivo.');return;}
     const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null};
     activeCall=call;updateCallUi();

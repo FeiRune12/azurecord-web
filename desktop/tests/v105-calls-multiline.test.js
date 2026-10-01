@@ -36,3 +36,12 @@ test('1.0.5: desktop habilita seletor de compartilhamento de tela',()=>{
   assert.match(main,/setDisplayMediaRequestHandler/);
   assert.match(main,/useSystemPicker:\s*true/);
 });
+
+test('1.0.6: AzureCall espera o realtime e diagnostica o Worker',()=>{
+  const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
+  assert.match(app,/ensureAzureCallRealtime/);
+  assert.match(app,/azureCallRealtimeHealth/);
+  assert.match(app,/versionAtLeast\(health\.version,'1\.3\.0'\)/);
+  assert.match(app,/startCloudRealtimeSocket\(true\)/);
+  assert.doesNotMatch(app,/O realtime precisa estar conectado para iniciar a chamada/);
+});
