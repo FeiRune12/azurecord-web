@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "2.0.10",
+  "version": "3.0.0",
   "private": true,
-  "description": "Azurecord 2.0.10: AzureCall com sinalização de tela via WebSocket, menor latência, aviso persistente e ponte Android nativa.",
+  "description": "Azurecord 3.0.0: AzureCall com sinalização de tela via WebSocket, menor latência, aviso persistente e ponte Android nativa.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
