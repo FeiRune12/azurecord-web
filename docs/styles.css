@@ -1440,3 +1440,6 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .profile-status-bubble{max-width:min(70vw,280px)!important}
   button,.btn,.home-side-item,.channel-item{touch-action:manipulation}
 }
+
+/* 3.0.1 auth visibility fix */
+.auth-form label[hidden],#confirmRow[hidden]{display:none!important}
