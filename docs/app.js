@@ -3275,7 +3275,7 @@
     $$('[data-settings-tab]').forEach(b=>b.onclick=()=>openAppSettings(b.dataset.settingsTab));
     $('settingsEditProfile')?.addEventListener('click',()=>openProfileModal(state.currentAccountId));$('settingsOpenProfileEditor')?.addEventListener('click',()=>openProfileModal(state.currentAccountId));
     $('settingsCopyId')?.addEventListener('click',()=>{navigator.clipboard?.writeText(currentUser()?.id||'');showToast('ID copiado.');});
-    $('[data-settings-status]').forEach(b=>b.onclick=async()=>{await setOwnPresence(b.dataset.settingsStatus,$('settingsCustomStatus')?.value||currentUser()?.customStatus||'');openAppSettings('profile');});
+    $('[data-settings-status]').forEach(b=>b.onclick=async()=>{const next=b.dataset.settingsStatus;b.disabled=true;try{await setOwnPresence(next,$('settingsCustomStatus')?.value||currentUser()?.customStatus||'');showToast('Presença alterada para '+statusLabel(next)+'.');openAppSettings('profile');}finally{b.disabled=false;}});
     $('settingsSaveStatus')?.addEventListener('click',async()=>{await setOwnPresence(currentUser()?.status||'online',$('settingsCustomStatus')?.value||'');openAppSettings('profile');});
     $('settingsClearStatus')?.addEventListener('click',async()=>{await setOwnPresence(currentUser()?.status||'online','');openAppSettings('profile');});
     $('settingsChangePassword')?.addEventListener('click',changePassword);
