@@ -42,6 +42,8 @@ class MainActivity : Activity() {
         webView = WebView(this)
         setContentView(webView)
         configureWebView()
+        AzurecordUpdater.schedule(this)
+        requestNotificationPermissionIfNeeded()
 
         AzurecordNativeEvents.sink = { json ->
             runOnUiThread {
@@ -57,6 +59,31 @@ class MainActivity : Activity() {
         } else {
             webView.restoreState(savedInstanceState)
         }
+
+        if (intent?.action == AzurecordUpdater.ACTION_INSTALL_READY) {
+            webView.post { AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false) }
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 903)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent?.action == AzurecordUpdater.ACTION_INSTALL_READY) {
+            AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AzurecordUpdater.resumePendingInstall(this)
     }
 
     private fun configureWebView() {
@@ -250,7 +277,13 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Android")
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        if (webView.canGoBack()) {
+            webView.goBack()
+            return
+        }
+
+        if (AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = true)) return
+        finishAndRemoveTask()
     }
 
     override fun onDestroy() {
