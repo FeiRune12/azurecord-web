@@ -1291,7 +1291,7 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  const APP_CORRECTION_NOTICE={id:'3.0.5-hotfix-android-media-permissions-20261001',title:'Correção rápida aplicada',body:'O Android agora solicita câmera e microfone ao abrir e reconhece corretamente permissões já concedidas nas chamadas.'};
+  const APP_CORRECTION_NOTICE={id:'3.0.6-clean-azurecall-microphone-20261001',title:'Azurecord 3.0.6',body:'AzureCall recebeu uma correção limpa no controle do microfone: silenciar não derruba mais a captura nem dispara falsos erros de permissão no Android.'};
   function announceAppCorrection(){
     if(!currentUser())return;
     const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
@@ -3658,7 +3658,7 @@
     local.classList.toggle('screen-main',localSharing&&!remoteSharing);
     local.classList.toggle('screen-pip',localSharing&&remoteSharing);
 
-    const audio=call.localStream?.getAudioTracks?.()[0];$('callMicBtn').classList.toggle('off',!!audio&&!audio.enabled);
+    const audio=call.localStream?.getAudioTracks?.()[0];$('callMicBtn').classList.toggle('off',!!call.micMuted||!audio||audio.readyState==='ended');
     $('callCameraBtn').classList.toggle('off',!call.cameraTrack||call.cameraTrack.enabled===false);
     $('callShareBtn').classList.toggle('off',!localSharing);
   }
@@ -3895,6 +3895,8 @@
       if(!granted){const err=new Error('Android permission denied');err.name='NotAllowedError';throw err;}
     }
     call.localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:wantsCamera});
+    call.micMuted=false;
+    for(const track of call.localStream.getAudioTracks())track.enabled=true;
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
     if(call.type==='screen'&&!incoming&&!call.screenTrack&&!nativeAndroidScreenSupported()){
       if(!screenCaptureSupported())throw new Error('Este navegador não oferece compartilhamento de tela.');
@@ -4089,7 +4091,11 @@
   }
   async function attachCallLocalTracks(call,{offerer=false}={}){
     if(!call?.pc||call.tracksAttached)return;
-    for(const track of call.localStream?.getAudioTracks?.()||[])call.pc.addTrack(track,call.localStream);
+    for(const track of call.localStream?.getAudioTracks?.()||[]){
+      track.enabled=true;
+      const sender=call.pc.addTrack(track,call.localStream);
+      if(sender)sender.__azurecordAudioSender=true;
+    }
     if(offerer)ensureOffererVideoSlots(call);else bindAnswererVideoSlots(call);
     const cameraSender=getCallVideoSender(call,'camera'),screenSender=getCallVideoSender(call,'screen');
     if(cameraSender)await cameraSender.replaceTrack(call.cameraTrack?.enabled!==false?call.cameraTrack:null);
@@ -4219,7 +4225,52 @@
     const call=activeCall;if(!call)return;
     directCallSignal(call.peerId,{kind:'decline',callId:call.id,callType:call.type});endActiveCall({notify:false});
   }
-  async function toggleCallMic(){const call=activeCall;const track=call?.localStream?.getAudioTracks?.()[0];if(!track)return;track.enabled=!track.enabled;updateCallUi();}
+  function getCallAudioSender(call){
+    return call?.pc?.getSenders?.().find(sender=>sender?.track?.kind==='audio'||sender?.__azurecordAudioSender===true)||null;
+  }
+  async function toggleCallMic(){
+    const call=activeCall;if(!call?.pc)return;
+    let track=call.localStream?.getAudioTracks?.()[0]||null;
+    const nextMuted=!call.micMuted;
+    try{
+      let sender=getCallAudioSender(call);
+      if(!sender&&track){
+        sender=call.pc.getSenders?.().find(s=>s?.track===track)||null;
+        if(sender)sender.__azurecordAudioSender=true;
+      }
+      if(nextMuted){
+        if(track)track.enabled=true;
+        if(sender?.replaceTrack)await sender.replaceTrack(null);
+        call.micMuted=true;
+      }else{
+        if(!track||track.readyState==='ended'){
+          if(isNativeAndroidCallDevice()){
+            const granted=await ensureNativeCallPermissions(false);
+            if(!granted){const err=new Error('Android permission denied');err.name='NotAllowedError';throw err;}
+          }
+          const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+          track=stream.getAudioTracks()[0]||null;
+          if(!track)throw new Error('Nenhum microfone disponível.');
+          if(!call.localStream)call.localStream=new MediaStream();
+          call.localStream.getAudioTracks().forEach(old=>{try{call.localStream.removeTrack(old);}catch{}});
+          call.localStream.addTrack(track);
+        }
+        track.enabled=true;
+        if(sender?.replaceTrack)await sender.replaceTrack(track);
+        else{
+          sender=call.pc.addTrack(track,call.localStream);
+          if(sender)sender.__azurecordAudioSender=true;
+        }
+        call.micMuted=false;
+      }
+      updateCallUi();
+    }catch(err){
+      console.warn('[AzureCall] microfone:',err?.message||err);
+      showToast(callMediaErrorMessage(err)||'Não foi possível alterar o microfone.');
+      call.micMuted=!!call.micMuted;
+      updateCallUi();
+    }
+  }
   async function toggleCallCamera(){
     const call=activeCall;if(!call?.pc)return;
     if(call.cameraTrack){call.cameraTrack.enabled=!call.cameraTrack.enabled;updateCallUi();return;}
