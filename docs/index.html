@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0066ff" />
   <title>Azurecord</title>
   <link rel="icon" type="image/png" href="assets/azurecord-mark.png" />
-  <link rel="stylesheet" href="styles.css?v=2.0.7" />
+  <link rel="stylesheet" href="styles.css?v=2.0.8" />
 
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0d6efd">
@@ -78,7 +78,7 @@
       <div class="rail-separator"></div>
       <div id="serverList" class="server-list"></div>
       <button class="server add-server" id="addServer">+</button>
-      <div class="rail-bottom"><button class="rail-icon" id="railPointsBtn" type="button" title="AzurePoints">🪙</button><button class="rail-icon" id="notifyBtn">🔔</button><button class="rail-icon" id="themeBtn">◐</button><button class="rail-icon" id="openSettings">⚙</button></div>
+      <div class="rail-bottom"><button class="rail-icon" id="railPointsBtn" type="button" title="AzurePoints"><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1.2 1.2-2 3-2s3 .8 3 2-1 1.8-3 2-3 .8-3 2 1.2 2 3 2 3-.8 3-2M12 5v14"/></svg></button><button class="rail-icon" id="notifyBtn" title="Notificações"><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3z"/><path d="M10 21h4"/></svg></button><button class="rail-icon" id="themeBtn" title="Tema"><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9A7 7 0 0 1 12 3z"/></svg></button><button class="rail-icon" id="openSettings" title="Configurações"><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg></button></div>
     </aside>
 
     <aside class="channel-panel">
@@ -88,11 +88,11 @@
       </header>
       <div id="homeSide" class="home-side">
         <div class="home-side-title"><strong>Início</strong><span>Azurecord</span></div>
-        <button class="home-side-item active" data-home="friends"><span>👥</span> Amigos <b id="friendBadge" hidden>0</b></button>
-        <button class="home-side-item" data-home="requests"><span>✉</span> Solicitações <b id="requestBadge" hidden>0</b></button>
-        <button class="home-side-item" data-home="add"><span>＋</span> Adicionar amigo</button>
-        <button class="home-side-item" id="pointsBtn" type="button"><span>🪙</span> AzurePoints</button>
-        <button class="home-side-item" data-home="apps"><span>🧩</span> Apps</button>
+        <button class="home-side-item active" data-home="friends"><span><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M14 15a4.5 4.5 0 0 1 6.5 4"/></svg></span> Amigos <b id="friendBadge" hidden>0</b></button>
+        <button class="home-side-item" data-home="requests"><span><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span> Solicitações <b id="requestBadge" hidden>0</b></button>
+        <button class="home-side-item" data-home="add"><span><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span> Adicionar amigo</button>
+        <button class="home-side-item" id="pointsBtn" type="button"><span><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1.2 1.2-2 3-2s3 .8 3 2-1 1.8-3 2-3 .8-3 2 1.2 2 3 2 3-.8 3-2M12 5v14"/></svg></span> AzurePoints</button>
+        <button class="home-side-item" data-home="apps"><span><svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></svg></span> Apps</button>
         <div class="home-side-divider"></div>
         <button id="dmToggle" class="channel-section-title dm-title dm-toggle" aria-expanded="false"><span>✉ MENSAGENS DIRETAS</span><span class="dm-chevron">›</span></button>
         <div id="dmList" class="dm-list" hidden></div>
@@ -125,11 +125,11 @@
   </section>
   <section id="callOverlay" class="azure-call-overlay" hidden><div class="azure-call-shell"><div id="callStage" class="azure-call-stage"><video id="remoteCallVideo" class="azure-call-remote" autoplay muted playsinline></video><audio id="remoteCallAudio" autoplay></audio><div id="callRemoteFallback" class="azure-call-fallback"><div id="callRemoteAvatar" class="azure-call-avatar">A</div><strong id="callPeerName">AzureCall</strong><span id="callStatusText">Conectando…</span></div><button id="callRemoteShareTag" class="call-share-tag remote" type="button" hidden aria-label="Abrir tela compartilhada"><strong id="callRemoteShareName">Usuário</strong><span>está compartilhando a tela • abrir</span></button><button id="callShareFocusExit" class="call-share-focus-exit" type="button" hidden aria-label="Fechar tela compartilhada">← Voltar para a chamada</button><video id="localCallVideo" class="azure-call-local" autoplay muted playsinline></video><div id="callLocalShareTag" class="call-share-tag local" hidden><strong id="callLocalShareName">Você</strong><span>está compartilhando a tela</span></div></div><div class="azure-call-bar"><div class="azure-call-copy"><strong id="callTitle">AzureCall</strong><span id="callSubtitle">Chamada privada</span></div><div class="azure-call-actions"><button id="callAcceptBtn" class="call-control accept" type="button" hidden aria-label="Atender">✓</button><button id="callDeclineBtn" class="call-control hangup" type="button" hidden aria-label="Recusar">✕</button><button id="callMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="callCameraBtn" class="call-control" type="button" aria-label="Câmera">▣</button><button id="callShareBtn" class="call-control" type="button" aria-label="Compartilhar tela">▤</button><button id="callHangupBtn" class="call-control hangup" type="button" aria-label="Encerrar">☎</button></div></div></div></section>
 </div>
-<script src="config.js?v=2.0.7"></script>
-<script src="web-shim.js?v=2.0.7"></script>
-<script src="lola-client.js?v=2.0.7"></script>
-<script src="auth-recovery.js?v=2.0.7"></script>
-<script src="app.js?v=2.0.7"></script>
+<script src="config.js?v=2.0.8"></script>
+<script src="web-shim.js?v=2.0.8"></script>
+<script src="lola-client.js?v=2.0.8"></script>
+<script src="auth-recovery.js?v=2.0.8"></script>
+<script src="app.js?v=2.0.8"></script>
 <script src="pwa.js"></script>
 </body>
 </html>

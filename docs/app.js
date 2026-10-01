@@ -67,6 +67,31 @@
     memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
   };
 
+  function uiIcon(name,size=18){
+    const paths={
+      home:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h5v-5h3v5h5v-9.5"/>',
+      servers:'<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01"/>',
+      message:'<path d="M4 5h16v11H8l-4 4z"/>',
+      user:'<circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+      profile:'<rect x="4" y="3" width="16" height="18" rx="3"/><circle cx="12" cy="9" r="3"/><path d="M7.5 17a4.5 4.5 0 0 1 9 0"/>',
+      lock:'<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+      shield:'<path d="M12 3 20 6v5c0 5-3.2 8.2-8 10-4.8-1.8-8-5-8-10V6z"/>',
+      bell:'<path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3z"/><path d="M10 21h4"/>',
+      paint:'<path d="M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4h4a4 4 0 0 0 4-4c0-3.4-4-6-9-6z"/><circle cx="7.5" cy="10" r="1"/><circle cx="10" cy="6.5" r="1"/><circle cx="15" cy="7" r="1"/>',
+      globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14 0 18M12 3c-3 3.5-3 14 0 18"/>',
+      brain:'<path d="M9 4a4 4 0 0 0-4 4v1a4 4 0 0 0 0 7 4 4 0 0 0 4 4h2V4zM15 4a4 4 0 0 1 4 4v1a4 4 0 0 1 0 7 4 4 0 0 1-4 4h-2V4z"/><path d="M8 9h3M13 9h3M8 15h3M13 15h3"/>',
+      coin:'<circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1.2 1.2-2 3-2s3 .8 3 2-1 1.8-3 2-3 .8-3 2 1.2 2 3 2 3-.8 3-2M12 5v14"/>',
+      folder:'<path d="M3 6h7l2 2h9v11H3z"/>',
+      phone:'<path d="M6.5 4 10 8l-2 3c1.6 3 3 4.4 6 6l3-2 4 3.5c-1.2 2-3 3-5 2.5C9.5 19.3 4.7 14.5 3 8c-.5-2 1-3.5 3.5-4z"/>',
+      gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
+      warning:'<path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17h.01"/>',
+      back:'<path d="m14 6-6 6 6 6"/>',
+      plus:'<path d="M12 5v14M5 12h14"/>'
+    };
+    const body=paths[name]||paths.user;
+    return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  }
+
   const DEMO_USERS = [DEMO_LOLA];
 
   const defaultState = {
@@ -243,6 +268,16 @@
       if(data?.lolaSessionId){
         state.lolaSessionInfo[state.currentAccountId]={id:String(data.lolaSessionId),pendingReset:false};
       }
+      if(data?.presence&&state.currentAccountId){
+        const u=currentUser();
+        if(u){
+          u.status=data.presence.status||u.status||'online';
+          u.customStatus=String(data.presence.customStatus||'').slice(0,120);
+          u.lastSeenAt=String(data.presence.lastSeenAt||'');
+          u.statusUpdatedAt=String(data.presence.updatedAt||'');
+          state.profiles[u.id]={...(state.profiles[u.id]||u),...u};
+        }
+      }
       if(data?.settings&&typeof data.settings==='object'){
         state.cloudSettings={...state.cloudSettings,...data.settings};
       }
@@ -293,6 +328,9 @@
       bio:String(u.bio??'Novo por aqui.'),
       accent:String(u.accent||'#0066ff'),
       status:String(u.status||'online'),
+      customStatus:String(u.customStatus||u.custom_status||'').slice(0,120),
+      lastSeenAt:String(u.lastSeenAt||u.last_seen_at||''),
+      statusUpdatedAt:String(u.statusUpdatedAt||u.presenceUpdatedAt||u.updatedAt||''),
       avatar:String(u.avatar||u.avatarUrl||''),
       banner:String(u.banner||u.bannerUrl||''),
       personality:String(u.personality||'Usuário do Azurecord.'),
@@ -373,6 +411,7 @@
 
     const localSnapshot={
       username:local.username,handle:local.handle,bio:local.bio,accent:local.accent,status:local.status,
+      customStatus:local.customStatus,lastSeenAt:local.lastSeenAt,statusUpdatedAt:local.statusUpdatedAt,
       avatar:local.avatar,banner:local.banner,personality:local.personality,profileComplete:local.profileComplete
     };
     const localWasCustomized=hadLocal&&localProfileLooksCustomized(localSnapshot,profile.email);
@@ -745,8 +784,11 @@
       const userId=String(item?.userId||'');
       if(!userId||userId===state.currentAccountId)continue;
       const status=['online','idle','dnd','offline'].includes(item?.status)?item.status:'offline';
-      realtimePresence.set(userId,{status,at:stamp});
-      const p=getProfile(userId);if(p)p.status=status;
+      const customStatus=String(item?.customStatus||'').slice(0,120);
+      const lastSeenAt=String(item?.lastSeenAt||'');
+      const updatedAt=String(item?.updatedAt||item?.statusUpdatedAt||'');
+      realtimePresence.set(userId,{status,customStatus,lastSeenAt,updatedAt,at:stamp});
+      const p=getProfile(userId);if(p){p.status=status;if(item?.customStatus!==undefined)p.customStatus=customStatus;if(lastSeenAt)p.lastSeenAt=lastSeenAt;if(updatedAt)p.statusUpdatedAt=updatedAt;}
     }
     if(view.mode==='home')renderHome();
     if(view.mode==='server')renderMemberPanel();
@@ -784,8 +826,9 @@
   function publishPresence(){
     if(!state.currentAccountId)return false;
     const status=effectiveOwnPresence();
+    const customStatus=String(currentUser()?.customStatus||'').slice(0,120);
     if(socialCloudReady())void syncPresenceHeartbeat(status);
-    return cloudRealtimeConnected()?sendCloudRealtime({type:'presence.commit',status}):false;
+    return cloudRealtimeConnected()?sendCloudRealtime({type:'presence.commit',status,customStatus}):false;
   }
   function typingConversationKey(scope,userId,serverId='',channelId=''){
     return scope==='dm' ? `dm|${String(userId||'')}` : `channel|${String(serverId||'')}|${String(channelId||'')}|${String(userId||'')}`;
@@ -827,7 +870,9 @@
   function applyPresenceEvent(event){
     const userId=String(event.userId||'');if(!userId||userId===state.currentAccountId)return;
     const status=['online','idle','dnd','offline'].includes(event.status)?event.status:'offline';
-    realtimePresence.set(userId,{status,at:Date.now()});
+    const existing=realtimePresence.get(userId)||{};
+    realtimePresence.set(userId,{...existing,status,customStatus:String(event.customStatus??existing.customStatus??''),lastSeenAt:String(event.lastSeenAt||existing.lastSeenAt||''),updatedAt:String(event.updatedAt||existing.updatedAt||''),at:Date.now()});
+    const p=getProfile(userId);if(p){p.status=status;if(event.customStatus!==undefined)p.customStatus=String(event.customStatus||'');if(event.lastSeenAt)p.lastSeenAt=event.lastSeenAt;if(event.updatedAt)p.statusUpdatedAt=event.updatedAt;}
     if(view.mode==='home')renderHome();
     if(view.mode==='dm'&&view.dmUserId===userId)renderChat();
     if(view.mode==='server')renderMemberPanel();
@@ -1387,8 +1432,12 @@
     }
     el.hidden=false;
     el.removeAttribute('aria-hidden');
-    el.innerHTML=`<div class="section-title">CONTAS SALVAS NESTE COMPUTADOR</div>${accounts.slice(0,5).map(a=>`<div class="result-item" data-saved="${esc(a.id)}"><div class="home-avatar avatar-img" style="background-image:url('${safeUrl(a.avatar)}')">${a.avatar?'':esc(a.username?.[0]||'F')}</div><div><strong>${esc(a.username)}</strong><p>${esc(a.email)}</p></div><div class="spacer"></div><button class="home-mini-btn">Usar conta</button></div>`).join('')}`;
-    el.onclick=(e)=>{const row=e.target.closest('[data-saved]');if(row)selectSavedAccount(state.accounts.find(x=>x.id===row.dataset.saved));};
+    el.innerHTML=`<div class="section-title">CONTAS SALVAS NESTE COMPUTADOR</div>${accounts.slice(0,5).map(a=>`<div class="result-item" data-saved="${esc(a.id)}"><div class="home-avatar avatar-img" style="background-image:url('${safeUrl(a.avatar)}')">${a.avatar?'':esc(a.username?.[0]||'F')}</div><div><strong>${esc(a.username)}</strong><p>${esc(a.email)}</p></div><div class="spacer"></div><button class="home-mini-btn ghost" data-forget-saved="${esc(a.id)}">Esquecer</button><button class="home-mini-btn" data-use-saved="${esc(a.id)}">Usar conta</button></div>`).join('')}`;
+    el.onclick=(e)=>{
+      const forget=e.target.closest('[data-forget-saved]');
+      if(forget){e.stopPropagation();const id=forget.dataset.forgetSaved;state.accounts=(state.accounts||[]).filter(a=>a.id!==id);if(state.profiles)delete state.profiles[id];if(state.rememberedAccountId===id)state.rememberedAccountId=null;saveNow();renderSavedAccounts();showToast('Conta removida deste dispositivo.');return;}
+      const use=e.target.closest('[data-use-saved]');if(use)selectSavedAccount(state.accounts.find(x=>x.id===use.dataset.useSaved));
+    };
   }
 
   function isMobileLayout(){ return window.matchMedia('(max-width:720px)').matches; }
@@ -1400,7 +1449,7 @@
     if(!$('mobileNav')){
       const nav=document.createElement('nav');
       nav.id='mobileNav';nav.className='mobile-bottom-nav';
-      nav.innerHTML=`<button data-mobile-home class="active"><span>⌂</span><b>Início</b></button><button data-mobile-servers><span>◫</span><b>Servidores</b></button><button data-mobile-dms><span>✉</span><b>Mensagens</b></button><button data-mobile-you><span>●</span><b>Você</b></button>`;
+      nav.innerHTML=`<button data-mobile-home class="active"><span>${uiIcon('home',20)}</span><b>Início</b></button><button data-mobile-servers><span>${uiIcon('servers',20)}</span><b>Servidores</b></button><button data-mobile-dms><span>${uiIcon('message',20)}</span><b>Mensagens</b></button><button data-mobile-you><span>${uiIcon('user',20)}</span><b>Você</b></button>`;
       $('appScreen')?.appendChild(nav);
       const backdrop=document.createElement('button');
       backdrop.id='mobileDrawerBackdrop';backdrop.className='mobile-drawer-backdrop';backdrop.hidden=true;backdrop.setAttribute('aria-label','Fechar navegação');
@@ -1495,8 +1544,8 @@
     $('authForm').onsubmit=(e)=>{ e.preventDefault(); submitAuth(); };
     $('demoBtn').onclick=()=>demoLogin(); $('backLogin').onclick=()=>setScreen('loginScreen'); $('finishOnboarding').onclick=finishProfile;
     ['usernameInput','bioInput','accentInput','statusInput'].forEach(id=>$(id).addEventListener('input',updatePreview));
-    $('bannerInput').addEventListener('change',e=>readImage(e.target.files?.[0],u=>{ state._onboardBanner=u; updatePreview(); },{maxWidth:1600,maxHeight:600,maxChars:700000}));
-    $('avatarInput').addEventListener('change',e=>readImage(e.target.files?.[0],u=>{ state._onboardAvatar=u; updatePreview(); },{maxWidth:512,maxHeight:512,maxChars:420000}));
+    $('bannerInput').addEventListener('change',e=>openImageCropper(e.target.files?.[0],{aspect:8/3,outWidth:1600,outHeight:600,title:'Escolher corte do banner',onDone:u=>{state._onboardBanner=u;updatePreview();}}));
+    $('avatarInput').addEventListener('change',e=>openImageCropper(e.target.files?.[0],{aspect:1,outWidth:640,outHeight:640,title:'Escolher corte do avatar',onDone:u=>{state._onboardAvatar=u;updatePreview();}}));
     $('homeBtn').onclick=()=>openHome('friends'); $('addServer').onclick=openCreateServer;
     $$('[data-home]').forEach(b=>{
       if(b.dataset.home==='apps') b.onclick=()=>openApps();
@@ -1631,7 +1680,8 @@
   function readImage(file,cb,options={}){
     if(!file)return;
     if(!String(file.type||'').startsWith('image/')){showToast('Escolha um arquivo de imagem.');return;}
-    if(file.size>12*1024*1024){showToast('Essa imagem é grande demais. Use uma com até 12 MB.');return;}
+    const maxFileBytes=options.maxFileBytes===Infinity?Infinity:Number(options.maxFileBytes||12*1024*1024);
+    if(file.size>maxFileBytes){showToast('Essa imagem é grande demais para este campo.');return;}
     const maxWidth=Number(options.maxWidth||900),maxHeight=Number(options.maxHeight||900),maxChars=Number(options.maxChars||700000);
     const r=new FileReader();
     r.onload=()=>{
@@ -1672,7 +1722,7 @@
     if(!u){ return; }
     const isHome=view.mode==='home';
     $('userBarName').textContent=u.username;
-    $('userBarStatus').textContent=statusLabel(u.status);
+    $('userBarStatus').textContent=customStatusOf(u)||statusLabel(u.status);
     setAvatar($('userMiniAvatar'),u,'F');
     $('serverName').textContent=isHome?'Início':getServer(view.serverId)?.name||'Servidor';
     const activeServer=isHome?null:getServer(view.serverId); $('serverSubtitle').textContent=isHome?'Azurecord':`${activeServer?.description||'Comunidade'} • ${getServerRole(activeServer)}`;
@@ -1851,7 +1901,7 @@
   function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${allPeople().filter(p=>p.id!==currentUser()?.id&&!isFriend(p.id)).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
-  function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=p.id==='user-lola'; const liveStatus=resolvedPresence(p.id); const statusText=system?'Assistente do sistema':statusLabel(liveStatus); return `<div class="friend-row" data-user-row="${p.id}"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span></div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
+  function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=p.id==='user-lola'; const liveStatus=resolvedPresence(p.id); const statusText=system?'Assistente do sistema':statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); return `<div class="friend-row" data-user-row="${p.id}"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
   function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} const refresh=$('refreshFriendRequests');if(refresh)refresh.onclick=async()=>{refresh.disabled=true;try{await hydrateFromCloudSocial({quiet:false});renderHome();}finally{refresh.disabled=false;}}; $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
   async function renderSearchResults(){
     const holder=$('friendSearchResults');if(!holder)return;
@@ -2954,8 +3004,8 @@
       return `<div class="profile-detail profile-preview-compact">
         <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
         <div class="profile-main-head">
-          <div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>
-          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div></div>
+          <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>${customStatusOf(p)?`<div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span>${esc(customStatusOf(p))}</span></div>`:''}</div>
+          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
         </div>
         <div class="profile-preview-bio">${esc(p.bio||'Sem bio.')}</div>
         <div class="profile-actions profile-preview-actions"><button class="btn btn-primary wide" data-profile-full="${p.id}">Exibir perfil completo</button></div>
@@ -2964,8 +3014,8 @@
     return `<div class="profile-detail profile-full-detail">
       <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
       <div class="profile-main-head">
-        <div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>
-        <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div></div>
+        <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>${customStatusOf(p)?`<div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span>${esc(customStatusOf(p))}</span></div>`:''}</div>
+        <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
       </div>
       <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'✦')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
@@ -3025,6 +3075,41 @@
     }catch(err){showToast(err.message||'Não foi possível parar de ignorar.');}
   }
   function openProfileModal(id){const p=getProfile(id);if(!p){showToast('Perfil não encontrado.');return;}closeProfilePeek();showModal(p.id===state.currentAccountId?'Seu perfil':`Perfil de ${p.username}`,profilePeekHtml(p,{peek:false}));$('modalLayer')?.querySelector('.modal')?.classList.add('profile-full-modal');bindProfileActions(id);}
+  function openImageCropper(file,{aspect=1,outWidth=512,outHeight=512,title='Ajustar imagem',onDone}={}){
+    if(!file||!String(file.type||'').startsWith('image/')){showToast('Escolha um arquivo de imagem.');return;}
+    const objectUrl=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      const overlay=document.createElement('div');
+      overlay.className='crop-overlay';
+      overlay.innerHTML=`<div class="modal crop-modal" role="dialog" aria-modal="true"><div class="modal-head"><h3>${esc(title)}</h3></div><div class="modal-body"><div class="image-cropper"><div class="crop-stage"><canvas id="cropCanvas" width="${outWidth}" height="${outHeight}"></canvas></div><div class="crop-controls"><label>Zoom<input id="cropZoom" type="range" min="1" max="3.5" step=".01" value="1"></label><label>Horizontal<input id="cropX" type="range" min="-100" max="100" step="1" value="0"></label><label>Vertical<input id="cropY" type="range" min="-100" max="100" step="1" value="0"></label></div><div class="tiny-note">Ajuste o enquadramento. O arquivo original não é enviado: o Azurecord salva apenas o corte compactado.</div><div class="onboarding-actions"><button class="btn btn-ghost" id="cropCancel">Cancelar</button><button class="btn btn-primary" id="cropApply">Usar este corte</button></div></div></div></div>`;
+      document.body.appendChild(overlay);
+      const q=id=>overlay.querySelector('#'+id);
+      const canvas=q('cropCanvas'),ctx=canvas.getContext('2d');
+      const zoom=q('cropZoom'),sx=q('cropX'),sy=q('cropY');
+      const cleanup=()=>{URL.revokeObjectURL(objectUrl);overlay.remove();};
+      const draw=()=>{
+        const base=Math.max(outWidth/img.width,outHeight/img.height);
+        const scale=base*Number(zoom.value||1);
+        const w=img.width*scale,h=img.height*scale;
+        const maxX=Math.max(0,(w-outWidth)/2),maxY=Math.max(0,(h-outHeight)/2);
+        const ox=(outWidth-w)/2-(Number(sx.value||0)/100)*maxX;
+        const oy=(outHeight-h)/2-(Number(sy.value||0)/100)*maxY;
+        ctx.clearRect(0,0,outWidth,outHeight);ctx.drawImage(img,ox,oy,w,h);
+      };
+      [zoom,sx,sy].forEach(el=>el.oninput=draw);draw();
+      q('cropCancel').onclick=cleanup;
+      q('cropApply').onclick=()=>{
+        let quality=.88,out=canvas.toDataURL('image/webp',quality);
+        const maxChars=aspect>2?900000:520000;
+        while(out.length>maxChars&&quality>.5){quality-=.07;out=canvas.toDataURL('image/webp',quality);}
+        cleanup();onDone?.(out);
+      };
+    };
+    img.onerror=()=>{URL.revokeObjectURL(objectUrl);showToast('Não foi possível abrir essa imagem.');};
+    img.src=objectUrl;
+  }
+
   function openEditProfile(){
     const p=currentUser(); if(!p)return;
     showModal('Editar perfil',`<div class="profile-edit-grid">
@@ -3032,23 +3117,26 @@
       <div class="edit-avatar-row"><div class="profile-avatar-large avatar-img" id="editAvatarPreview" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><label class="btn btn-ghost">Trocar avatar<input id="editAvatarFile" type="file" accept="image/*" hidden></label></div>
       <label>Nome de usuário<input id="editUsername" value="${esc(p.username)}" maxlength="24"></label>
       <label>Bio<input id="editBio" value="${esc(p.bio||'')}" maxlength="160"></label>
+      <label>Mensagem de status<input id="editCustomStatus" value="${esc(p.customStatus||'')}" maxlength="120" placeholder="O que você está fazendo?"></label>
       <label>Cor de destaque<input id="editAccent" type="color" value="${esc(p.accent||'#0066ff')}"></label>
     </div><div class="onboarding-actions"><button class="btn btn-ghost" id="editCancel">Cancelar</button><button class="btn btn-primary" id="editSave">Salvar alterações</button></div>`);
     let avatar=p.avatar||'',banner=p.banner||'';
-    $('editAvatarFile').onchange=e=>readImage(e.target.files?.[0],u=>{avatar=u;$('editAvatarPreview').style.backgroundImage=`url('${u}')`;$('editAvatarPreview').textContent='';},{maxWidth:512,maxHeight:512,maxChars:420000});
-    $('editBannerFile').onchange=e=>readImage(e.target.files?.[0],u=>{banner=u;$('editCoverPreview').style.backgroundImage=`url('${u}')`;},{maxWidth:1600,maxHeight:600,maxChars:700000});
+    $('editAvatarFile').onchange=e=>openImageCropper(e.target.files?.[0],{aspect:1,outWidth:640,outHeight:640,title:'Ajustar avatar',onDone:u=>{avatar=u;$('editAvatarPreview').style.backgroundImage=`url('${u}')`;$('editAvatarPreview').textContent='';}});
+    $('editBannerFile').onchange=e=>openImageCropper(e.target.files?.[0],{aspect:8/3,outWidth:1600,outHeight:600,title:'Ajustar banner',onDone:u=>{banner=u;$('editCoverPreview').style.backgroundImage=`url('${u}')`;}});
     $('editCancel').onclick=closeModal;
     $('editSave').onclick=async()=>{
       const nu=$('editUsername').value.trim().replace(/\s+/g,'');
       if(!nu){showToast('Escolha um nome de usuário.');return;}
       if(allPeople().some(x=>x.id!==p.id&&usernameKey(x.username)===usernameKey(nu))){showToast('Esse nome de usuário já está em uso.');return;}
       p.username=nu;p.handle='@'+nu.toLowerCase();p.bio=$('editBio').value.trim();p.accent=$('editAccent').value;
+      p.customStatus=$('editCustomStatus').value.trim().slice(0,120);p.statusUpdatedAt=new Date().toISOString();
       p.avatar=avatar;p.banner=banner;p.profileComplete=true;
       const account=state.accounts.find(a=>a.id===p.id);
-      if(account)Object.assign(account,{username:p.username,handle:p.handle,bio:p.bio,accent:p.accent,avatar:p.avatar,banner:p.banner,profileComplete:true});
+      if(account)Object.assign(account,{username:p.username,handle:p.handle,bio:p.bio,accent:p.accent,customStatus:p.customStatus,statusUpdatedAt:p.statusUpdatedAt,avatar:p.avatar,banner:p.banner,profileComplete:true});
       state.profiles[p.id]={...p};saveNow();
       if(p.cloud){
         await syncCloudProfile(p,{profileComplete:true});
+        await setOwnPresence(p.status||'online',p.customStatus||'');
       }else if(backendOnline&&backendToken){
         try{
           const data=await backendRequest('/api/me',{method:'PATCH',body:JSON.stringify({username:p.username,bio:p.bio,accent:p.accent,avatar:p.avatar,banner:p.banner})});
@@ -3095,6 +3183,7 @@
     const user=currentUser();
     const avatarStyle=user?.avatar?`background-image:url('${safeUrl(user.avatar)}')`:'';
     layer.classList.add('settings-layer');
+    layer.dataset.modalLock='settings';
     layer.hidden=false;
     layer.innerHTML=`<div class="modal settings-modal settings-${kind}" role="dialog" aria-modal="true">
       <aside class="settings-sidebar">
@@ -3107,12 +3196,12 @@
         <nav>${nav.map(item=>`<button type="button" class="settings-nav-item ${item.id===active?'active':''} ${item.danger?'danger':''}" data-settings-tab="${item.id}" data-settings-label="${esc(item.label.toLowerCase())}"><span class="settings-nav-icon">${item.icon||''}</span><span>${esc(item.label)}</span></button>`).join('')}</nav>
       </aside>
       <section class="settings-main">
-        <header class="settings-main-head"><div><h2>${esc(nav.find(x=>x.id===active)?.label||title)}</h2><p>${esc(nav.find(x=>x.id===active)?.hint||'')}</p></div><button type="button" class="settings-close" id="modalClose" aria-label="Fechar">×</button></header>
+        <header class="settings-main-head"><div><h2>${esc(nav.find(x=>x.id===active)?.label||title)}</h2><p>${esc(nav.find(x=>x.id===active)?.hint||'')}</p></div><button type="button" class="settings-close settings-back" id="modalClose" aria-label="Voltar ao Azurecord">${uiIcon('back',20)}<span>Voltar</span></button></header>
         <div class="settings-scroll">${content}</div>
       </section>
     </div>`;
     $('modalClose').onclick=closeModal;
-    layer.onclick=e=>{if(e.target===layer)closeModal();};
+    layer.onclick=()=>{};
     const search=$('settingsNavSearch');
     if(search)search.oninput=()=>{
       const q=search.value.trim().toLowerCase();
@@ -3120,24 +3209,24 @@
     };
   }
   const APP_SETTINGS_NAV=[
-    {id:'account',label:'Minha conta',icon:'👤',hint:'Conta, identidade e acesso ao Azurecord.'},
-    {id:'profile',label:'Perfil',icon:'🪪',hint:'Avatar, banner, bio e presença.'},
-    {id:'security',label:'Senha e segurança',icon:'🔐',hint:'Senha e sessões conectadas.'},
-    {id:'privacy',label:'Privacidade',icon:'🛡',hint:'Amizades, DMs, ignorados e bloqueados.'},
-    {id:'notifications',label:'Notificações',icon:'🔔',hint:'Controle como o Azurecord chama sua atenção.'},
-    {id:'appearance',label:'Aparência',icon:'🎨',hint:'Tema, destaque e densidade da interface.'},
-    {id:'language',label:'Idioma',icon:'🌐',hint:'Idioma da interface.'},
-    {id:'lola',label:'Lola / IA',icon:'🧠',hint:'Workers AI, memória e histórico da Lola.'},
-    {id:'points',label:'AzurePoints',icon:'🪙',hint:'Carteira e histórico cloud.'},
-    {id:'media',label:'Arquivos e mídia',icon:'📁',hint:'Preferências de anexos e mídia.'},
-    {id:'calls',label:'Chamadas',icon:'📞',hint:'Preparação para AzureCall com WebRTC.'},
-    {id:'advanced',label:'Avançado',icon:'⚙',hint:'Informações técnicas da instalação.'},
-    {id:'danger',label:'Sair / Excluir conta',icon:'⚠',hint:'Ações da conta.',danger:true},
+    {id:'account',label:'Minha conta',icon:uiIcon('user'),hint:'Conta, identidade e acesso ao Azurecord.'},
+    {id:'profile',label:'Perfil',icon:uiIcon('profile'),hint:'Avatar, banner, bio e presença.'},
+    {id:'security',label:'Senha e segurança',icon:uiIcon('lock'),hint:'Senha e sessões conectadas.'},
+    {id:'privacy',label:'Privacidade',icon:uiIcon('shield'),hint:'Amizades, DMs, ignorados e bloqueados.'},
+    {id:'notifications',label:'Notificações',icon:uiIcon('bell'),hint:'Controle como o Azurecord chama sua atenção.'},
+    {id:'appearance',label:'Aparência',icon:uiIcon('paint'),hint:'Tema, destaque e densidade da interface.'},
+    {id:'language',label:'Idioma',icon:uiIcon('globe'),hint:'Idioma da interface.'},
+    {id:'lola',label:'Lola / IA',icon:uiIcon('brain'),hint:'Workers AI, memória e histórico da Lola.'},
+    {id:'points',label:'AzurePoints',icon:uiIcon('coin'),hint:'Carteira e histórico cloud.'},
+    {id:'media',label:'Arquivos e mídia',icon:uiIcon('folder'),hint:'Preferências de anexos e mídia.'},
+    {id:'calls',label:'Chamadas',icon:uiIcon('phone'),hint:'Voz, vídeo, permissões e compartilhamento.'},
+    {id:'advanced',label:'Avançado',icon:uiIcon('gear'),hint:'Informações técnicas da instalação.'},
+    {id:'danger',label:'Sair / Excluir conta',icon:uiIcon('warning'),hint:'Ações da conta.',danger:true},
   ];
   function appSettingsContent(tab){
     const u=currentUser();const cs=state.cloudSettings||defaultState.cloudSettings;
     if(tab==='account')return `<div class="settings-section"><h3>Informações da conta</h3><div class="settings-info-grid"><div><span>Nome de usuário</span><strong>${esc(u?.username||'')}</strong></div><div><span>E-mail</span><strong>${esc(u?.email||'')}</strong></div><div><span>Conta</span><strong>${u?.cloud?'Azurecord Cloud':'Local'}</strong></div><div><span>ID</span><strong class="mono">${esc(u?.id||'')}</strong></div></div><div class="settings-actions"><button class="btn btn-primary" id="settingsEditProfile">Editar perfil</button><button class="btn btn-ghost" id="settingsCopyId">Copiar ID</button></div></div>`;
-    if(tab==='profile')return `<div class="settings-section"><h3>Perfil</h3><div class="settings-profile-card"><div class="settings-profile-banner" style="${u?.banner?`background-image:url('${safeUrl(u.banner)}')`:''}"></div><div class="settings-profile-row"><div class="big-avatar avatar-img" style="${u?.avatar?`background-image:url('${safeUrl(u.avatar)}')`:''}">${u?.avatar?'':esc((u?.username||'?')[0])}</div><div><strong>${esc(u?.username||'')}</strong><span>${esc(u?.handle||'')}</span><p>${esc(u?.bio||'Sem bio.')}</p></div></div></div><div class="settings-actions"><button class="btn btn-primary" id="settingsOpenProfileEditor">Editar perfil completo</button></div><div class="settings-subsection"><h4>Presença</h4><div class="choice-row" id="presenceChoices">${['online','idle','dnd','offline'].map(x=>`<button class="choice-btn ${u?.status===x?'active':''}" data-settings-status="${x}">${statusLabel(x)}</button>`).join('')}</div></div></div>`;
+    if(tab==='profile')return `<div class="settings-section"><h3>Perfil</h3><div class="settings-profile-card"><div class="settings-profile-banner" style="${u?.banner?`background-image:url('${safeUrl(u.banner)}')`:''}"></div><div class="settings-profile-row"><div class="big-avatar avatar-img" style="${u?.avatar?`background-image:url('${safeUrl(u.avatar)}')`:''}">${u?.avatar?'':esc((u?.username||'?')[0])}</div><div><strong>${esc(u?.username||'')}</strong><span>${esc(u?.handle||'')}</span><p>${esc(u?.bio||'Sem bio.')}</p></div></div></div><div class="settings-actions"><button class="btn btn-primary" id="settingsOpenProfileEditor">Editar perfil completo</button></div><div class="settings-subsection"><h4>Presença</h4><div class="choice-row" id="presenceChoices">${['online','idle','dnd','offline'].map(x=>`<button class="choice-btn ${u?.status===x?'active':''}" data-settings-status="${x}">${statusLabel(x)}</button>`).join('')}</div><label class="status-editor-label">Mensagem de status<input id="settingsCustomStatus" maxlength="120" placeholder="O que você está fazendo?" value="${esc(u?.customStatus||'')}"></label><div class="settings-actions compact-actions"><button class="btn btn-primary" id="settingsSaveStatus">Salvar status</button><button class="btn btn-ghost" id="settingsClearStatus">Limpar</button></div><div class="presence-time">${esc(presenceMeta(u))}</div></div></div>`;
     if(tab==='security')return `<div class="settings-section"><h3>Senha e segurança</h3><div class="settings-option"><div><strong>Senha</strong><span>Altere a senha da conta Cloud.</span></div><button class="home-mini-btn" id="settingsChangePassword">Alterar senha</button></div><div class="settings-option"><div><strong>Sessões conectadas</strong><span>Veja e encerre sessões em outros dispositivos.</span></div><button class="home-mini-btn" id="settingsLoadSessions">Carregar</button></div><div id="settingsSessions" class="settings-session-list"></div><div class="settings-actions"><button class="btn btn-ghost" id="settingsRevokeOthers">Sair de outros dispositivos</button></div></div>`;
     if(tab==='privacy')return `<div class="settings-section"><h3>Privacidade</h3>${settingsToggleRow('allowFriendsToggle','Pedidos de amizade','Permitir que outras contas enviem solicitações.',cs.allowFriendRequests!==false)}${settingsToggleRow('allowDmsToggle','DMs de amigos','Permitir mensagens diretas de pessoas adicionadas.',cs.allowDmsFromFriends!==false)}<div class="settings-split"><div><h4>Ignorados</h4><div class="settings-user-list">${(state.ignoredUsers||[]).map(id=>{const p=getProfile(id);return p?`<button data-settings-profile="${p.id}">${esc(p.username)}</button>`:''}).join('')||'<span class="muted">Ninguém ignorado.</span>'}</div></div><div><h4>Bloqueados</h4><div class="settings-user-list">${(state.blockedUsers||[]).map(id=>{const p=getProfile(id);return p?`<button data-settings-profile="${p.id}">${esc(p.username)}</button>`:''}).join('')||'<span class="muted">Ninguém bloqueado.</span>'}</div></div></div></div>`;
     if(tab==='notifications')return `<div class="settings-section"><h3>Notificações</h3>${settingsToggleRow('notifToggleV83','Notificações no app','Exibe alertas dentro do Azurecord.',state.notificationsEnabled!==false)}${settingsToggleRow('nativeToggleV83','Notificações do sistema','Usa notificações do Windows ou do navegador quando suportado.',state.nativeNotifications!==false)}</div>`;
@@ -3145,16 +3234,18 @@
     if(tab==='language')return `<div class="settings-section"><h3>Idioma</h3><div class="settings-option"><div><strong>Idioma do Azurecord</strong><span>Outros idiomas entram depois.</span></div><select id="languageV83"><option value="pt-BR" selected>Português (Brasil)</option></select></div></div>`;
     if(tab==='lola')return `<div class="settings-section"><h3>Lola / Workers AI</h3>${settingsToggleRow('lolaEnabledV83','Ativar Lola','Permite conversar com a assistente do Azurecord.',cs.lolaEnabled!==false)}${settingsToggleRow('lolaMemoryV83','Memória da Lola','Permite usar memória de contexto quando disponível.',cs.lolaMemoryEnabled!==false)}<div class="settings-option"><div><strong>Modelo</strong><span>${esc(cloudInfo?.capabilities?.lolaWorkersAI?'Cloudflare Workers AI ativo':'Workers AI indisponível')}</span></div><span class="pill">Llama 4 Scout</span></div><div class="settings-actions"><button class="btn btn-primary" id="openLolaFromSettings">Abrir Lola</button><button class="btn btn-ghost" id="newLolaFromSettings">Nova conversa</button></div></div>`;
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
-    if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Uploads grandes</strong><p>A interface já está preparada para a futura migração para Cloudflare R2. Até essa etapa, os limites atuais continuam para não sobrecarregar o D1.</p></div></div>`;
+    if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Avatar e banner</strong><p>O banner não possui mais limite artificial de MB na seleção. O Azurecord abre o recorte e compacta a área escolhida antes de salvar, evitando mandar a imagem bruta gigantesca para a conta.</p></div></div>`;
     if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>AzureCall 2.0 ativo</strong><p>Voz, vídeo e compartilhamento usam WebRTC com trilhas separadas para câmera e tela. Qualquer lado da chamada pode transmitir, inclusive no navegador móvel quando a captura nativa estiver disponível.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn active" disabled>▣ Vídeo</button><button class="choice-btn active" disabled>▤ Tela</button></div></div></div>`;
-    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 2.0.1</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
+    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 2.0.8</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
   function bindAppSettings(tab){
     $$('[data-settings-tab]').forEach(b=>b.onclick=()=>openAppSettings(b.dataset.settingsTab));
     $('settingsEditProfile')?.addEventListener('click',()=>openProfileModal(state.currentAccountId));$('settingsOpenProfileEditor')?.addEventListener('click',()=>openProfileModal(state.currentAccountId));
     $('settingsCopyId')?.addEventListener('click',()=>{navigator.clipboard?.writeText(currentUser()?.id||'');showToast('ID copiado.');});
-    $$('[data-settings-status]').forEach(b=>b.onclick=()=>{const u=currentUser();u.status=b.dataset.settingsStatus;save();scheduleCloudProfileSync(u,50);openAppSettings('profile');});
+    $('[data-settings-status]').forEach(b=>b.onclick=async()=>{await setOwnPresence(b.dataset.settingsStatus,$('settingsCustomStatus')?.value||currentUser()?.customStatus||'');openAppSettings('profile');});
+    $('settingsSaveStatus')?.addEventListener('click',async()=>{await setOwnPresence(currentUser()?.status||'online',$('settingsCustomStatus')?.value||'');openAppSettings('profile');});
+    $('settingsClearStatus')?.addEventListener('click',async()=>{await setOwnPresence(currentUser()?.status||'online','');openAppSettings('profile');});
     $('settingsChangePassword')?.addEventListener('click',changePassword);
     $('settingsLoadSessions')?.addEventListener('click',loadSettingsSessions);$('settingsRevokeOthers')?.addEventListener('click',async()=>{try{await cloudRequest('/auth/sessions/revoke-others',{method:'POST',body:'{}'});showToast('Outras sessões encerradas.');loadSettingsSessions();}catch(err){showToast(err.message||'Falha ao encerrar sessões.');}});
     $('allowFriendsToggle')?.addEventListener('click',async()=>{await patchCloudSettings({allowFriendRequests:!(state.cloudSettings.allowFriendRequests!==false)});openAppSettings('privacy');});
@@ -3660,6 +3751,24 @@
   function isNativeAndroidCallDevice(){
     return !!window.AzurecordNative || /AzurecordAndroid\//i.test(navigator.userAgent||'');
   }
+  let nativeCallPermissionWaiters=[];
+  async function ensureNativeCallPermissions(wantsCamera=false){
+    if(!isNativeAndroidCallDevice()||typeof window.AzurecordNative?.requestCallPermissions!=='function')return true;
+    return await new Promise(resolve=>{
+      const timeout=setTimeout(()=>{nativeCallPermissionWaiters=nativeCallPermissionWaiters.filter(x=>x!==done);resolve(false);},15000);
+      const done=ok=>{clearTimeout(timeout);nativeCallPermissionWaiters=nativeCallPermissionWaiters.filter(x=>x!==done);resolve(!!ok);};
+      nativeCallPermissionWaiters.push(done);
+      try{
+        const immediate=window.AzurecordNative.requestCallPermissions(!!wantsCamera);
+        if(immediate===false)done(false);
+      }catch{done(false);}
+    });
+  }
+  function callMediaErrorMessage(err){
+    if(err?.name==='NotAllowedError'||err?.name==='SecurityError'||/permission|permissão|denied/i.test(String(err?.message||'')))return 'Permissão de microfone/câmera negada. Libere a permissão do Azurecord no Android e tente novamente.';
+    return err?.message||'Não foi possível acessar o microfone/câmera.';
+  }
+
   function setNativeAndroidCallActive(active){
     try{window.AzurecordNative?.setCallActive?.(!!active);}catch{}
   }
@@ -3705,6 +3814,10 @@
   async function acquireCallMedia(call,{incoming=false}={}){
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este dispositivo não oferece acesso ao microfone/câmera.');
     const wantsCamera=call.type==='video';
+    if(isNativeAndroidCallDevice()){
+      const granted=await ensureNativeCallPermissions(wantsCamera);
+      if(!granted){const err=new Error('Android permission denied');err.name='NotAllowedError';throw err;}
+    }
     call.localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:wantsCamera});
     call.cameraTrack=call.localStream.getVideoTracks()[0]||null;
     if(call.type==='screen'&&!incoming&&!call.screenTrack&&!nativeAndroidScreenSupported()){
@@ -3799,6 +3912,9 @@
     let payload=raw;try{if(typeof raw==='string')payload=JSON.parse(raw);}catch{return;}
     const call=activeCall;if(!call||!payload||typeof payload!=='object')return;
     if(payload.callId&&String(payload.callId)!==String(call.id))return;
+    if(payload.type==='callPermissions.result'){
+      const waiters=[...nativeCallPermissionWaiters];nativeCallPermissionWaiters=[];for(const done of waiters)try{done(!!payload.granted);}catch{};return;
+    }
     if(payload.type==='screenShare.state'){
       call.nativeScreenRequested=false;call.nativeScreenSharing=!!payload.active;
       if(!payload.active)call.nativeScreenAutoStart=false;
@@ -4009,7 +4125,7 @@
       const offer=await pc.createOffer();await pc.setLocalDescription(offer);sendCallSignal('offer',{description:pc.localDescription});
       if(call.screenTrack)void postScreenShareApiSignal(call,'screen-share-start');
       call.ringTimer=setTimeout(()=>{if(activeCall===call&&call.status==='ringing')endActiveCall({notify:true,message:'A chamada não foi atendida.'});},45000);
-    }catch(err){endActiveCall({notify:false});if(err?.name!=='NotAllowedError')showToast(err.message||'Não foi possível iniciar a chamada.');}
+    }catch(err){endActiveCall({notify:false});showToast(callMediaErrorMessage(err)||'Não foi possível iniciar a chamada.');}
   }
   async function acceptIncomingCall(){
     const call=activeCall;if(!call||call.direction!=='incoming'||call.status!=='ringing')return;
@@ -4020,7 +4136,7 @@
       directCallSignal(call.peerId,{kind:'accepted',callId:call.id,callType:call.type});
       if(call.pendingOffer){const offer=call.pendingOffer;call.pendingOffer=null;await handleCallOffer(call,offer);}
       else{setCallStatus('connecting');armCallConnectTimeout(call);}
-    }catch(err){directCallSignal(call.peerId,{kind:'decline',callId:call.id,callType:call.type,reason:'media_error'});endActiveCall({notify:false});showToast(err.message||'Não foi possível acessar o microfone/câmera.');}
+    }catch(err){directCallSignal(call.peerId,{kind:'decline',callId:call.id,callType:call.type,reason:'media_error'});endActiveCall({notify:false});showToast(callMediaErrorMessage(err));}
   }
   function declineIncomingCall(){
     const call=activeCall;if(!call)return;
@@ -4204,6 +4320,7 @@
     const layer=$('modalLayer');
     if(!layer)return;
     layer.classList.remove('settings-layer');
+    delete layer.dataset.modalLock;
     layer.hidden=false;
     layer.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" class="icon-btn" id="modalClose" aria-label="Fechar">×</button></div><div class="modal-body">${body}</div></div>`;
     const closeBtn=$('modalClose');
@@ -4219,6 +4336,7 @@
     if(!layer)return;
     layer.hidden=true;
     layer.classList.remove('settings-layer');
+    delete layer.dataset.modalLock;
     layer.innerHTML='';
   }
 
@@ -4245,11 +4363,40 @@
   function setAvatar(el,p,fallback){if(!el)return;el.classList.add('avatar-img');el.style.backgroundImage=p?.avatar?`url('${safeUrl(p.avatar)}')`:'';el.textContent=p?.avatar?'':((p?.username||fallback||'?')[0]||'?').toUpperCase();}
   function statusLabel(s){return ({online:'online',idle:'ausente',dnd:'não perturbe',offline:'offline'})[s]||'online';}
   function formatTime(t){return new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit'}).format(new Date(t));}
+  function formatDateTime(t){const d=new Date(t);return Number.isNaN(d.getTime())?'':new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(d);}
+  function presenceMeta(p){
+    if(!p)return '';
+    const live=resolvedPresence(p.id);
+    const real=realtimePresence.get(String(p.id));
+    const last=real?.lastSeenAt||p.lastSeenAt||'';
+    const updated=real?.updatedAt||p.statusUpdatedAt||'';
+    if(live==='offline'&&last)return 'Visto por último em '+formatDateTime(last);
+    if(updated)return 'Status atualizado em '+formatDateTime(updated);
+    return live==='online'?'Online agora':statusLabel(live);
+  }
+  function customStatusOf(p){
+    if(!p)return '';
+    return String(realtimePresence.get(String(p.id))?.customStatus??p.customStatus??'').trim().slice(0,120);
+  }
+  async function setOwnPresence(status,customStatus=currentUser()?.customStatus||''){
+    const u=currentUser();if(!u)return false;
+    u.status=['online','idle','dnd','offline'].includes(status)?status:'online';
+    u.customStatus=String(customStatus||'').trim().slice(0,120);
+    u.statusUpdatedAt=new Date().toISOString();state.profiles[u.id]={...(state.profiles[u.id]||u),...u};saveNow();
+    if(socialCloudReady()){
+      try{
+        const data=await cloudRequest('/api/presence',{method:'PATCH',body:JSON.stringify({status:u.status,customStatus:u.customStatus})});
+        if(data?.presence){u.status=data.presence.status||u.status;u.customStatus=data.presence.customStatus??u.customStatus;u.lastSeenAt=data.presence.lastSeenAt||u.lastSeenAt;u.statusUpdatedAt=data.presence.updatedAt||u.statusUpdatedAt;}
+        sendCloudRealtime({type:'account.commit',reason:'presence.update'});
+      }catch(err){showToast(err.message||'Status salvo neste dispositivo, mas a nuvem não respondeu.');}
+    }
+    publishPresence();renderShell();return true;
+  }
   let lolaCodeBuffer='';
   let lolaCodeTimer=null;
   function globalKeys(e){
     if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openGlobalSearch();}
-    if(e.key==='Escape'){hideContext();closeModal();}
+    if(e.key==='Escape'){hideContext();if($('modalLayer')?.dataset.modalLock!=='settings')closeModal();}
     const active=document.activeElement;
     const editable=active&&(active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'||active.isContentEditable);
     if(view.mode==='home'&&currentUser()&&!editable&&e.key.length===1&&/[a-z0-9]/i.test(e.key)){

@@ -33,6 +33,7 @@ class MainActivity : Activity() {
         private const val WEB_PATH_PREFIX = "/azurecord-web/"
         private const val REQ_WEB_MEDIA = 901
         private const val REQ_MEDIA_PROJECTION = 902
+        private const val REQ_CALL_PERMISSIONS = 904
         private const val CALL_CHANNEL = "azurecord_calls"
         private const val CALL_NOTIFICATION_ID = 3107
     }
@@ -44,6 +45,7 @@ class MainActivity : Activity() {
     private var pendingProjectionPayload: JSONObject? = null
     private var pendingWebPermissionRequest: PermissionRequest? = null
     private var pendingWebResources: Array<String> = emptyArray()
+    private var pendingCallPermissions: Array<String> = emptyArray()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -194,6 +196,22 @@ class MainActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == REQ_CALL_PERMISSIONS) {
+            val requested = pendingCallPermissions
+            pendingCallPermissions = emptyArray()
+            val allGranted = requested.isNotEmpty() && requested.all {
+                checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+            }
+            AzurecordNativeEvents.emit(
+                JSONObject()
+                    .put("type", "callPermissions.result")
+                    .put("granted", allGranted)
+                    .toString()
+            )
+            return
+        }
+
         if (requestCode != REQ_WEB_MEDIA) return
 
         val request = pendingWebPermissionRequest
@@ -203,6 +221,31 @@ class MainActivity : Activity() {
         val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
         if (allGranted) request.grant(pendingWebResources) else request.deny()
         pendingWebResources = emptyArray()
+    }
+
+    fun requestCallPermissions(includeCamera: Boolean) {
+        runOnUiThread {
+            val missing = mutableListOf<String>()
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                missing += Manifest.permission.RECORD_AUDIO
+            }
+            if (includeCamera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                missing += Manifest.permission.CAMERA
+            }
+
+            if (missing.isEmpty()) {
+                AzurecordNativeEvents.emit(
+                    JSONObject()
+                        .put("type", "callPermissions.result")
+                        .put("granted", true)
+                        .toString()
+                )
+                return@runOnUiThread
+            }
+
+            pendingCallPermissions = missing.distinct().toTypedArray()
+            requestPermissions(pendingCallPermissions, REQ_CALL_PERMISSIONS)
+        }
     }
 
     fun setNativeCallActive(active: Boolean) {

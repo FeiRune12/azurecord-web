@@ -49,8 +49,8 @@ test('2.0.7: Android integra ciclo de chamada nativo',()=>{
   assert.match(bridge,/fun notifyIncomingCall/);
 });
 
-test('API 0.8.6: bootstrap, Lola provisionada e sessão recuperável',()=>{
-  assert.match(api,/version: "0\.8\.6"/);
+test('API 0.8.7: bootstrap, Lola provisionada e sessão recuperável',()=>{
+  assert.match(api,/version: "0\.8\.7"/);
   assert.match(api,/bootstrapV1: true/);
   assert.match(api,/lolaAutoProvision: true/);
   assert.match(api,/async function bootstrapSession/);

@@ -16,6 +16,12 @@ class AzurecordBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun requestCallPermissions(includeCamera: Boolean): Boolean {
+        activity.requestCallPermissions(includeCamera)
+        return true
+    }
+
+    @JavascriptInterface
     fun setCallActive(active: Boolean): Boolean {
         activity.setNativeCallActive(active)
         return true

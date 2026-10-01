@@ -307,13 +307,18 @@ export class UserHub {
       const status = ["online", "idle", "dnd", "offline"].includes(String(message.status))
         ? String(message.status)
         : "online";
+      const customStatus = String(message.customStatus || "").trim().slice(0, 120);
       const peerIds = await this.peerIdsFor(session);
+      const at = Date.now();
       const event = {
         type: "presence.changed",
         eventId: crypto.randomUUID(),
         userId: session.userId,
         status,
-        at: Date.now(),
+        customStatus,
+        lastSeenAt: new Date(at).toISOString(),
+        updatedAt: new Date(at).toISOString(),
+        at,
       };
       await Promise.allSettled([
         this.notifyUser(session.userId, event),
@@ -472,7 +477,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.6.0",
+        version: "1.7.0",
         transport: "websocket",
         hibernation: true,
       });

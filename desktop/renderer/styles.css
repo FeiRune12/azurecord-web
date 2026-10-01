@@ -1351,3 +1351,74 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
     font-size:11px;
   }
 }
+
+
+/* ===== Azurecord 2.0.8: profile activity, cropper and reliable SVG iconography ===== */
+.ui-icon{display:block;flex:0 0 auto;pointer-events:none}
+.settings-nav-icon{display:grid!important;place-items:center!important;color:currentColor}
+.settings-nav-icon .ui-icon{width:17px!important;height:17px!important}
+.settings-close.settings-back{
+  width:auto!important;min-width:86px!important;height:36px!important;padding:0 11px!important;
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;
+  border:1px solid var(--line)!important;background:var(--panel-2)!important;color:var(--text)!important;
+  font-size:10px!important;font-weight:800!important;border-radius:10px!important
+}
+.settings-close.settings-back:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:var(--panel-3)!important}
+.settings-close.settings-back span{display:inline!important;margin:0!important;color:inherit!important;font-size:10px!important}
+.mobile-bottom-nav .ui-icon{margin:0 auto;width:20px;height:20px}
+.mobile-bottom-nav button>span{display:grid!important;place-items:center!important}
+
+.profile-avatar-status-wrap{position:relative;flex:0 0 auto;min-width:0}
+.profile-status-bubble{
+  position:absolute;z-index:3;left:72%;top:9%;display:flex;align-items:center;gap:6px;
+  width:max-content;max-width:min(245px,58vw);min-height:36px;padding:8px 12px;
+  border:1px solid rgba(255,255,255,.09);border-radius:16px 16px 16px 5px;
+  background:color-mix(in srgb,var(--panel-2) 82%,var(--accent) 18%);
+  color:#c9d6e9;font-size:10px;font-style:italic;line-height:1.35;
+  box-shadow:0 10px 28px rgba(0,0,0,.28);backdrop-filter:blur(10px)
+}
+.status-bubble-plus{
+  width:18px;height:18px;min-width:18px;display:grid;place-items:center;border-radius:50%;
+  background:color-mix(in srgb,var(--accent) 28%,var(--panel-3));color:#b9d6ff;
+  font-style:normal;font-size:12px;font-weight:900
+}
+.profile-presence-time,.presence-time{
+  margin-top:5px;color:var(--muted);font-size:9px;line-height:1.4
+}
+.friend-custom-status,.friend-presence-time{
+  display:block!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-width:420px;margin-top:2px;font-size:9px!important
+}
+.friend-custom-status{color:#afbdd1!important;font-style:italic}
+.friend-presence-time{color:#647186!important;font-size:8px!important}
+.status-editor-label{display:flex;flex-direction:column;gap:7px;margin-top:14px;color:var(--muted);font-size:10px}
+.status-editor-label input{width:100%}
+.compact-actions{margin-top:10px!important}
+.presence-time{padding-top:3px}
+
+.image-cropper{display:flex;flex-direction:column;gap:15px}
+.crop-stage{
+  width:100%;display:grid;place-items:center;padding:10px;border-radius:16px;
+  border:1px solid var(--line);background:#090d14;overflow:hidden
+}
+#cropCanvas{
+  display:block;width:100%;height:auto;max-height:min(58vh,520px);object-fit:contain;
+  border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.35)
+}
+.crop-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.crop-controls label{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:10px}
+.crop-controls input[type="range"]{width:100%;accent-color:var(--accent)}
+
+@media(max-width:720px){
+  .settings-close.settings-back{min-width:40px!important;width:40px!important;padding:0!important}
+  .settings-close.settings-back span{display:none!important}
+  .profile-status-bubble{left:58%;top:4%;max-width:min(210px,64vw);font-size:9px;padding:7px 9px}
+  .crop-controls{grid-template-columns:1fr}
+  #cropCanvas{max-height:45vh}
+}
+
+.crop-overlay{
+  position:fixed;inset:0;z-index:12000;display:grid;place-items:center;padding:18px;
+  background:rgba(2,5,10,.82);backdrop-filter:blur(10px)
+}
+.crop-modal{width:min(780px,calc(100vw - 24px))!important;max-height:94dvh!important;overflow:auto!important}
