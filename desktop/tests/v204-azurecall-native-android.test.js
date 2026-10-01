@@ -14,12 +14,14 @@ test('2.0.4: compartilhamento usa websocket e fallback HTTP',()=>{
   assert.match(realtime,/screen-answer/);
 });
 
-test('2.0.4: aviso de tela compartilhada permanece enquanto a transmissão está ativa',()=>{
+test('3.0.8: tela compartilhada usa indicador discreto sem toast persistente',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
-  assert.match(app,/persistent:true/);
-  assert.match(app,/remoteShareToastKey/);
-  assert.match(app,/clearRemoteShareNotice/);
+  const css=fs.readFileSync(path.join(root,'renderer','styles.css'),'utf8');
+  assert.doesNotMatch(app,/remoteShareToastKey/);
+  assert.match(app,/function showRemoteShareNotice\(call\)\{\}/);
+  assert.match(app,/function clearRemoteShareNotice\(call\)\{\}/);
   assert.match(app,/track\.onmute=\(\)=>\{updateCallUi\(\);\}/);
+  assert.match(css,/\/\* Azurecord 3\.0\.8: screen share label only \*\//);
 });
 
 test('2.0.4: AzureCall usa perfil de tela de baixa latência',()=>{
