@@ -1443,3 +1443,6 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 
 /* 3.0.1 auth visibility fix */
 .auth-form label[hidden],#confirmRow[hidden]{display:none!important}
+
+/* 3.0.3 profile presence selector */
+.profile-edit-grid select{width:100%;background:rgba(8,12,18,.72);border:1px solid var(--line);color:var(--text);padding:12px;border-radius:11px;outline:none}.profile-edit-grid select:focus{border-color:rgba(0,102,255,.55);box-shadow:0 0 0 3px rgba(0,102,255,.08)}
