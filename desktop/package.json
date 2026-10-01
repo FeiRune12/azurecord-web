@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "private": true,
-  "description": "Azurecord 2.0.2: screen share móvel com renegociação persistida pela API.",
+  "description": "Azurecord 2.0.3: realtime resiliente entre Web/Desktop e watchdog de WebSocket.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
