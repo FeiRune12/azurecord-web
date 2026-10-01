@@ -51,14 +51,18 @@ test('2.0.1: recebimento separa câmera e live para evitar vídeo arbitrário',(
   assert.match(app,/displayStream=remoteSharing/);
 });
 
-test('2.0.1: aviso remoto continua clicável e abre a live',()=>{
+test('3.0.8: transmissão remota mostra só o nome no canto superior direito',()=>{
   const html=fs.readFileSync(path.join(root,'renderer','index.html'),'utf8');
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   const css=fs.readFileSync(path.join(root,'renderer','styles.css'),'utf8');
-  assert.match(html,/<button id="callRemoteShareTag"/);
-  assert.match(app,/\$\('callRemoteShareTag'\)\.onclick=openRemoteSharedScreen/);
-  assert.match(app,/requestFullscreen/);
-  assert.match(css,/\.remote-share-focused \.azure-call-remote/);
+  assert.match(html,/<div id="callRemoteShareTag" class="call-share-tag remote"/);
+  assert.match(html,/<strong id="callRemoteShareName">Usuário<\/strong><\/div>/);
+  assert.doesNotMatch(html,/está compartilhando a tela • abrir/);
+  assert.doesNotMatch(app,/\$\('callRemoteShareTag'\)\.onclick=openRemoteSharedScreen/);
+  assert.match(css,/\.call-share-tag\.remote\{/);
+  assert.match(css,/top:14px!important/);
+  assert.match(css,/right:16px!important/);
+  assert.match(css,/pointer-events:none!important/);
 });
 
 test('2.0.2: versão segue rollover .9 para próxima geração',()=>{
