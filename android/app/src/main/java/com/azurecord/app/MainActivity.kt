@@ -73,10 +73,10 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent?.action == AzurecordUpdater.ACTION_INSTALL_READY) {
+        if (intent.action == AzurecordUpdater.ACTION_INSTALL_READY) {
             AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
         }
     }
