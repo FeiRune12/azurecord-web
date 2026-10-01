@@ -1120,3 +1120,37 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   #voiceBtn:not([hidden])::before{content:'☎';font-size:15px}
   #videoBtn:not([hidden])::before{content:'▣';font-size:15px}
 }
+
+
+/* ===== Azurecord 1.0.7: cloud polls + server membership ===== */
+.system-welcome-message{
+  display:flex;align-items:center;gap:7px;margin:5px 18px;padding:9px 12px;
+  border-left:2px solid var(--accent);border-radius:8px;background:color-mix(in srgb,var(--panel-2) 92%,var(--accent) 8%);
+  color:var(--muted);font-size:11px
+}
+.system-welcome-message strong{color:var(--text)}
+.system-welcome-message time{margin-left:auto;color:var(--muted-2);font-size:9px}
+.poll-card{
+  width:min(520px,100%);margin-top:9px;padding:12px;border:1px solid var(--line);
+  border-radius:14px;background:var(--panel-2)
+}
+.poll-question{margin-bottom:10px;color:var(--text);font-size:13px;font-weight:850;line-height:1.4}
+.poll-options{display:grid;gap:7px}
+.poll-option{
+  position:relative;overflow:hidden;width:100%;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel-3);color:var(--text);
+  text-align:left;cursor:pointer
+}
+.poll-option:hover{border-color:var(--line-strong);background:var(--panel-4)}
+.poll-option.active{border-color:color-mix(in srgb,var(--accent) 70%,white 12%);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 14%,transparent)}
+.poll-option i{position:absolute;left:0;bottom:0;height:3px;background:var(--accent);opacity:.9;pointer-events:none}
+.poll-option-label,.poll-option-count{position:relative;z-index:1}
+.poll-option-label{font-size:11px;font-weight:750}
+.poll-option-count{flex:none;color:var(--muted);font-size:9px;font-weight:750}
+.poll-total{margin-top:8px;color:var(--muted);font-size:9px}
+@media(max-width:720px){
+  .system-welcome-message{margin:4px 8px;padding:8px 10px;flex-wrap:wrap}
+  .system-welcome-message time{margin-left:auto}
+  .poll-card{width:100%;padding:10px}
+  .poll-option{min-height:40px}
+}

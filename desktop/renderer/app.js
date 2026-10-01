@@ -131,6 +131,9 @@
   let typingLastSentAt = 0;
   let typingStopTimer = null;
   let dragDepth = 0;
+  let presenceHeartbeatTimer = null;
+  let callSignalPollTimer = null;
+  let callSignalCursor = Date.now() - 5000;
   let activeCall = null;
   const AZURECALL_RTC_CONFIG = {iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
 
@@ -529,7 +532,8 @@
         const remote=[];
         for(const srv of data.servers){
           const channels=(srv.channels||[]).map(c=>({id:c.id,backendId:c.id,serverId:srv.id,name:c.name,type:c.type,topic:c.topic||''}));
-          remote.push({...srv,backendId:srv.id,channels});
+          const members=(srv.members||[]).map(member=>{hydrateRemoteUser(member);return {...member};});
+          remote.push({...srv,backendId:srv.id,channels,members,memberCount:Number(srv.memberCount||members.length)});
         }
         state.servers=mergeServers([],remote).filter(s=>s?.id!=='server-azurecord');
       }
@@ -603,6 +607,39 @@
     if(manual==='offline'||manual==='dnd'||manual==='idle')return manual;
     return document.hidden?'idle':'online';
   }
+  function applyPresenceSnapshot(items){
+    if(!Array.isArray(items))return;
+    const stamp=Date.now();
+    for(const item of items){
+      const userId=String(item?.userId||'');
+      if(!userId||userId===state.currentAccountId)continue;
+      const status=['online','idle','dnd','offline'].includes(item?.status)?item.status:'offline';
+      realtimePresence.set(userId,{status,at:stamp});
+      const p=getProfile(userId);if(p)p.status=status;
+    }
+    if(view.mode==='home')renderHome();
+    if(view.mode==='server')renderMemberPanel();
+    if(view.mode==='dm')renderChat();
+  }
+  async function syncPresenceHeartbeat(status=effectiveOwnPresence()){
+    if(!socialCloudReady()||!state.currentAccountId)return false;
+    try{
+      const data=await cloudRequest('/api/presence/heartbeat',{method:'POST',body:JSON.stringify({status})});
+      applyPresenceSnapshot(data?.presence||[]);
+      return true;
+    }catch(err){
+      console.warn('[Azurecord] Presence heartbeat:',err?.message||err);
+      return false;
+    }
+  }
+  function startPresenceHeartbeat(){
+    clearInterval(presenceHeartbeatTimer);
+    if(!socialCloudReady())return;
+    void syncPresenceHeartbeat();
+    presenceHeartbeatTimer=setInterval(()=>void syncPresenceHeartbeat(),15000);
+  }
+  function stopPresenceHeartbeat(){clearInterval(presenceHeartbeatTimer);presenceHeartbeatTimer=null;}
+
   function resolvedPresence(userId){
     if(!userId)return 'offline';
     if(userId==='user-lola')return 'online';
@@ -610,11 +647,14 @@
     const item=realtimePresence.get(String(userId));
     if(item&&Date.now()-item.at<70000)return item.status;
     if(item)realtimePresence.delete(String(userId));
-    return 'offline';
+    const profile=getProfile(userId);
+    return ['online','idle','dnd','offline'].includes(profile?.status)?profile.status:'offline';
   }
   function publishPresence(){
-    if(!cloudRealtimeConnected()||!state.currentAccountId)return false;
-    return sendCloudRealtime({type:'presence.commit',status:effectiveOwnPresence()});
+    if(!state.currentAccountId)return false;
+    const status=effectiveOwnPresence();
+    if(socialCloudReady())void syncPresenceHeartbeat(status);
+    return cloudRealtimeConnected()?sendCloudRealtime({type:'presence.commit',status}):false;
   }
   function typingConversationKey(scope,userId,serverId='',channelId=''){
     return scope==='dm' ? `dm|${String(userId||'')}` : `channel|${String(serverId||'')}|${String(channelId||'')}|${String(userId||'')}`;
@@ -717,7 +757,7 @@
     const wsUrl=CLOUD_REALTIME_URL.replace(/^http:/i,'ws:').replace(/^https:/i,'wss:')+'/ws';
     let ws;
     try{
-      ws=new WebSocket(wsUrl,['azurecord-v1',cloudToken]);
+      ws=new WebSocket(wsUrl,[`azurecord-v1.${cloudToken}`]);
     }catch(err){
       console.warn('[Azurecord] WebSocket não pôde iniciar:',err?.message||err);
       scheduleCloudRealtimeReconnect();
@@ -745,7 +785,7 @@
 
     ws.onerror=()=>{cloudRealtimeSocketReady=false;};
 
-    ws.onclose=()=>{
+    ws.onclose=(ev)=>{console.warn('[Azurecord] Realtime fechado:',ev?.code||0,ev?.reason||'sem motivo');
       if(cloudRealtimeSocket===ws)cloudRealtimeSocket=null;
       cloudRealtimeSocketReady=false;
       clearInterval(cloudRealtimeHeartbeatTimer);cloudRealtimeHeartbeatTimer=null;
@@ -844,6 +884,8 @@
     cloudRealtimeFailures=0;
     cloudSocialSnapshotAt=0;
     startCloudRealtimeSocket();
+    startPresenceHeartbeat();
+    startCallSignalPolling();
     wakeCloudRealtimeSync({snapshot:true});
   }
 
@@ -1012,7 +1054,9 @@
   function logout(){
     try{ if(backendEventSource){backendEventSource.close(); backendEventSource=null;} }catch{}
     if(activeCall)endActiveCall({notify:true});
+    if(socialCloudReady())void syncPresenceHeartbeat('offline');
     if(cloudRealtimeConnected())sendCloudRealtime({type:'presence.commit',status:'offline'});
+    stopPresenceHeartbeat();stopCallSignalPolling();
     stopCloudRealtimeSocket();
     realtimePresence.clear();realtimeTyping.clear();renderTypingIndicator();
     clearTimeout(cloudSocialPollTimer);cloudSocialPollTimer=null;
@@ -1904,7 +1948,7 @@
   }
   function getMessages(){ if(view.mode==='dm')return state.dmMessages[dmKey(view.dmUserId)]||[]; return state.channelMessages[`${view.serverId}|${view.channelId}`]||[]; }
   function setMessages(arr){ if(view.mode==='dm')state.dmMessages[dmKey(view.dmUserId)]=arr; else state.channelMessages[`${view.serverId}|${view.channelId}`]=arr; save(); }
-  function renderMessages(){ const box=$('messages');const all=getMessages();const msgs=all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));const hiddenCount=all.length-msgs.length;box.innerHTML=(hiddenCount?`<div class="message-filter-note">${hiddenCount} mensagem${hiddenCount===1?'':'s'} ocultada${hiddenCount===1?'':'s'} por Bloquear/Ignorar.</div>`:'')+(msgs.map(renderMessage).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem visível. Comece a conversa.</span></div>'); box.querySelectorAll('[data-msg]').forEach(el=>el.addEventListener('contextmenu',e=>openContextMenu(e,el.dataset.msg))); box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);}); }
+  function renderMessages(){ const box=$('messages');const all=getMessages();const msgs=all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));const hiddenCount=all.length-msgs.length;box.innerHTML=(hiddenCount?`<div class="message-filter-note">${hiddenCount} mensagem${hiddenCount===1?'':'s'} ocultada${hiddenCount===1?'':'s'} por Bloquear/Ignorar.</div>`:'')+(msgs.map(renderMessage).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem visível. Comece a conversa.</span></div>'); box.querySelectorAll('[data-msg]').forEach(el=>el.addEventListener('contextmenu',e=>openContextMenu(e,el.dataset.msg))); box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption))); }
   function attachmentListForMessage(m){
     if(Array.isArray(m?.files) && m.files.length) return m.files;
     if(m?.file) return [m.file];
@@ -2424,7 +2468,36 @@
     }).join('')}</div>`;
     $('clearPendingAttachments').onclick=()=>{pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();};
   }
+  function renderPollCard(m){
+    const poll=m?.poll;if(!poll||!Array.isArray(poll.options))return '';
+    const votes=Array.isArray(poll.votes)?poll.votes:poll.options.map(()=>0);
+    const total=Number(poll.totalVotes??votes.reduce((a,b)=>a+(Number(b)||0),0))||0;
+    const html=poll.options.map((option,index)=>{
+      const count=Number(votes[index]||0);
+      const pct=total?Math.round(count/total*100):0;
+      const active=Number(poll.myVote)===index;
+      return '<button type="button" class="poll-option '+(active?'active':'')+'" data-poll-message="'+esc(m.id)+'" data-poll-option="'+index+'"><span class="poll-option-label">'+esc(option)+'</span><span class="poll-option-count">'+count+' • '+pct+'%</span><i style="width:'+pct+'%"></i></button>';
+    }).join('');
+    return '<div class="poll-card"><div class="poll-question">📊 '+esc(poll.question||m.text||'Enquete')+'</div><div class="poll-options">'+html+'</div><div class="poll-total">'+total+' voto'+(total===1?'':'s')+' • clique para votar ou trocar seu voto</div></div>';
+  }
+  async function votePoll(messageId,optionIndex){
+    if(view.mode!=='server'||!socialCloudReady())return;
+    const m=getMessages().find(x=>x.id===messageId);if(!m)return;
+    const srv=getServer(view.serverId),ch=getChannel(view.serverId,view.channelId);if(!srv||!ch)return;
+    const remoteId=m.serverId||m.id;
+    try{
+      const path='/api/servers/'+encodeURIComponent(srv.backendId||srv.id)+'/channels/'+encodeURIComponent(ch.backendId||ch.id)+'/messages/'+encodeURIComponent(remoteId)+'/poll-vote';
+      const result=await socialRequest(path,{method:'POST',body:JSON.stringify({optionIndex:Number(optionIndex)})});
+      m.poll=result.poll;saveNow();renderMessages();
+      sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:remoteId});
+      wakeCloudRealtimeSync();
+    }catch(err){showToast(err.message||'Não foi possível registrar seu voto.');}
+  }
   function renderMessage(m){
+    if(m?.system?.type==='member_join'){
+      const username=m.system.username||getProfile(m.system.userId)?.username||'Novo membro';
+      return '<div class="system-welcome-message"><span>👋</span><strong>'+esc(username)+'</strong><span>entrou no servidor. Boas-vindas!</span><time>'+formatTime(m.time)+'</time></div>';
+    }
     const p=getProfile(m.author)||{username:'Usuário'};
     const own=m.author===state.currentAccountId;
     const action=/^\*.*\*$/.test(m.text?.trim()||'')&&!m.actionTextOnly;
@@ -2433,7 +2506,7 @@
     const attachments=renderAttachmentCards(attachmentListForMessage(m));
     const deliveryClass=own&&m.failed?'message-failed':own&&m.pending?'message-pending':'message-delivered';
     const deliveryLabel=own&&m.failed?'Falha no envio':own&&m.pending?'Enviando':'Enviada';
-    return `<article class="message-row ${deliveryClass}" data-msg="${m.id}" data-delivery="${deliveryLabel}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">↩ ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${own&&m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?'⚠ Não enviada':'◌ Enviando'} ${m.failed&&view.mode==='dm'?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`;
+    return `<article class="message-row ${deliveryClass}" data-msg="${m.id}" data-delivery="${deliveryLabel}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">↩ ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${renderPollCard(m)}${own&&m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?'⚠ Não enviada':'◌ Enviando'} ${m.failed&&view.mode==='dm'?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`;
   }
   function formatText(text,username){ let s=esc(text);s=s.replace(/@([\w\d_]+)/g,(m,n)=>`<span class="mention">@${esc(n)}</span>`); if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`; return s; }
   async function sendDmToBackend(m,id){
@@ -2570,7 +2643,43 @@
   function closeProfilePeekOnOutside(e){const panel=$('profilePeek');if(!panel||panel.hidden)return;if(e.target.closest('#profilePeek'))return;if(e.target.closest('[data-profile-msg], [data-member], #userBar, #chatTitleTrigger'))return;closeProfilePeek();}
   function hideContext(){ $('contextMenu').hidden=true; }
 
-  function renderMemberPanel(){ const panel=$('memberPanel'); if(view.mode!=='server'||!view.showMembers){panel.hidden=true;return;}panel.hidden=false;const members=[currentUser(),...DEMO_USERS.filter(x=>x.id!==currentUser()?.id)];$('memberList').innerHTML=`<div class="member-panel-head"><strong>MEMBROS • ${members.length}</strong><span class="presence-legend">${members.filter(m=>m.status==='online').length} online</span></div>`+members.filter(Boolean).map(p=>`<button class="member-item" data-member="${p.id}"><div class="mini-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc(p.username[0])}</div><div><strong>${esc(p.username)}</strong><span>${statusLabel(resolvedPresence(p.id))}</span></div><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span></button>`).join('');$('[data-member]')?.focus?.();$$('#memberList [data-member]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openProfilePeek(b.dataset.member,b);}); }
+  async function refreshServerMembers(serverId,{quiet=true}={}){
+    const server=getServer(serverId);if(!server||!socialCloudReady())return false;
+    const remoteId=server.backendId||server.id;
+    if(server._membersLoading)return false;
+    if(quiet&&server._membersFetchedAt&&Date.now()-server._membersFetchedAt<8000)return true;
+    server._membersLoading=true;
+    try{
+      const data=await socialRequest('/api/servers/'+encodeURIComponent(remoteId)+'/members');
+      const members=Array.isArray(data?.members)?data.members:[];
+      for(const member of members)hydrateRemoteUser(member);
+      server.members=members;server.memberCount=Number(data?.memberCount||members.length);server._membersFetchedAt=Date.now();
+      if(view.mode==='server'&&view.serverId===server.id)renderMemberPanel();
+      return true;
+    }catch(err){if(!quiet)showToast(err.message||'Não foi possível atualizar a lista de membros.');return false;}
+    finally{server._membersLoading=false;}
+  }
+  function renderMemberPanel(){
+    const panel=$('memberPanel');
+    if(view.mode!=='server'||!view.showMembers){panel.hidden=true;return;}
+    panel.hidden=false;
+    const server=getServer(view.serverId);
+    if(server&&!server._membersLoading&&(!server._membersFetchedAt||Date.now()-server._membersFetchedAt>8000))void refreshServerMembers(server.id,{quiet:true});
+    const members=Array.isArray(server?.members)?server.members.filter(Boolean):[];
+    for(const member of members)hydrateRemoteUser(member);
+    const onlineCount=members.filter(member=>resolvedPresence(member.id)!=='offline').length;
+    const head='<div class="member-panel-head"><strong>MEMBROS • '+members.length+'</strong><span class="presence-legend">'+onlineCount+' online</span></div>';
+    const rows=members.map(member=>{
+      const p=getProfile(member.id)||member;
+      const liveStatus=resolvedPresence(member.id);
+      const role=member.role||getServerRole(server,member.id)||'Membro';
+      const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
+      const letter=p.avatar?'':esc((p.username||'?')[0]);
+      return '<button class="member-item" data-member="'+esc(member.id)+'"><div class="mini-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div><div><strong>'+esc(member.nickname||p.username||'Usuário')+'</strong><span>'+statusLabel(liveStatus)+'</span></div><span class="role-chip '+(role==='Admin'?'admin':'')+'">'+esc(role)+'</span></button>';
+    }).join('');
+    $('memberList').innerHTML=head+(rows||'<div class="dm-empty">Nenhum membro encontrado.</div>');
+    $$('#memberList [data-member]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openProfilePeek(b.dataset.member,b);});
+  }
   function openProfilePeek(id,anchorEl=null){
     const p=getProfile(id); if(!p)return;
     selectedProfile=id; view.showProfile=true;
@@ -2602,7 +2711,7 @@
         <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
         <div class="profile-main-head">
           <div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>
-          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${p.status||'offline'}"></span>${statusLabel(p.status)} <span class="profile-bullet">•</span> ${esc(friendship)}</div></div>
+          <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div></div>
         </div>
         <div class="profile-preview-bio">${esc(p.bio||'Sem bio.')}</div>
         <div class="profile-actions profile-preview-actions"><button class="btn btn-primary wide" data-profile-full="${p.id}">Exibir perfil completo</button></div>
@@ -2612,7 +2721,7 @@
       <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
       <div class="profile-main-head">
         <div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div>
-        <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${p.status||'offline'}"></span>${statusLabel(p.status)} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div></div>
+        <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div></div>
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
       </div>
       <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'✦')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
@@ -2841,7 +2950,8 @@
 
   function normalizeRemoteServer(data){
     const srv=data?.server||data;if(!srv?.id)return null;
-    return {...srv,id:srv.id,backendId:srv.id,owner:srv.owner||srv.ownerId||state.currentAccountId,channels:(data?.channels||srv.channels||[]).map(c=>({id:c.id,backendId:c.id,serverId:srv.id,name:c.name,type:c.type,topic:c.topic||''}))};
+    const members=(srv.members||data?.members||[]).map(member=>{hydrateRemoteUser(member);return {...member};});
+    return {...srv,id:srv.id,backendId:srv.id,owner:srv.owner||srv.ownerId||state.currentAccountId,channels:(data?.channels||srv.channels||[]).map(c=>({id:c.id,backendId:c.id,serverId:srv.id,name:c.name,type:c.type,topic:c.topic||''})),members,memberCount:Number(srv.memberCount||members.length)};
   }
   async function joinServerByInvite(value,{closeAfter=true,fromLink=false}={}){
     const code=normalizeServerInvite(value);if(!code){showToast('Cole um link ou código de convite válido.');return false;}
@@ -2851,6 +2961,10 @@
       const remote=normalizeRemoteServer(data);if(!remote)throw new Error('O servidor não pôde ser carregado.');
       state.servers=mergeServers(state.servers,[remote]).filter(s=>s?.id!=='server-azurecord');save();persistServersNow();
       sendCloudRealtime({type:'account.commit',reason:'server.join'});sendCloudRealtime({type:'server.commit',serverId:remote.backendId||remote.id,reason:'member.join'});
+      if(data.welcomeMessage&&data.welcomeChannelId){
+        applyRealtimeChannelMessage(remote.backendId||remote.id,String(data.welcomeChannelId),data.welcomeMessage);
+        sendCloudRealtime({type:'channel.commit',serverId:remote.backendId||remote.id,channelId:String(data.welcomeChannelId),messageId:data.welcomeMessage.id});
+      }
       pendingInviteCode='';
       if(fromLink){try{const u=new URL(window.location.href);u.searchParams.delete('invite');history.replaceState({},'',u.toString());}catch{}}
       if(closeAfter)closeModal();openServer(remote.id);showToast(data.alreadyMember?'Servidor aberto.':'Você entrou no servidor.');return true;
@@ -3073,11 +3187,48 @@
     $('callCameraBtn').classList.toggle('off',!call.cameraTrack||call.cameraTrack.enabled===false);
     $('callShareBtn').classList.toggle('off',!call.screenTrack);
   }
-  function sendCallSignal(kind,payload={}){
-    const call=activeCall;if(!call||!cloudRealtimeConnected())return false;
-    return sendCloudRealtime({type:'call.signal',targetUserId:call.peerId,signal:{kind,callId:call.id,callType:call.type,...payload}});
+  async function postCallSignalHttp(targetUserId,signal){
+    if(!socialCloudReady()||!targetUserId||!signal)return false;
+    try{
+      await cloudRequest('/api/realtime/signals',{method:'POST',body:JSON.stringify({targetUserId,signal})});
+      return true;
+    }catch(err){
+      console.warn('[AzureCall] HTTP signal:',err?.message||err);
+      return false;
+    }
   }
-  function directCallSignal(targetUserId,signal){if(!cloudRealtimeConnected())return false;return sendCloudRealtime({type:'call.signal',targetUserId,signal});}
+  async function pollCallSignals(){
+    if(!socialCloudReady())return;
+    try{
+      const data=await cloudRequest('/api/realtime/signals?since='+encodeURIComponent(callSignalCursor));
+      callSignalCursor=Math.max(callSignalCursor,Number(data?.serverTime)||Date.now());
+      for(const event of data?.signals||[]){
+        await handleCloudRealtimeEvent({type:'call.signal',eventId:event.eventId,fromUserId:event.fromUserId,signal:event.signal,at:event.at});
+      }
+    }catch(err){
+      console.warn('[AzureCall] HTTP poll:',err?.message||err);
+    }
+  }
+  function scheduleCallSignalPoll(){
+    clearTimeout(callSignalPollTimer);callSignalPollTimer=null;
+    if(!socialCloudReady())return;
+    const delay=activeCall?450:1500;
+    callSignalPollTimer=setTimeout(async()=>{await pollCallSignals();scheduleCallSignalPoll();},delay);
+  }
+  function startCallSignalPolling(){callSignalCursor=Date.now()-5000;scheduleCallSignalPoll();}
+  function stopCallSignalPolling(){clearTimeout(callSignalPollTimer);callSignalPollTimer=null;}
+  function sendCallSignal(kind,payload={}){
+    const call=activeCall;if(!call)return false;
+    const signal={kind,callId:call.id,callType:call.type,...payload};
+    if(cloudRealtimeConnected()&&sendCloudRealtime({type:'call.signal',targetUserId:call.peerId,signal}))return true;
+    void postCallSignalHttp(call.peerId,signal);
+    return socialCloudReady();
+  }
+  function directCallSignal(targetUserId,signal){
+    if(cloudRealtimeConnected()&&sendCloudRealtime({type:'call.signal',targetUserId,signal}))return true;
+    void postCallSignalHttp(targetUserId,signal);
+    return socialCloudReady();
+  }
   async function acquireCallMedia(call,{incoming=false}={}){
     if(!navigator.mediaDevices?.getUserMedia)throw new Error('Este dispositivo não oferece acesso ao microfone/câmera.');
     const wantsCamera=call.type==='video';
@@ -3155,30 +3306,23 @@
     for(let i=0;i<Math.max(a.length,b.length);i++){if((a[i]||0)>(b[i]||0))return true;if((a[i]||0)<(b[i]||0))return false;}
     return true;
   }
-  async function ensureAzureCallRealtime(timeoutMs=8000){
+  async function ensureAzureCallRealtime(timeoutMs=3000){
     if(!socialCloudReady())return {ok:false,reason:'session'};
-    const health=await azureCallRealtimeHealth();
-    if(!health.ok)return {ok:false,reason:'health',health};
-    if(!versionAtLeast(health.version,'1.3.0'))return {ok:false,reason:'version',health};
-    if(cloudRealtimeConnected())return {ok:true,health};
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return {ok:false,reason:'offline'};
+    if(cloudRealtimeConnected())return {ok:true,transport:'websocket'};
     startCloudRealtimeSocket(true);
-    const started=Date.now();let retried=false;
+    const started=Date.now();
     while(Date.now()-started<timeoutMs){
-      if(cloudRealtimeConnected())return {ok:true,health};
-      if(typeof navigator!=='undefined'&&navigator.onLine===false)return {ok:false,reason:'offline',health};
-      if(!retried&&Date.now()-started>3500&&(!cloudRealtimeSocket||cloudRealtimeSocket.readyState===WebSocket.CLOSED)){
-        retried=true;startCloudRealtimeSocket(true);
-      }
-      await new Promise(resolve=>setTimeout(resolve,160));
+      if(cloudRealtimeConnected())return {ok:true,transport:'websocket'};
+      if(typeof navigator!=='undefined'&&navigator.onLine===false)return {ok:false,reason:'offline'};
+      await new Promise(resolve=>setTimeout(resolve,120));
     }
-    return {ok:cloudRealtimeConnected(),reason:'socket',health};
+    startCallSignalPolling();
+    return {ok:true,transport:'http'};
   }
   function explainAzureCallRealtimeFailure(result){
     if(result?.reason==='offline')return 'Sem internet. Reconecte antes de iniciar a chamada.';
-    if(result?.reason==='session')return 'Sua sessão Cloud não está pronta. Saia e entre novamente no Azurecord.';
-    if(result?.reason==='version')return `Realtime Worker ${result.health?.version||'antigo'} detectado. Publique o Worker 1.3.0 para usar chamadas.`;
-    if(result?.reason==='health')return 'O Realtime Worker não respondeu. Verifique o deploy do Cloudflare.';
-    return 'O Realtime respondeu, mas o WebSocket não conectou. Tente novamente ou entre de novo na conta.';
+    return 'Sua sessão Cloud não está pronta. Saia e entre novamente no Azurecord.';
   }
   async function startDmCall(type='voice'){
     if(view.mode!=='dm'||!view.dmUserId||view.dmUserId==='user-lola'){showToast('Abra uma DM com um amigo para iniciar uma chamada.');return;}
@@ -3188,7 +3332,7 @@
     if(!realtime.ok){showToast(explainAzureCallRealtimeFailure(realtime));return;}
     if(typeof RTCPeerConnection==='undefined'){showToast('WebRTC não está disponível neste dispositivo.');return;}
     const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,cameraTrack:null,screenTrack:null,screenStream:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null};
-    activeCall=call;updateCallUi();
+    activeCall=call;scheduleCallSignalPoll();updateCallUi();
     try{
       await acquireCallMedia(call,{incoming:false});
       const pc=createCallPeer(call,{offerer:true});attachCallLocalTracks(call,{offerer:true});
@@ -3249,7 +3393,7 @@
     const tracks=new Set([...(call.localStream?.getTracks?.()||[]),...(call.screenStream?.getTracks?.()||[])]);for(const track of tracks)try{track.stop();}catch{}
     try{call.pc?.close();}catch{}
     const remote=$('remoteCallVideo'),local=$('localCallVideo');if(remote)remote.srcObject=null;if(local)local.srcObject=null;
-    activeCall=null;updateCallUi();if(message)showToast(message);
+    activeCall=null;scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
   }
   async function handleCallSignalEvent(event){
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
@@ -3309,7 +3453,34 @@
     showModal('Lola IA',`<div class="app-card"><strong>🧠 Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ✅':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.8.1.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
     $('aiSetupClose').onclick=closeModal;
   }
-  function openCreatePoll(){if(view.mode!=='server'){showToast('Abra um canal de servidor para criar uma enquete.');return;}showModal('Nova enquete',`<label>Pergunta<input id="pollQuestion" placeholder="O que vamos fazer hoje?"></label><label>Opção 1<input id="pollA" placeholder="Opção A"></label><label>Opção 2<input id="pollB" placeholder="Opção B"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="pollCancel">Cancelar</button><button class="btn btn-primary" id="pollSend">Publicar</button></div>`);$('pollCancel').onclick=closeModal;$('pollSend').onclick=()=>{const q=$('pollQuestion').value.trim();const a=$('pollA').value.trim()||'Opção A';const b=$('pollB').value.trim()||'Opção B';if(!q){showToast('Digite uma pergunta.');return;}const arr=getMessages();arr.push({id:uid('poll'),author:state.currentAccountId,text:`📊 ${q}`,time:now(),poll:{question:q,options:[a,b],votes:[0,0]}});setMessages(arr);save();closeModal();renderMessages();showToast('Enquete publicada.');};}
+  function openCreatePoll(){
+    if(view.mode!=='server'){showToast('Abra um canal de servidor para criar uma enquete.');return;}
+    const srv=getServer(view.serverId),ch=getChannel(view.serverId,view.channelId);
+    if(!srv||!ch||ch.type!=='text'){showToast('Abra um canal de texto para criar uma enquete.');return;}
+    showModal('Nova enquete','<label>Pergunta<input id="pollQuestion" maxlength="240" placeholder="O que vamos fazer hoje?"></label><label>Opção 1<input id="pollA" maxlength="120" placeholder="Opção A"></label><label>Opção 2<input id="pollB" maxlength="120" placeholder="Opção B"></label><label>Opção 3 <span class="muted">(opcional)</span><input id="pollC" maxlength="120"></label><label>Opção 4 <span class="muted">(opcional)</span><input id="pollD" maxlength="120"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="pollCancel">Cancelar</button><button class="btn btn-primary" id="pollSend">Publicar</button></div>');
+    $('pollCancel').onclick=closeModal;
+    $('pollSend').onclick=async()=>{
+      const button=$('pollSend');if(button.disabled)return;
+      const question=$('pollQuestion').value.trim();
+      const options=[$('pollA').value,$('pollB').value,$('pollC').value,$('pollD').value].map(x=>x.trim()).filter(Boolean);
+      if(!question){showToast('Digite uma pergunta.');return;}
+      if(options.length<2){showToast('Digite pelo menos duas opções.');return;}
+      if(!socialCloudReady()){showToast('Entre na conta Cloud para publicar a enquete.');return;}
+      button.disabled=true;button.textContent='Publicando...';
+      try{
+        const clientId=uid('poll');
+        const path='/api/servers/'+encodeURIComponent(srv.backendId||srv.id)+'/channels/'+encodeURIComponent(ch.backendId||ch.id)+'/messages';
+        const result=await socialRequest(path,{method:'POST',body:JSON.stringify({clientId,text:'📊 '+question,poll:{question,options}})});
+        if(!result.message)throw new Error('Resposta da enquete incompleta.');
+        applyRealtimeChannelMessage(srv.backendId||srv.id,ch.backendId||ch.id,result.message);
+        sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:result.message.id,clientId});
+        wakeCloudRealtimeSync();closeModal();showToast('Enquete publicada.');
+      }catch(err){
+        showToast(err.message||'Não foi possível publicar a enquete.');
+        if($('pollSend')){$('pollSend').disabled=false;$('pollSend').textContent='Publicar';}
+      }
+    };
+  }
 
 
   function showModal(title,body){

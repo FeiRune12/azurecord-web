@@ -1,5 +1,6 @@
 const AZURECORD_API_URL = "https://azurecord-api.giovannisilvaalves604.workers.dev";
 const WS_PROTOCOL = "azurecord-v1";
+const WS_PROTOCOL_PREFIX = "azurecord-v1.";
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -18,6 +19,17 @@ function parseProtocols(request) {
     .split(",")
     .map(x => x.trim())
     .filter(Boolean);
+}
+
+function websocketAuth(request) {
+  const protocols = parseProtocols(request);
+  const packed = protocols.find(value => value.startsWith(WS_PROTOCOL_PREFIX) && value.length > WS_PROTOCOL_PREFIX.length);
+  if (packed) return { token: packed.slice(WS_PROTOCOL_PREFIX.length), selectedProtocol: packed };
+  if (protocols.includes(WS_PROTOCOL)) {
+    const token = protocols.find(value => value !== WS_PROTOCOL) || "";
+    return { token, selectedProtocol: WS_PROTOCOL };
+  }
+  return { token: "", selectedProtocol: "" };
 }
 
 async function validateToken(token) {
@@ -50,6 +62,7 @@ export class UserHub {
 
       const userId = String(request.headers.get("X-Azurecord-User-Id") || "");
       const token = String(request.headers.get("X-Azurecord-Session") || "");
+      const selectedProtocol = String(request.headers.get("X-Azurecord-Protocol") || WS_PROTOCOL);
       if (!userId || !token) return new Response("Unauthorized", { status: 401 });
 
       const pair = new WebSocketPair();
@@ -73,7 +86,7 @@ export class UserHub {
       return new Response(null, {
         status: 101,
         webSocket: client,
-        headers: { "Sec-WebSocket-Protocol": WS_PROTOCOL },
+        headers: { "Sec-WebSocket-Protocol": selectedProtocol },
       });
     }
 
@@ -137,6 +150,19 @@ export class UserHub {
     }
   }
 
+  async peerIdsFor(session) {
+    try {
+      const response = await fetch(`${AZURECORD_API_URL}/api/realtime/peers`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!response.ok) return this.friendIdsFor(session);
+      const data = await response.json();
+      return (Array.isArray(data?.peers) ? data.peers : []).map(String).filter(Boolean);
+    } catch {
+      return this.friendIdsFor(session);
+    }
+  }
+
   async serverMemberIdsFor(session, serverId) {
     try {
       const response = await fetch(
@@ -173,7 +199,7 @@ export class UserHub {
       const status = ["online", "idle", "dnd", "offline"].includes(String(message.status))
         ? String(message.status)
         : "online";
-      const friendIds = await this.friendIdsFor(session);
+      const peerIds = await this.peerIdsFor(session);
       const event = {
         type: "presence.changed",
         eventId: crypto.randomUUID(),
@@ -183,7 +209,7 @@ export class UserHub {
       };
       await Promise.allSettled([
         this.notifyUser(session.userId, event),
-        ...friendIds.map(userId => this.notifyUser(userId, event)),
+        ...peerIds.map(userId => this.notifyUser(userId, event)),
       ]);
       return;
     }
@@ -394,7 +420,7 @@ export class UserHub {
       this.ctx.waitUntil((async () => {
         const others = this.ctx.getWebSockets().filter(socket => socket !== ws);
         if (others.length) return;
-        const friendIds = await this.friendIdsFor(session);
+        const peerIds = await this.peerIdsFor(session);
         const event = {
           type: "presence.changed",
           eventId: crypto.randomUUID(),
@@ -402,7 +428,7 @@ export class UserHub {
           status: "offline",
           at: Date.now(),
         };
-        await Promise.allSettled(friendIds.map(userId => this.notifyUser(userId, event)));
+        await Promise.allSettled(peerIds.map(userId => this.notifyUser(userId, event)));
       })());
     }
     try { ws.close(code, reason); } catch {}
@@ -421,7 +447,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.3.0",
+        version: "1.4.0",
         transport: "websocket",
         hibernation: true,
       });
@@ -432,20 +458,20 @@ export default {
       return json({ ok: false, error: "WebSocket upgrade required" }, 426);
     }
 
-    const protocols = parseProtocols(request);
-    if (!protocols.includes(WS_PROTOCOL)) {
+    const auth = websocketAuth(request);
+    if (!auth.selectedProtocol || !auth.token) {
       return json({ ok: false, error: "Unsupported WebSocket protocol" }, 400);
     }
 
-    const token = protocols.find(value => value !== WS_PROTOCOL) || "";
-    const user = await validateToken(token);
+    const user = await validateToken(auth.token);
     if (!user?.id) return json({ ok: false, error: "Unauthorized" }, 401);
 
     const hub = env.USER_HUB.get(env.USER_HUB.idFromName(String(user.id)));
     const headers = new Headers(request.headers);
     headers.set("X-Azurecord-User-Id", String(user.id));
-    headers.set("X-Azurecord-Session", token);
-    headers.set("Sec-WebSocket-Protocol", WS_PROTOCOL);
+    headers.set("X-Azurecord-Session", auth.token);
+    headers.set("X-Azurecord-Protocol", auth.selectedProtocol);
+    headers.set("Sec-WebSocket-Protocol", auth.selectedProtocol);
 
     return hub.fetch(new Request("https://hub.internal/connect", {
       method: "GET",

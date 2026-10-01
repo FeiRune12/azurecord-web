@@ -820,6 +820,37 @@ async function ensureSocialSchema(env) {
   await addColumnIfMissing(env, "channel_messages", "client_id", "TEXT");
   await addColumnIfMissing(env, "channel_messages", "files_json", "TEXT");
   await addColumnIfMissing(env, "channel_messages", "reply_json", "TEXT");
+  await addColumnIfMissing(env, "channel_messages", "poll_json", "TEXT");
+  await addColumnIfMissing(env, "channel_messages", "system_json", "TEXT");
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS user_presence (
+      user_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'offline',
+      custom_status TEXT,
+      last_seen_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS poll_votes (
+      message_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      option_index INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (message_id, user_id)
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS realtime_signals (
+      id TEXT PRIMARY KEY,
+      target_user_id TEXT NOT NULL,
+      source_user_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_realtime_signals_target_created ON realtime_signals(target_user_id, created_at)`).run();
   await addColumnIfMissing(env, "channels", "topic", "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(env, "servers", "icon", "TEXT");
   await addColumnIfMissing(env, "servers", "banner_url", "TEXT");
@@ -876,8 +907,28 @@ function socialUser(user) {
   };
 }
 
+function normalizedPresenceStatus(status) {
+  return ["online","idle","dnd","offline"].includes(String(status)) ? String(status) : "offline";
+}
+
+async function livePresenceFor(env, userId, fallbackStatus="online") {
+  const row = await env.DB.prepare(`
+    SELECT status, last_seen_at, updated_at FROM user_presence WHERE user_id = ? LIMIT 1
+  `).bind(userId).first();
+  if (!row) return "offline";
+  const seen = Date.parse(row.last_seen_at || row.updated_at || 0);
+  if (!Number.isFinite(seen) || Date.now() - seen > 65000) return "offline";
+  const live = normalizedPresenceStatus(row.status);
+  if (String(fallbackStatus) === "offline") return "offline";
+  return live;
+}
+
 async function socialUserById(env, id) {
-  return socialUser(await readUserById(env, id));
+  const base = await readUserById(env, id);
+  const user = socialUser(base);
+  if (!user) return null;
+  user.status = await livePresenceFor(env, id, base?.status || "online");
+  return user;
 }
 
 async function requireSocialAuth(request, env) {
@@ -1019,11 +1070,108 @@ async function listDms(env, userId) {
   return dms;
 }
 
+async function listServerMembers(env, serverId) {
+  const rows = await env.DB.prepare(`
+    SELECT user_id, role, nickname, joined_at
+    FROM server_members
+    WHERE server_id = ?
+    ORDER BY joined_at ASC
+  `).bind(serverId).all();
+  const members = [];
+  for (const row of rows.results || []) {
+    const user = await socialUserById(env, row.user_id);
+    if (!user) continue;
+    members.push({
+      ...user,
+      role: row.role || "Membro",
+      nickname: row.nickname || "",
+      joinedAt: row.joined_at || null,
+    });
+  }
+  return members;
+}
+
+async function realtimePeerIds(env, userId) {
+  const ids = new Set();
+  const friends = await env.DB.prepare(`
+    SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS peer_id
+    FROM friendships WHERE user_a = ? OR user_b = ?
+  `).bind(userId, userId, userId).all();
+  for (const row of friends.results || []) if (row.peer_id && row.peer_id !== userId) ids.add(String(row.peer_id));
+
+  const shared = await env.DB.prepare(`
+    SELECT DISTINCT other.user_id AS peer_id
+    FROM server_members mine
+    JOIN server_members other ON other.server_id = mine.server_id
+    WHERE mine.user_id = ? AND other.user_id <> ?
+    LIMIT 500
+  `).bind(userId, userId).all();
+  for (const row of shared.results || []) if (row.peer_id) ids.add(String(row.peer_id));
+  return [...ids];
+}
+
+async function presencePayloadForPeers(env, userId) {
+  const ids = await realtimePeerIds(env, userId);
+  const presence = [];
+  for (const id of ids) {
+    presence.push({ userId: id, status: await livePresenceFor(env, id, "online") });
+  }
+  return presence;
+}
+
+function cleanPoll(value) {
+  if (!value || typeof value !== "object") return null;
+  const question = cleanText(value.question || "", 240);
+  const options = (Array.isArray(value.options) ? value.options : [])
+    .map(x => cleanText(x, 120))
+    .filter(Boolean)
+    .slice(0, 6);
+  if (!question || options.length < 2) return null;
+  return { question, options };
+}
+
+async function pollPublic(env, row, userId) {
+  const poll = cleanPoll(parseJsonValue(row?.poll_json, null));
+  if (!poll || !row?.id) return null;
+  const counts = Array(poll.options.length).fill(0);
+  const grouped = await env.DB.prepare(`
+    SELECT option_index, COUNT(*) AS n
+    FROM poll_votes
+    WHERE message_id = ?
+    GROUP BY option_index
+  `).bind(row.id).all();
+  for (const vote of grouped.results || []) {
+    const idx = Number(vote.option_index);
+    if (Number.isInteger(idx) && idx >= 0 && idx < counts.length) counts[idx] = Number(vote.n || 0);
+  }
+  const mine = await env.DB.prepare(`SELECT option_index FROM poll_votes WHERE message_id = ? AND user_id = ? LIMIT 1`).bind(row.id, userId).first();
+  return {
+    ...poll,
+    votes: counts,
+    totalVotes: counts.reduce((a,b)=>a+b,0),
+    myVote: Number.isInteger(Number(mine?.option_index)) ? Number(mine.option_index) : null,
+  };
+}
+
+function cleanCallSignal(value) {
+  if (!value || typeof value !== "object") return null;
+  const kind = String(value.kind || "");
+  const callId = String(value.callId || "").slice(0, 120);
+  const callType = ["voice","video","screen"].includes(String(value.callType)) ? String(value.callType) : "voice";
+  if (!callId || !["ring","offer","answer","ice","hangup","decline","busy"].includes(kind)) return null;
+  const out = { kind, callId, callType };
+  if ((kind === "offer" || kind === "answer") && value.description && typeof value.description === "object") out.description = value.description;
+  if (kind === "ice" && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
+  if (value.reason) out.reason = String(value.reason).slice(0, 80);
+  return JSON.stringify(out).length <= 180000 ? out : null;
+}
+
 async function serverPublic(env, row, userId) {
   if (!row) return null;
   const membership = await env.DB.prepare(`SELECT role FROM server_members WHERE server_id = ? AND user_id = ? LIMIT 1`).bind(row.id, userId).first();
   const invite = await env.DB.prepare(`SELECT code FROM server_invites WHERE server_id = ? ORDER BY created_at DESC LIMIT 1`).bind(row.id).first();
   const channels = await env.DB.prepare(`SELECT * FROM channels WHERE server_id = ? ORDER BY position ASC, created_at ASC`).bind(row.id).all();
+  const members = await listServerMembers(env, row.id);
   return {
     id: row.id,
     name: row.name,
@@ -1037,6 +1185,8 @@ async function serverPublic(env, row, userId) {
     description: row.description || "Comunidade do Azurecord.",
     createdAt: row.created_at,
     myRole: row.owner_id === userId ? "Admin" : (membership?.role || "Membro"),
+    memberCount: members.length,
+    members,
     channels: (channels.results || []).map(c => ({
       id: c.id,
       serverId: c.server_id,
@@ -1101,6 +1251,64 @@ async function handleSocial(request, env, url, path) {
   }
   if (path === "/api/settings" && method === "PATCH") {
     return await updateUserSettings(request, env, userId);
+  }
+
+  if (path === "/api/presence/heartbeat" && method === "POST") {
+    const body = await readJson(request) || {};
+    const status = normalizedPresenceStatus(body.status || "online");
+    const stamp = nowIso();
+    await env.DB.prepare(`
+      INSERT INTO user_presence (user_id, status, custom_status, last_seen_at, updated_at)
+      VALUES (?, ?, NULL, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET status = excluded.status, last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at
+    `).bind(userId, status, stamp, stamp).run();
+    return json({ ok: true, status, presence: await presencePayloadForPeers(env, userId), serverTime: stamp });
+  }
+
+  if (path === "/api/realtime/peers" && method === "GET") {
+    return json({ ok: true, peers: await realtimePeerIds(env, userId) });
+  }
+
+  if (path === "/api/realtime/signals" && method === "POST") {
+    const body = await readJson(request) || {};
+    const targetUserId = String(body.targetUserId || "");
+    const signal = cleanCallSignal(body.signal);
+    if (!targetUserId || targetUserId === userId || !signal) return json({ error: "invalid_signal", message: "Sinal de chamada inválido." }, 400);
+    if (!(await friendshipExists(env, userId, targetUserId))) return json({ error: "forbidden", message: "Chamadas são permitidas entre amigos." }, 403);
+    const stamp = nowIso();
+    const expiresAt = new Date(Date.now() + 90_000).toISOString();
+    const id = crypto.randomUUID();
+    await env.DB.prepare(`DELETE FROM realtime_signals WHERE expires_at < ?`).bind(stamp).run();
+    await env.DB.prepare(`
+      INSERT INTO realtime_signals (id, target_user_id, source_user_id, payload_json, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(id, targetUserId, userId, JSON.stringify(signal), stamp, expiresAt).run();
+    return json({ ok: true, eventId: id, createdAt: stamp }, 201);
+  }
+
+  if (path === "/api/realtime/signals" && method === "GET") {
+    const sinceRaw = String(url.searchParams.get("since") || "");
+    const sinceMs = Number(sinceRaw) || (Date.now() - 5000);
+    const sinceIso = new Date(Math.max(Date.now() - 120_000, sinceMs - 2000)).toISOString();
+    const stamp = nowIso();
+    await env.DB.prepare(`DELETE FROM realtime_signals WHERE expires_at < ?`).bind(stamp).run();
+    const rows = await env.DB.prepare(`
+      SELECT id, source_user_id, payload_json, created_at
+      FROM realtime_signals
+      WHERE target_user_id = ? AND created_at >= ? AND expires_at >= ?
+      ORDER BY created_at ASC
+      LIMIT 100
+    `).bind(userId, sinceIso, stamp).all();
+    return json({
+      ok: true,
+      signals: (rows.results || []).map(row => ({
+        eventId: row.id,
+        fromUserId: row.source_user_id,
+        signal: parseJsonValue(row.payload_json, null),
+        at: Date.parse(row.created_at) || Date.now(),
+      })).filter(x => x.signal),
+      serverTime: Date.now(),
+    });
   }
 
   if (method === "GET" && path === "/api/social/snapshot") {
@@ -1403,15 +1611,41 @@ async function handleSocial(request, env, url, path) {
     const server = await env.DB.prepare(`SELECT * FROM servers WHERE id = ? LIMIT 1`).bind(invite.server_id).first();
     if (!server) return json({ error: "server_not_found", message: "Servidor não encontrado." }, 404);
     const existing = await env.DB.prepare(`SELECT role FROM server_members WHERE server_id = ? AND user_id = ? LIMIT 1`).bind(server.id, userId).first();
+    let welcomeMessage = null;
+    let welcomeChannelId = null;
     if (!existing) {
       const stamp = nowIso();
-      await env.DB.batch([
+      const general = await env.DB.prepare(`
+        SELECT id FROM channels WHERE server_id = ? AND type = 'text'
+        ORDER BY CASE WHEN LOWER(name) = 'geral' THEN 0 ELSE 1 END, position ASC, created_at ASC
+        LIMIT 1
+      `).bind(server.id).first();
+      const welcomeId = general?.id ? crypto.randomUUID() : null;
+      const username = authResult.auth.user.username || authResult.auth.user.displayName || "Novo membro";
+      const welcomeText = `👋 ${username} entrou no servidor. Boas-vindas!`;
+      const statements = [
         env.DB.prepare(`INSERT INTO server_members (server_id, user_id, role, nickname, joined_at) VALUES (?, ?, 'Membro', NULL, ?)`).bind(server.id, userId, stamp),
         env.DB.prepare(`UPDATE server_invites SET uses = uses + 1 WHERE id = ?`).bind(invite.id),
-      ]);
+      ];
+      if (general?.id && welcomeId) {
+        statements.push(env.DB.prepare(`
+          INSERT INTO channel_messages (id, channel_id, sender_id, content, created_at, edited_at, deleted_at, client_id, files_json, reply_json, system_json)
+          VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, '[]', NULL, ?)
+        `).bind(welcomeId, general.id, userId, welcomeText, stamp, JSON.stringify({ type: "member_join", userId, username })));
+      }
+      await env.DB.batch(statements);
+      if (general?.id && welcomeId) {
+        welcomeChannelId = general.id;
+        welcomeMessage = {
+          id: welcomeId, channelId: general.id, serverId: server.id, senderId: userId,
+          author: await socialUserById(env, userId), text: welcomeText, time: Date.parse(stamp), createdAt: stamp,
+          files: [], file: null, replyTo: null, edited: false, deleted: false,
+          system: { type: "member_join", userId, username },
+        };
+      }
     }
     const output = await serverPublic(env, server, userId);
-    return json({ server: output, channels: output.channels, alreadyMember: !!existing }, existing ? 200 : 201);
+    return json({ server: output, channels: output.channels, alreadyMember: !!existing, welcomeMessage, welcomeChannelId }, existing ? 200 : 201);
   }
 
   if (parts[0] === "api" && parts[1] === "servers" && parts[2]) {
@@ -1472,6 +1706,12 @@ async function handleSocial(request, env, url, path) {
       }
     }
 
+    if (parts[3] === "members" && parts.length === 4 && method === "GET") {
+      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
+      const members = await listServerMembers(env, serverId);
+      return json({ ok: true, members, memberCount: members.length });
+    }
+
     if (parts[3] === "members" && parts[4]) {
       const targetId = parts[4];
       if (!manager) return json({ error: "forbidden", message: "Sem permissão para gerenciar membros." }, 403);
@@ -1498,17 +1738,6 @@ async function handleSocial(request, env, url, path) {
       if (membership.server.owner_id !== userId) return json({ error: "forbidden", message: "Apenas o dono pode excluir o servidor." }, 403);
       await env.DB.prepare(`DELETE FROM servers WHERE id = ?`).bind(serverId).run();
       return json({ removed: true });
-    }
-
-    if (method === "GET" && parts[3] === "members") {
-      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
-      const rows = await env.DB.prepare(`SELECT user_id, role FROM server_members WHERE server_id = ? ORDER BY joined_at ASC`).bind(serverId).all();
-      const members = [];
-      for (const row of rows.results || []) {
-        const user = await socialUserById(env, row.user_id);
-        if (user) members.push({ ...user, serverRole: row.user_id === membership.server.owner_id ? "Admin" : (row.role || "Membro") });
-      }
-      return json({ members });
     }
 
     if (parts[3] === "channels" && parts.length === 4 && method === "GET") {
@@ -1561,6 +1790,25 @@ async function handleSocial(request, env, url, path) {
       if (!channel) return json({ error: "channel_not_found", message: "Canal não encontrado." }, 404);
       if (channel.type !== "text") return json({ error: "not_text_channel", message: "Este canal não aceita mensagens de texto." }, 400);
 
+      if (parts[6] && parts[7] === "poll-vote" && method === "POST") {
+        const messageId = parts[6];
+        const row = await env.DB.prepare(`SELECT * FROM channel_messages WHERE id = ? AND channel_id = ? AND deleted_at IS NULL LIMIT 1`).bind(messageId, channelId).first();
+        if (!row) return json({ error: "message_not_found", message: "Mensagem não encontrada." }, 404);
+        const poll = cleanPoll(parseJsonValue(row.poll_json, null));
+        if (!poll) return json({ error: "not_poll", message: "Essa mensagem não é uma enquete." }, 400);
+        const body = await readJson(request) || {};
+        const optionIndex = Number(body.optionIndex);
+        if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= poll.options.length) {
+          return json({ error: "invalid_option", message: "Opção inválida." }, 400);
+        }
+        await env.DB.prepare(`
+          INSERT INTO poll_votes (message_id, user_id, option_index, updated_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(message_id, user_id) DO UPDATE SET option_index = excluded.option_index, updated_at = excluded.updated_at
+        `).bind(messageId, userId, optionIndex, nowIso()).run();
+        return json({ ok: true, poll: await pollPublic(env, row, userId), messageId });
+      }
+
       if (method === "GET") {
         const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 100));
         const rows = await env.DB.prepare(`SELECT * FROM channel_messages WHERE channel_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT ?`).bind(channelId, limit).all();
@@ -1580,6 +1828,8 @@ async function handleSocial(request, env, url, path) {
             files: parseJsonValue(row.files_json, []),
             file: parseJsonValue(row.files_json, [])[0] || null,
             replyTo: parseJsonValue(row.reply_json, null),
+            poll: await pollPublic(env, row, userId),
+            system: parseJsonValue(row.system_json, null),
             edited: !!row.edited_at,
             deleted: !!row.deleted_at,
           });
@@ -1589,13 +1839,33 @@ async function handleSocial(request, env, url, path) {
 
       if (method === "POST") {
         const body = await readJson(request);
-        const text = cleanText(body?.text, 6000);
+        const poll = cleanPoll(body?.poll);
+        const text = cleanText(body?.text || (poll ? `📊 ${poll.question}` : ""), 6000);
         const files = cleanFiles(body?.files || []);
-        if (!text && !files.length) return json({ error: "invalid_message", message: "Mensagem vazia." }, 400);
+        if (!text && !files.length && !poll) return json({ error: "invalid_message", message: "Mensagem vazia." }, 400);
         const clientId = String(body?.clientId || "").slice(0, 120);
         if (clientId) {
           const duplicate = await env.DB.prepare(`SELECT * FROM channel_messages WHERE sender_id = ? AND client_id = ? LIMIT 1`).bind(userId, clientId).first();
-          if (duplicate) return json({ message: { id: duplicate.id, senderId: duplicate.sender_id, text: duplicate.content, clientId, time: Date.parse(duplicate.created_at) || Date.now() }, duplicate: true });
+          if (duplicate) {
+            return json({ message: {
+              id: duplicate.id,
+              senderId: duplicate.sender_id,
+              author: await socialUserById(env, duplicate.sender_id),
+              text: duplicate.content || "",
+              clientId,
+              channelId,
+              serverId,
+              time: Date.parse(duplicate.created_at) || Date.now(),
+              createdAt: duplicate.created_at,
+              files: parseJsonValue(duplicate.files_json, []),
+              file: parseJsonValue(duplicate.files_json, [])[0] || null,
+              replyTo: parseJsonValue(duplicate.reply_json, null),
+              poll: await pollPublic(env, duplicate, userId),
+              system: parseJsonValue(duplicate.system_json, null),
+              edited: !!duplicate.edited_at,
+              deleted: !!duplicate.deleted_at,
+            }, duplicate: true });
+          }
         }
         const stamp = nowIso();
         const id = crypto.randomUUID();
@@ -1612,6 +1882,8 @@ async function handleSocial(request, env, url, path) {
             client_id: clientId || null,
             files_json: JSON.stringify(files),
             reply_json: body?.replyTo ? JSON.stringify(body.replyTo) : null,
+            poll_json: poll ? JSON.stringify(poll) : null,
+            system_json: null,
           });
         } catch (error) {
           console.error("AZURECORD CHANNEL SEND ERROR", { message: String(error?.message || error), userId, serverId, channelId });
@@ -1622,7 +1894,8 @@ async function handleSocial(request, env, url, path) {
           }, 500);
         }
 
-        return json({ message: { id, clientId: clientId || null, channelId, serverId, senderId: userId, author: socialUser(authResult.auth.user), text, time: Date.parse(stamp), createdAt: stamp, files, file: files[0] || null, replyTo: body?.replyTo || null, edited: false, deleted: false } }, 201);
+        const inserted = await env.DB.prepare(`SELECT * FROM channel_messages WHERE id = ? LIMIT 1`).bind(id).first();
+        return json({ message: { id, clientId: clientId || null, channelId, serverId, senderId: userId, author: await socialUserById(env, userId), text, time: Date.parse(stamp), createdAt: stamp, files, file: files[0] || null, replyTo: body?.replyTo || null, poll: await pollPublic(env, inserted, userId), system: null, edited: false, deleted: false } }, 201);
       }
     }
   }
@@ -2223,7 +2496,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "0.8.2",
+          version: "0.8.3",
         });
       }
 
@@ -2252,6 +2525,10 @@ export default {
             webClient: true,
         friendSearchV2: true,
         reliableMessaging: true,
+        realtimeHttpFallback: true,
+        livePresence: true,
+        serverMemberList: true,
+        cloudPolls: true,
         largeAttachments: Boolean(env.ATTACHMENTS),
         attachmentStorage: env.ATTACHMENTS ? "r2-multipart" : "disabled",
           },

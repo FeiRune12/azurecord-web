@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "private": true,
-  "description": "Azurecord 1.0: realtime, R2, multiline e AzureCall WebRTC com reconexão automática.",
+  "description": "Azurecord 1.0: AzureCall resiliente, presença entre dispositivos, membros reais, boas-vindas e enquetes Cloud.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
