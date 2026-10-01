@@ -1,1 +1,1 @@
-Azurecord 3.0.3 Profile Presence Selector
+Azurecord 3.0.4 Presence Buttons and R2 Attachments
