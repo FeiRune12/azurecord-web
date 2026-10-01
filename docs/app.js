@@ -1291,7 +1291,7 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  const APP_CORRECTION_NOTICE={id:'3.0.5-hotfix-profile-status-layout-20261001',title:'Correção rápida aplicada',body:'O balão de status do perfil agora possui uma linha própria e não cobre mais o nome do usuário.'};
+  const APP_CORRECTION_NOTICE={id:'3.0.5-hotfix-android-media-permissions-20261001',title:'Correção rápida aplicada',body:'O Android agora solicita câmera e microfone ao abrir e reconhece corretamente permissões já concedidas nas chamadas.'};
   function announceAppCorrection(){
     if(!currentUser())return;
     const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
@@ -3812,13 +3812,31 @@
   let nativeCallPermissionWaiters=[];
   async function ensureNativeCallPermissions(wantsCamera=false){
     if(!isNativeAndroidCallDevice()||typeof window.AzurecordNative?.requestCallPermissions!=='function')return true;
+    try{
+      if(typeof window.AzurecordNative?.hasCallPermissions==='function'&&window.AzurecordNative.hasCallPermissions(!!wantsCamera))return true;
+    }catch{}
     return await new Promise(resolve=>{
-      const timeout=setTimeout(()=>{nativeCallPermissionWaiters=nativeCallPermissionWaiters.filter(x=>x!==done);resolve(false);},15000);
-      const done=ok=>{clearTimeout(timeout);nativeCallPermissionWaiters=nativeCallPermissionWaiters.filter(x=>x!==done);resolve(!!ok);};
+      const timeout=setTimeout(()=>{
+        nativeCallPermissionWaiters=nativeCallPermissionWaiters.filter(x=>x!==done);
+        try{
+          if(typeof window.AzurecordNative?.hasCallPermissions==='function')return resolve(!!window.AzurecordNative.hasCallPermissions(!!wantsCamera));
+        }catch{}
+        resolve(false);
+      },15000);
+      const done=ok=>{
+        clearTimeout(timeout);
+        nativeCallPermissionWaiters=nativeCallPermissionWaiters.filter(x=>x!==done);
+        if(ok){resolve(true);return;}
+        try{
+          if(typeof window.AzurecordNative?.hasCallPermissions==='function')return resolve(!!window.AzurecordNative.hasCallPermissions(!!wantsCamera));
+        }catch{}
+        resolve(false);
+      };
       nativeCallPermissionWaiters.push(done);
       try{
         const immediate=window.AzurecordNative.requestCallPermissions(!!wantsCamera);
         if(immediate===false)done(false);
+        else if(typeof window.AzurecordNative?.hasCallPermissions==='function'&&window.AzurecordNative.hasCallPermissions(!!wantsCamera))done(true);
       }catch{done(false);}
     });
   }
