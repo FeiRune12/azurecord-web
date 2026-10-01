@@ -40,6 +40,10 @@ object AzurecordUpdater {
 
     fun schedule(context: Context) {
         val appContext = context.applicationContext
+        val installedReady = readyVersion(appContext)
+        if (installedReady != null && compareVersions(installedReady, BuildConfig.VERSION_NAME) <= 0) {
+            clearReady(appContext)
+        }
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
@@ -280,6 +284,18 @@ object AzurecordUpdater {
     private fun cancelReadyNotification(context: Context) {
         context.getSystemService(NotificationManager::class.java)
             .cancel(UPDATE_NOTIFICATION_ID)
+    }
+
+    private fun compareVersions(a: String, b: String): Int {
+        val left = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val right = b.split(".").map { it.toIntOrNull() ?: 0 }
+        val size = maxOf(left.size, right.size)
+        for (i in 0 until size) {
+            val x = left.getOrElse(i) { 0 }
+            val y = right.getOrElse(i) { 0 }
+            if (x != y) return x.compareTo(y)
+        }
+        return 0
     }
 
     private fun prefs(context: Context) =
