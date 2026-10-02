@@ -23,7 +23,7 @@ test('2.0.3: conversa aberta faz fallback rapido mesmo com websocket conectado',
 
 test('2.0.3: versao do cliente esta correta',()=>{
   const pkg=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
-  assert.equal(pkg.version,'4.0.2');
+  assert.equal(pkg.version,'4.0.3');
 });
 
 test('2.0.3: AzureCall busca ICE dinamico e API suporta TURN seguro',()=>{
