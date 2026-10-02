@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Azurecord 4.0.0 synchronized mobile/desktop release
 android {
     namespace = "com.azurecord.app"
     compileSdk = 36
