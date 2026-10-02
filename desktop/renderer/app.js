@@ -2,6 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.5');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -2051,6 +2052,7 @@
     const session=serverVoiceSession;if(!session)return;
     const peer=session.peers.get(String(peerId));if(!peer)return;
     try{peer.pc?.close?.();}catch{}
+    try{peer.nativeScreenPc?.close?.();}catch{}
     try{peer.audio?.remove?.();}catch{}
     session.peers.delete(String(peerId));session.participantIds.delete(String(peerId));
     renderServerChannels();renderServerVoiceModal();
@@ -2099,6 +2101,52 @@
       directCallSignal(peerId,{...serverVoiceSignalBase(session,'server-voice-offer'),description:peer.pc.localDescription});
     }catch(err){console.warn('[AzureCall] server voice offer:',err?.message||err);}
     finally{peer.makingOffer=false;}
+  }
+  async function ensureServerNativeScreenReceiver(peerId){
+    const session=serverVoiceSession;if(!session)return null;
+    const peer=await ensureServerVoicePeer(peerId);if(!peer)return null;
+    if(peer.nativeScreenPc)return peer.nativeScreenPc;
+    await ensureAzureCallIceConfig();
+    const pc=new RTCPeerConnection(azureCallRtcConfig);
+    peer.nativeScreenPc=pc;peer.nativeScreenPendingIce=[];
+    pc.onicecandidate=e=>{if(e.candidate&&serverVoiceSession===session)directCallSignal(String(peerId),{kind:'native-screen-ice',callId:session.roomId,callType:'screen',candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
+    pc.ontrack=e=>{
+      const track=e.track;if(!track||track.kind!=='video')return;
+      peer.videoStream=new MediaStream([track]);
+      track.onunmute=()=>{if(serverVoiceSession===session)renderServerVoiceModal();};
+      track.onended=()=>{if(peer.videoStream?.getTracks?.().includes(track))peer.videoStream=null;renderServerVoiceModal();};
+      renderServerVoiceModal();
+    };
+    pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState)){try{pc.close();}catch{}if(peer.nativeScreenPc===pc)peer.nativeScreenPc=null;}};
+    return pc;
+  }
+  async function handleServerNativeScreenSignal(event){
+    const session=serverVoiceSession,signal=event?.signal||{},kind=String(signal.kind||''),from=String(event?.fromUserId||'');
+    if(!session||!from||from===String(state.currentAccountId)||String(signal.callId||'')!==String(session.roomId))return false;
+    if(!['native-screen-offer','native-screen-ice','native-screen-stop','screen-share-start','screen-share-stop'].includes(kind))return false;
+    const peer=await ensureServerVoicePeer(from);if(!peer)return true;
+    if(kind==='screen-share-start'){session.participantIds.add(from);renderServerVoiceModal();return true;}
+    if(kind==='screen-share-stop'||kind==='native-screen-stop'){
+      try{peer.nativeScreenPc?.close?.();}catch{}peer.nativeScreenPc=null;peer.nativeScreenPendingIce=[];peer.videoStream=null;renderServerVoiceModal();return true;
+    }
+    if(kind==='native-screen-ice'){
+      if(!signal.candidate)return true;
+      const pc=peer.nativeScreenPc;
+      if(pc?.remoteDescription){try{await pc.addIceCandidate(signal.candidate);}catch{}}
+      else{peer.nativeScreenPendingIce=peer.nativeScreenPendingIce||[];peer.nativeScreenPendingIce.push(signal.candidate);}
+      return true;
+    }
+    if(kind==='native-screen-offer'){
+      const pc=await ensureServerNativeScreenReceiver(from);if(!pc||!signal.description)return true;
+      if(pc.signalingState!=='stable'){try{await pc.setLocalDescription({type:'rollback'});}catch{}}
+      await pc.setRemoteDescription(signal.description);
+      for(const candidate of peer.nativeScreenPendingIce||[]){try{await pc.addIceCandidate(candidate);}catch{}}
+      peer.nativeScreenPendingIce=[];
+      const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+      directCallSignal(from,{kind:'native-screen-answer',callId:session.roomId,callType:'screen',description:pc.localDescription});
+      renderServerVoiceModal();return true;
+    }
+    return true;
   }
   async function handleServerVoiceSignal(event){
     const signal=event?.signal||{},kind=String(signal.kind||'');
@@ -3579,7 +3627,7 @@
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
     if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Avatar e banner</strong><p>O banner não possui mais limite artificial de MB na seleção. O Azurecord abre o recorte e compacta a área escolhida antes de salvar, evitando mandar a imagem bruta gigantesca para a conta.</p></div></div>`;
     if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>AzureCall 2.0 ativo</strong><p>Voz, vídeo e compartilhamento usam WebRTC com trilhas separadas para câmera e tela. Qualquer lado da chamada pode transmitir, inclusive no navegador móvel quando a captura nativa estiver disponível.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn active" disabled>▣ Vídeo</button><button class="choice-btn active" disabled>▤ Tela</button></div></div></div>`;
-    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord 2.0.8</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
+    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord ${esc(AZURECORD_VERSION)}</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
   function bindAppSettings(tab){
@@ -4776,6 +4824,7 @@
     activeCall=null;setNativeAndroidCallActive(false);scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
   }
   async function handleCallSignalEvent(event){
+    if(await handleServerNativeScreenSignal(event))return;
     if(await handleServerVoiceSignal(event))return;
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
     if(!from||!callId)return;
