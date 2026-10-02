@@ -1672,3 +1672,21 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .server-voice-tile{min-height:180px}
   .server-voice-avatar{width:72px;height:72px}
 }
+
+
+/* Azurecord 4.0.3: menu rápido completo do servidor */
+.server-quick-menu{position:fixed;z-index:9000;width:250px;max-height:min(560px,calc(100vh - 20px));overflow:auto;padding:7px;background:#2b2d31;border:1px solid rgba(255,255,255,.07);border-radius:8px;box-shadow:0 14px 38px rgba(0,0,0,.46)}
+.server-quick-menu button{width:100%;min-height:36px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:8px 9px;border:0;border-radius:4px;background:transparent;color:#dbdee1;text-align:left;font:600 13px/1.2 inherit;cursor:pointer}
+.server-quick-menu button:hover{background:#404249;color:#fff}
+.server-quick-menu button.danger{color:#f06a6a}
+.server-quick-menu button.danger:hover{background:#da373c;color:#fff}
+.server-quick-menu button small{font-size:10px;font-weight:500;color:#949ba4;white-space:nowrap}
+.server-menu-sep{height:1px;margin:5px 3px;background:rgba(255,255,255,.08)}
+.server-menu-check{width:18px;height:18px;border:1px solid #7d828b;border-radius:4px;display:grid;place-items:center;font-size:12px}
+.server-option-list{display:grid;gap:8px;margin:14px 0}
+.server-option{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:9px;background:rgba(255,255,255,.025);cursor:pointer}
+.server-option input{margin-top:4px}
+.server-option span{display:grid;gap:3px}
+.server-option small{color:var(--muted)}
+.channel-item.channel-muted{opacity:.58}
+@media (max-width:760px){.server-quick-menu{width:min(270px,calc(100vw - 20px))}}
