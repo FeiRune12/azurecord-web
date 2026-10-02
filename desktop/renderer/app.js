@@ -931,7 +931,7 @@
       const remoteServerId=String(event.serverId||'');await hydrateFromCloudSocial({quiet:true});
       const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId);
       if(srv){
-        await refreshServerMembers(srv.id,{quiet:true});
+        await refreshServerMembers(srv.id,{quiet:true,force:true});
         if(view.mode==='server'&&view.serverId===srv.id)renderShell();
         if(serverVoiceSession?.serverId===srv.id)renderServerVoiceModal();
       }
@@ -1899,6 +1899,7 @@
     view.dmUserId=null;
     hideContext();
     requestRenderShell();
+    void refreshServerMembers(view.serverId,{quiet:true,force:true});
     void syncChannelMessages(view.serverId,view.channelId);
   }
   async function syncChannelMessages(serverId, channelId){
@@ -3148,11 +3149,11 @@
   function closeProfilePeekOnOutside(e){const panel=$('profilePeek');if(!panel||panel.hidden)return;if(e.target.closest('#profilePeek'))return;if(e.target.closest('[data-profile-msg], [data-member], #userBar, #chatTitleTrigger'))return;closeProfilePeek();}
   function hideContext(){ $('contextMenu').hidden=true; }
 
-  async function refreshServerMembers(serverId,{quiet=true}={}){
+  async function refreshServerMembers(serverId,{quiet=true,force=false}={}){
     const server=getServer(serverId);if(!server||!socialCloudReady())return false;
     const remoteId=server.backendId||server.id;
     if(server._membersLoading)return false;
-    if(quiet&&server._membersFetchedAt&&Date.now()-server._membersFetchedAt<8000)return true;
+    if(!force&&quiet&&server._membersFetchedAt&&Date.now()-server._membersFetchedAt<3500)return true;
     server._membersLoading=true;
     try{
       const data=await socialRequest('/api/servers/'+encodeURIComponent(remoteId)+'/members');
@@ -3169,7 +3170,7 @@
     if(view.mode!=='server'||!view.showMembers){panel.hidden=true;return;}
     panel.hidden=false;
     const server=getServer(view.serverId);
-    if(server&&!server._membersLoading&&(!server._membersFetchedAt||Date.now()-server._membersFetchedAt>8000))void refreshServerMembers(server.id,{quiet:true});
+    if(server&&!server._membersLoading&&(!server._membersFetchedAt||Date.now()-server._membersFetchedAt>3500))void refreshServerMembers(server.id,{quiet:true});
     const members=Array.isArray(server?.members)?server.members.filter(Boolean):[];
     for(const member of members)hydrateRemoteUser(member);
     const onlineCount=members.filter(member=>resolvedPresence(member.id)!=='offline').length;
@@ -3185,6 +3186,19 @@
     $('memberList').innerHTML=head+(rows||'<div class="dm-empty">Nenhum membro encontrado.</div>');
     $$('#memberList [data-member]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();openProfilePeek(b.dataset.member,b);});
   }
+  let serverMemberWatchTimer=null;
+  function stopServerMemberWatch(){clearInterval(serverMemberWatchTimer);serverMemberWatchTimer=null;}
+  function startServerMemberWatch(){
+    stopServerMemberWatch();
+    serverMemberWatchTimer=setInterval(()=>{
+      if(document.hidden||view.mode!=='server'||!view.serverId||!socialCloudReady())return;
+      void refreshServerMembers(view.serverId,{quiet:true,force:true});
+    },10000);
+  }
+  window.addEventListener('focus',()=>{if(view.mode==='server'&&view.serverId)void refreshServerMembers(view.serverId,{quiet:true,force:true});});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&view.mode==='server'&&view.serverId)void refreshServerMembers(view.serverId,{quiet:true,force:true});});
+  startServerMemberWatch();
+
   function openProfilePeek(id,anchorEl=null){
     const p=getProfile(id); if(!p)return;
     selectedProfile=id; view.showProfile=true;
