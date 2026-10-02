@@ -1,1 +1,1 @@
-Azurecord 4.0.2 Live Server Members + Vercel Mirror
+Azurecord 4.0.3 Server Menu + Leave Server + Persistent Membership
