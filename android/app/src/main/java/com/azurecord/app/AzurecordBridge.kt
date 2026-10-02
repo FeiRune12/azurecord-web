@@ -39,6 +39,9 @@ class AzurecordBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun getAppVersion(): String = BuildConfig.VERSION_NAME
+
+    @JavascriptInterface
     fun isNativeAndroid(): Boolean = true
 }
 
