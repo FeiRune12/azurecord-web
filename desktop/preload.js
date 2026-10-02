@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('azurecordDesktop', {
   platform: process.platform,
   version: process.versions.electron,
+  appVersion: require('./package.json').version,
   getBackendInfo: () => ipcRenderer.invoke('desktop:backend-info'),
   notify: (title, body) => ipcRenderer.invoke('desktop:notify', { title, body }),
   getSecureSession: () => ipcRenderer.invoke('desktop:secure-session-get'),
