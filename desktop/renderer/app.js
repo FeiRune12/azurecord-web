@@ -781,7 +781,13 @@
   }
   function registerServerMention(serverId,channelId,message){
     if(!messageMentionsCurrentUser(message))return false;
-    state.mentionCounts=state.mentionCounts||{};const key=String(serverId)+'|'+String(channelId);
+    state.mentionCounts=state.mentionCounts||{};state.mentionSeen=state.mentionSeen||{};
+    const messageKey=String(message?.id||message?.serverId||message?.clientId||'');
+    const seenKey=String(serverId)+'|'+String(channelId)+'|'+messageKey;
+    if(messageKey&&state.mentionSeen[seenKey])return false;
+    if(messageKey)state.mentionSeen[seenKey]=Date.now();
+    const stale=Date.now()-7*24*60*60*1000;for(const [k,v] of Object.entries(state.mentionSeen))if(Number(v)<stale)delete state.mentionSeen[k];
+    const key=String(serverId)+'|'+String(channelId);
     if(view.mode==='server'&&String(view.serverId)===String(serverId)&&String(view.channelId)===String(channelId)){state.mentionCounts[key]=0;return false;}
     state.mentionCounts[key]=(Number(state.mentionCounts[key])||0)+1;return true;
   }
@@ -1838,7 +1844,7 @@
         }
         button.appendChild(iconFrame);
         const mentionCount=serverMentionCount(s.id);
-        if(mentionCount>0){const badge=document.createElement('span');badge.className='server-mention-badge';badge.textContent=mentionCount>99?'99+':String(mentionCount);badge.style.setProperty('--mention-accent',currentUser()?.accent||'#5865f2');badge.setAttribute('aria-label',mentionCount+' menções não lidas');button.appendChild(badge);}
+        if(mentionCount>0){const badge=document.createElement('span');badge.className='server-mention-badge';badge.textContent=mentionCount>99?'99+':String(mentionCount);badge.style.setProperty('--mention-accent',currentUser()?.accent||'#5865f2');badge.style.setProperty('--mention-accent-soft',(currentUser()?.accent||'#5865f2')+'55');badge.setAttribute('aria-label',mentionCount+' menções não lidas');button.appendChild(badge);}
         if(state.unread?.[`server:${s.id}`]){
           const marker=document.createElement('span');
           marker.className='server-unread-marker';
@@ -3118,8 +3124,11 @@
       }
     }
   }
+  const channelSendLocks=new Map();
   async function sendChannelMessageToBackend(m,serverId,channelId,{quiet=false}={}){
-    if(!m||m.sending||m.serverId)return !!m?.serverId;
+    if(!m||m.serverId)return !!m?.serverId;
+    if(channelSendLocks.has(m.id))return channelSendLocks.get(m.id);
+    const task=(async()=>{
     const srv=getServer(serverId),ch=getChannel(serverId,channelId);
     if(!srv||!ch)return false;
     const inView=()=>view.mode==='server'&&view.serverId===serverId&&view.channelId===channelId;
@@ -3150,6 +3159,9 @@
       const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout';
       return fail(err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio'),{retryable});
     }finally{m.sending=false;}
+    })();
+    channelSendLocks.set(m.id,task);
+    try{return await task;}finally{if(channelSendLocks.get(m.id)===task)channelSendLocks.delete(m.id);}
   }
 
   async function flushPendingChannels(){
