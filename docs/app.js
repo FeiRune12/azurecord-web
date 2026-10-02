@@ -1594,7 +1594,7 @@
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=()=>startDmCall('voice'); $('videoBtn').onclick=()=>startDmCall('video'); $('screenBtn').onclick=()=>activeCall?toggleCallScreen():startDmCall('screen'); $('searchBtn').onclick=openChannelSearch;
     $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('remoteCallVideo').onclick=()=>{if(activeCall?.remoteScreenSharing)void openRemoteSharedScreen();}; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});if(serverVoiceSession)leaveServerVoiceChannel({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -1915,10 +1915,145 @@
       return false;
     }
   }
+  function serverVoiceRoomKey(server,channel){
+    return 'server:'+String(server?.backendId||server?.id||'')+':'+String(channel?.backendId||channel?.id||'');
+  }
+  function serverVoiceSignalBase(session,kind){
+    return {kind,callId:session.roomId,callType:'server-voice',serverId:String(session.remoteServerId),channelId:String(session.remoteChannelId)};
+  }
+  function closeServerVoicePeer(peerId){
+    const session=serverVoiceSession;if(!session)return;
+    const peer=session.peers.get(String(peerId));if(!peer)return;
+    try{peer.pc?.close?.();}catch{}
+    try{peer.audio?.remove?.();}catch{}
+    session.peers.delete(String(peerId));session.participantIds.delete(String(peerId));
+    renderServerChannels();
+  }
+  async function ensureServerVoicePeer(peerId){
+    const session=serverVoiceSession;if(!session)return null;
+    peerId=String(peerId||'');if(!peerId||peerId===String(state.currentAccountId))return null;
+    if(session.peers.has(peerId))return session.peers.get(peerId);
+    await ensureAzureCallIceConfig();
+    const pc=new RTCPeerConnection(azureCallRtcConfig);
+    const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false};
+    session.peers.set(peerId,peer);session.participantIds.add(peerId);
+    for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
+    pc.onicecandidate=e=>{
+      if(!e.candidate||serverVoiceSession!==session)return;
+      directCallSignal(peerId,{...serverVoiceSignalBase(session,'server-voice-ice'),candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});
+    };
+    pc.ontrack=e=>{
+      const track=e.track;if(!track||track.kind!=='audio')return;
+      let audio=peer.audio;
+      if(!audio){
+        audio=document.createElement('audio');audio.autoplay=true;audio.playsInline=true;audio.dataset.serverVoicePeer=peerId;
+        audio.style.display='none';document.body.appendChild(audio);peer.audio=audio;
+      }
+      const stream=new MediaStream([track]);audio.srcObject=stream;audio.play?.().catch(()=>{});
+      session.participantIds.add(peerId);renderServerChannels();
+    };
+    pc.onconnectionstatechange=()=>{
+      if(serverVoiceSession!==session)return;
+      if(['failed','closed'].includes(pc.connectionState))closeServerVoicePeer(peerId);
+    };
+    return peer;
+  }
+  async function offerServerVoicePeer(peerId){
+    const session=serverVoiceSession;if(!session)return;
+    const peer=await ensureServerVoicePeer(peerId);if(!peer||peer.makingOffer)return;
+    peer.makingOffer=true;
+    try{
+      const offer=await peer.pc.createOffer();await peer.pc.setLocalDescription(offer);
+      directCallSignal(peerId,{...serverVoiceSignalBase(session,'server-voice-offer'),description:peer.pc.localDescription});
+    }catch(err){console.warn('[AzureCall] server voice offer:',err?.message||err);}
+    finally{peer.makingOffer=false;}
+  }
+  async function handleServerVoiceSignal(event){
+    const signal=event?.signal||{},kind=String(signal.kind||'');
+    if(!kind.startsWith('server-voice-'))return false;
+    const session=serverVoiceSession;if(!session)return true;
+    const from=String(event.fromUserId||'');if(!from||from===String(state.currentAccountId))return true;
+    if(String(signal.serverId)!==String(session.remoteServerId)||String(signal.channelId)!==String(session.remoteChannelId))return true;
+    if(kind==='server-voice-join'){
+      session.participantIds.add(from);renderServerChannels();
+      directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-ack')});
+      return true;
+    }
+    if(kind==='server-voice-ack'){
+      session.participantIds.add(from);renderServerChannels();await offerServerVoicePeer(from);return true;
+    }
+    if(kind==='server-voice-offer'){
+      const peer=await ensureServerVoicePeer(from);if(!peer)return true;
+      if(peer.pc.signalingState!=='stable'){try{await peer.pc.setLocalDescription({type:'rollback'});}catch{}}
+      await peer.pc.setRemoteDescription(signal.description);
+      for(const candidate of peer.pendingIce.splice(0)){try{await peer.pc.addIceCandidate(candidate);}catch{}}
+      const answer=await peer.pc.createAnswer();await peer.pc.setLocalDescription(answer);
+      directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-answer'),description:peer.pc.localDescription});
+      return true;
+    }
+    if(kind==='server-voice-answer'){
+      const peer=await ensureServerVoicePeer(from);if(peer&&signal.description&&peer.pc.signalingState==='have-local-offer'){
+        await peer.pc.setRemoteDescription(signal.description);
+        for(const candidate of peer.pendingIce.splice(0)){try{await peer.pc.addIceCandidate(candidate);}catch{}}
+      }
+      return true;
+    }
+    if(kind==='server-voice-ice'){
+      const peer=await ensureServerVoicePeer(from);if(!peer||!signal.candidate)return true;
+      if(peer.pc.remoteDescription){try{await peer.pc.addIceCandidate(signal.candidate);}catch{}}
+      else peer.pendingIce.push(signal.candidate);
+      return true;
+    }
+    if(kind==='server-voice-leave'){closeServerVoicePeer(from);return true;}
+    return true;
+  }
+  async function joinServerVoiceChannel(serverId,channelId){
+    const server=getServer(serverId),channel=getChannel(serverId,channelId);
+    if(!server||!channel||channel.type!=='voice')return;
+    if(activeCall){showToast('Encerre a chamada privada antes de entrar no canal de voz.');return;}
+    if(serverVoiceSession?.serverId===server.id&&serverVoiceSession?.channelId===channel.id){
+      leaveServerVoiceChannel({notify:true});return;
+    }
+    if(serverVoiceSession)leaveServerVoiceChannel({notify:true});
+    if(!socialCloudReady()){showToast('Entre na conta Cloud para usar canais de voz.');return;}
+    if(typeof RTCPeerConnection==='undefined'||!navigator.mediaDevices?.getUserMedia){showToast('WebRTC não está disponível neste dispositivo.');return;}
+    try{
+      await refreshServerMembers(server.id,{quiet:false});
+      if(isNativeAndroidCallDevice()){
+        const granted=await ensureNativeCallPermissions(false);
+        if(!granted)throw Object.assign(new Error('Permissão de microfone negada.'),{name:'NotAllowedError'});
+      }
+      const localStream=await navigator.mediaDevices.getUserMedia({audio:callAudioConstraints(),video:false});
+      for(const track of localStream.getAudioTracks()){track.enabled=true;try{track.contentHint='speech';}catch{}}
+      const session={
+        roomId:serverVoiceRoomKey(server,channel),serverId:server.id,channelId:channel.id,
+        remoteServerId:server.backendId||server.id,remoteChannelId:channel.backendId||channel.id,
+        localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),joinedAt:Date.now()
+      };
+      serverVoiceSession=session;setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();
+      const members=(Array.isArray(server.members)?server.members:[]).map(m=>String(m?.id||'')).filter(id=>id&&id!==String(state.currentAccountId));
+      for(const memberId of members)directCallSignal(memberId,{...serverVoiceSignalBase(session,'server-voice-join')});
+      showToast('Conectado ao canal de voz '+(channel.name||'voz')+'.');
+    }catch(err){
+      leaveServerVoiceChannel({notify:false});
+      showToast(callMediaErrorMessage(err)||'Não foi possível entrar no canal de voz.');
+    }
+  }
+  function leaveServerVoiceChannel({notify=true}={}){
+    const session=serverVoiceSession;if(!session)return;
+    if(notify){
+      const targets=new Set([...session.participantIds,...session.peers.keys()]);
+      targets.delete(String(state.currentAccountId));
+      for(const id of targets)directCallSignal(id,{...serverVoiceSignalBase(session,'server-voice-leave')});
+    }
+    for(const peer of session.peers.values()){try{peer.pc?.close?.();}catch{}try{peer.audio?.remove?.();}catch{}}
+    for(const track of session.localStream?.getTracks?.()||[])try{track.stop();}catch{}
+    serverVoiceSession=null;setNativeAndroidCallActive(!!activeCall);renderServerChannels();
+  }
   function openChannel(channelId){
     const c=getChannel(view.serverId,channelId);
     if(!c)return;
-    if(c.type==='voice'){showToast('Canal de voz: chamadas com outros membros estão pausadas nesta versão.');return;}
+    if(c.type==='voice'){void joinServerVoiceChannel(view.serverId,channelId);return;}
     view.mode='server';
     view.channelId=channelId;
     view.dmUserId=null;
@@ -4381,6 +4516,7 @@
     activeCall=null;setNativeAndroidCallActive(false);scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
   }
   async function handleCallSignalEvent(event){
+    if(await handleServerVoiceSignal(event))return;
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
     if(!from||!callId)return;
     if(activeCall&&activeCall.id!==callId){
@@ -4524,9 +4660,13 @@
       view.channelId=textChannels[0]?.id||channels[0]?.id||null;
     }
     text.innerHTML=textChannels.map(c=>`<button type="button" class="channel-item ${c.id===view.channelId?'active':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${state.unread?.[`${s.id}|${c.id}`]?'●':''}</small></button>`).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
-    voice.innerHTML=voiceChannels.map(c=>`<button type="button" class="channel-item ${c.id===view.channelId?'active':''}" data-voice-channel="${esc(c.id)}"><span>◉</span>${esc(c.name||'voz')}</button>`).join('')||'<div class="dm-empty">Nenhum canal de voz.</div>';
+    voice.innerHTML=voiceChannels.map(c=>{
+      const joined=serverVoiceSession?.serverId===s.id&&serverVoiceSession?.channelId===c.id;
+      const count=joined?serverVoiceSession.participantIds.size:0;
+      return `<button type="button" class="channel-item ${joined?'active voice-connected':''}" data-voice-channel="${esc(c.id)}"><span>◉</span>${esc(c.name||'voz')}<small>${joined?count+' conectado'+(count===1?'':'s'):''}</small></button>`;
+    }).join('')||'<div class="dm-empty">Nenhum canal de voz.</div>';
     text.querySelectorAll('[data-channel]').forEach(b=>{b.addEventListener('click',()=>openChannel(b.dataset.channel));b.addEventListener('contextmenu',e=>openChannelContextMenu(e,b.dataset.channel));});
-    voice.querySelectorAll('[data-voice-channel]').forEach(b=>b.addEventListener('click',()=>showToast('Canal de voz disponível na interface. Chamadas de membros estão pausadas nesta versão.')));
+    voice.querySelectorAll('[data-voice-channel]').forEach(b=>b.addEventListener('click',()=>openChannel(b.dataset.voiceChannel)));
   }
 
   function setAvatar(el,p,fallback){if(!el)return;el.classList.add('avatar-img');el.style.backgroundImage=p?.avatar?`url('${safeUrl(p.avatar)}')`:'';el.textContent=p?.avatar?'':((p?.username||fallback||'?')[0]||'?').toUpperCase();}
