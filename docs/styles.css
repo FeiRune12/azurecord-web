@@ -1646,3 +1646,29 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
     right:8px!important;
   }
 }
+
+
+/* AzureCall: modal de voz em servidores */
+.server-voice-overlay{background:rgba(0,0,0,.82);backdrop-filter:blur(8px)}
+.server-voice-shell{background:#050607;overflow:hidden}
+.server-voice-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08);background:#0c0d10}
+.server-voice-header>div{display:flex;align-items:center;gap:10px;min-width:0}
+.server-voice-header strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.server-voice-kicker{font-size:10px;font-weight:900;letter-spacing:.08em;color:#aeb4c0;white-space:nowrap}
+.server-voice-grid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(220px,1fr);gap:8px;padding:8px;overflow:auto;background:#020304}
+.server-voice-tile{position:relative;display:grid;place-items:center;min-height:220px;border-radius:8px;overflow:hidden;background:#15171c;border:1px solid rgba(255,255,255,.035)}
+.server-voice-tile:nth-child(3n+1){background:#1a1117}
+.server-voice-tile:nth-child(3n+2){background:#17191d}
+.server-voice-tile:nth-child(3n){background:#15345a}
+.server-voice-avatar{width:84px;height:84px;border-radius:50%;display:grid;place-items:center;background:#26303d center/cover no-repeat;font-size:30px;font-weight:800;box-shadow:0 10px 40px rgba(0,0,0,.36)}
+.server-voice-name{position:absolute;left:12px;bottom:12px;max-width:calc(100% - 24px);padding:6px 9px;border-radius:7px;background:rgba(0,0,0,.68);color:#fff;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.server-voice-tile.is-self .server-voice-name:before{content:'● ';color:#64d98b}
+.server-voice-bar{background:#0b0c0f;border-top:1px solid rgba(255,255,255,.08)}
+.server-voice-bar .azure-call-actions{margin-left:auto}
+@media (max-width:760px){
+  .server-voice-header{padding:11px 12px}
+  .server-voice-kicker{display:none}
+  .server-voice-grid{grid-template-columns:1fr;grid-auto-rows:minmax(180px,1fr);padding:6px}
+  .server-voice-tile{min-height:180px}
+  .server-voice-avatar{width:72px;height:72px}
+}
