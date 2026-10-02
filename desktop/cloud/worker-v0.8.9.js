@@ -1214,13 +1214,19 @@ function cleanCallSignal(value) {
   if (!value || typeof value !== "object") return null;
   const kind = String(value.kind || "");
   const callId = String(value.callId || "").slice(0, 120);
-  const callType = ["voice","video","screen"].includes(String(value.callType)) ? String(value.callType) : "voice";
-  if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop"].includes(kind)) return null;
+  const callType = ["voice","video","screen","server-voice"].includes(String(value.callType)) ? String(value.callType) : "voice";
+  const allowed = ["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop","native-screen-resync","server-voice-join","server-voice-ack","server-voice-offer","server-voice-answer","server-voice-ice","server-voice-leave"];
+  if (!callId || !allowed.includes(kind)) return null;
   const signalId = String(value.signalId || "").slice(0, 120);
   const out = { kind, callId, callType, signalId };
-  if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer"].includes(kind) && value.description && typeof value.description === "object") out.description = value.description;
+  if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer","server-voice-offer","server-voice-answer"].includes(kind) && value.description && typeof value.description === "object") out.description = value.description;
   if (Number.isFinite(Number(value.shareRevision))) out.shareRevision = Math.max(0, Math.floor(Number(value.shareRevision)));
-  if ((kind === "ice" || kind === "native-screen-ice") && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
+  if (["ice","native-screen-ice","server-voice-ice"].includes(kind) && value.candidate && typeof value.candidate === "object") out.candidate = value.candidate;
+  if (kind.startsWith("server-voice-")) {
+    out.serverId = String(value.serverId || "").slice(0, 120);
+    out.channelId = String(value.channelId || "").slice(0, 120);
+    if (!out.serverId || !out.channelId) return null;
+  }
   if (value.reason) out.reason = String(value.reason).slice(0, 80);
   return JSON.stringify(out).length <= 180000 ? out : null;
 }
@@ -1448,7 +1454,19 @@ async function handleSocial(request, env, url, path) {
     const targetUserId = String(body.targetUserId || "");
     const signal = cleanCallSignal(body.signal);
     if (!targetUserId || targetUserId === userId || !signal) return json({ error: "invalid_signal", message: "Sinal de chamada inválido." }, 400);
-    if (!(await friendshipExists(env, userId, targetUserId))) return json({ error: "forbidden", message: "Chamadas são permitidas entre amigos." }, 403);
+    const serverVoice = signal.kind.startsWith("server-voice-");
+    if (serverVoice) {
+      const [sourceMembership, targetMembership, voiceChannel] = await Promise.all([
+        serverMembership(env, signal.serverId, userId),
+        serverMembership(env, signal.serverId, targetUserId),
+        env.DB.prepare(`SELECT id FROM channels WHERE id = ? AND server_id = ? AND type = 'voice' LIMIT 1`).bind(signal.channelId, signal.serverId).first(),
+      ]);
+      if (!sourceMembership.member || !targetMembership.member || !voiceChannel) {
+        return json({ error: "forbidden", message: "Canal de voz indisponível para estes membros." }, 403);
+      }
+    } else if (!(await friendshipExists(env, userId, targetUserId))) {
+      return json({ error: "forbidden", message: "Chamadas privadas são permitidas entre amigos." }, 403);
+    }
     const stamp = nowIso();
     if (signal.kind === "screen-share-start" || signal.kind === "screen-offer") {
       const share = await updateCallShareState(env, { callId: signal.callId, ownerUserId: userId, peerUserId: targetUserId, active: true });
@@ -2714,7 +2732,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "0.8.9",
+          version: "0.9.0",
         });
       }
 
