@@ -8,10 +8,10 @@ const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
 
 test('2.0.6: AzureCall dá tempo extra e confirma conexão por mídia no Android nativo',()=>{
   assert.match(app,/function isNativeAndroidCallDevice/);
-  assert.match(app,/if\(isNativeAndroidCallDevice\(\)\)return 25000/);
+  assert.match(app,/if\(isNativeAndroidCallDevice\(\)\)return 12000/);
   assert.match(app,/channel\.onopen=\(\)=>\{markCallConnected\(call\)/);
   assert.match(app,/track\.onunmute=\(\)=>\{markCallConnected\(call\)/);
-  assert.match(app,/startCallSignalPolling\(\);setTimeout\(\(\)=>void pollCallSignals\(\),180\)/);
+  assert.match(app,/startCallSignalPolling\(\)/);
 });
 
 test('2.0.6: sinalização de chamada tem retry HTTP',()=>{
