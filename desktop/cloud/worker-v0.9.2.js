@@ -1947,6 +1947,14 @@ async function handleSocial(request, env, url, path) {
       return json({ ok: true, members, memberCount: members.length });
     }
 
+    if (parts[3] === "members" && parts[4] === "@me" && method === "PATCH") {
+      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
+      const body = await readJson(request) || {};
+      const nickname = cleanText(body.nickname || "", 48);
+      await env.DB.prepare(`UPDATE server_members SET nickname = ? WHERE server_id = ? AND user_id = ?`).bind(nickname || null, serverId, userId).run();
+      return json({ ok: true, nickname });
+    }
+
     if (parts[3] === "members" && parts[4]) {
       const targetId = parts[4];
       if (!manager) return json({ error: "forbidden", message: "Sem permissão para gerenciar membros." }, 403);
