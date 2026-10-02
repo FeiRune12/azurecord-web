@@ -2742,7 +2742,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "0.8.9",
+          version: "0.9.0",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
