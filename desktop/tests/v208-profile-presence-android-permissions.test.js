@@ -35,7 +35,7 @@ test('2.0.8: status customizado e horários são persistidos e propagados',()=>{
   assert.match(api,/path === "\/api\/presence" && method === "PATCH"/);
   assert.match(api,/customStatus: details\.customStatus/);
   assert.match(api,/lastSeenAt: details\.lastSeenAt/);
-  assert.match(realtime,/version: "1\.7\.0"/);
+  assert.match(realtime,/version: "1\.8\.0"/);
   assert.match(realtime,/customStatus/);
 });
 
