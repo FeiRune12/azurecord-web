@@ -38,6 +38,7 @@ jobs:
       - name: Ler versão Android
         shell: bash
         run: |
+          # A pipeline Android não executa testes legados. A build usa somente o código da versão atual.
           VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts | head -n 1)"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Versão Android inválida: $VERSION"
