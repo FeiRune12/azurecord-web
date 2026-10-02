@@ -3844,14 +3844,15 @@
       const state=data?.state;if(!state)return true;
       call.shareRevision=Math.max(Number(call.shareRevision||0),Number(state.revision||0));
       if(state.ownerUserId===call.peerId){
+        const nativeNegotiating=!!call.nativeScreenPc&&(Date.now()-(call.nativeScreenOfferAt||0)<12000||call.nativeRemoteScreenTrack?.readyState==='live');
         const was=!!call.remoteScreenSharing;
-        call.remoteScreenSharing=!!state.active;
+        call.remoteScreenSharing=!!state.active||nativeNegotiating;
         if(call.remoteScreenSharing&&!was)showRemoteShareNotice(call);
-        if(call.remoteScreenSharing&&!call.remoteScreenTrack&&Date.now()-(call.nativeScreenLastResyncAt||0)>1800){
+        if(call.remoteScreenSharing&&!call.remoteScreenTrack&&Date.now()-(call.nativeScreenLastResyncAt||0)>900){
           call.nativeScreenLastResyncAt=Date.now();
           sendCallSignal('native-screen-resync');
         }
-        if(!call.remoteScreenSharing){clearRemoteShareNotice(call);if(call.nativeScreenPc)clearNativeScreenReceiver(call);if(call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});}
+        if(!call.remoteScreenSharing&&!nativeNegotiating){clearRemoteShareNotice(call);if(call.nativeScreenPc)clearNativeScreenReceiver(call);if(call.remoteShareFocused)await closeRemoteSharedScreen({exitFullscreen:true});}
         updateCallUi();
       }
       return true;
@@ -4163,7 +4164,10 @@
     if(payload.type==='screenShare.state'){
       call.nativeScreenRequested=false;call.nativeScreenSharing=!!payload.active;
       if(!payload.active)call.nativeScreenAutoStart=false;
-      publishLocalScreenState(call);updateCallUi();return;
+      publishLocalScreenState(call);
+      if(payload.active)void postScreenShareApiSignal(call,'screen-share-start');
+      else void postScreenShareApiSignal(call,'screen-share-stop');
+      updateCallUi();return;
     }
     if(payload.type==='screenShare.error'){
       call.nativeScreenRequested=false;call.nativeScreenSharing=false;call.nativeScreenAutoStart=false;updateCallUi();
@@ -4540,7 +4544,7 @@
     }
     if(kind==='ring'){updateCallUi();return;}
     if(kind==='accepted'){clearTimeout(call.ringTimer);if(call.status!=='active')setCallStatus('connecting');armCallConnectTimeout(call);if(isNativeAndroidCallDevice()){startCallSignalPolling();setTimeout(()=>void pollCallSignals(),180);}setTimeout(()=>void syncScreenShareApiState(call,{force:true}),250);if(call.nativeScreenAutoStart&&!call.nativeScreenSharing&&!call.nativeScreenRequested)setTimeout(()=>void startNativeAndroidScreenShare(call),180);return;}
-    if(kind==='native-screen-offer'){try{await handleNativeScreenOffer(call,signal.description);}catch(err){console.warn('[AzureCall] native screen offer:',err?.message||err);showToast('A transmissão Android não conseguiu negociar o vídeo.');}return;}
+    if(kind==='native-screen-offer'){try{call.remoteScreenSharing=true;call.nativeScreenOfferAt=Date.now();updateCallUi();await handleNativeScreenOffer(call,signal.description);}catch(err){console.warn('[AzureCall] native screen offer:',err?.message||err);showToast('A transmissão Android não conseguiu negociar o vídeo.');}return;}
     if(kind==='native-screen-ice'){await handleNativeScreenIce(call,signal.candidate);return;}
     if(kind==='native-screen-stop'){clearNativeScreenReceiver(call);return;}
     if(kind==='native-screen-answer'){return;}
