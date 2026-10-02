@@ -1933,10 +1933,12 @@
     overlay.id='serverVoiceOverlay';
     overlay.className='azure-call-overlay server-voice-overlay';
     overlay.hidden=true;
-    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">🔊 CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">☎</button></div></div></div>';
+    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">🔊 CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="serverVoiceCameraBtn" class="call-control" type="button" aria-label="Câmera">📷</button><button id="serverVoiceShareBtn" class="call-control" type="button" aria-label="Transmitir tela">▣</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">☎</button></div></div></div>';
     document.body.appendChild(overlay);
     $('serverVoiceCloseView').onclick=()=>{overlay.hidden=true;};
     $('serverVoiceMicBtn').onclick=toggleServerVoiceMic;
+    $('serverVoiceCameraBtn').onclick=()=>void toggleServerVoiceCamera();
+    $('serverVoiceShareBtn').onclick=()=>void toggleServerVoiceScreen();
     $('serverVoiceLeaveBtn').onclick=()=>leaveServerVoiceChannel({notify:true});
     return overlay;
   }
@@ -1945,6 +1947,52 @@
     session.micMuted=!session.micMuted;
     for(const track of session.localStream?.getAudioTracks?.()||[])track.enabled=!session.micMuted;
     renderServerVoiceModal();
+  }
+  async function renegotiateServerVoicePeers(){
+    const session=serverVoiceSession;if(!session)return;
+    for(const peerId of session.peers.keys())await offerServerVoicePeer(peerId);
+  }
+  async function toggleServerVoiceCamera(){
+    const session=serverVoiceSession;if(!session)return;
+    if(session.cameraTrack){
+      session.cameraTrack.enabled=!session.cameraTrack.enabled;
+      if(!session.cameraTrack.enabled){for(const peer of session.peers.values()){const sender=peer.pc?.getSenders?.().find(s=>s.track===session.cameraTrack);if(sender)await sender.replaceTrack(null);}}
+      else for(const peer of session.peers.values()){const sender=peer.pc?.getSenders?.().find(s=>s.track?.kind==='video'&&!s.track?.label?.includes('screen'));if(sender)await sender.replaceTrack(session.cameraTrack);else peer.pc?.addTrack(session.cameraTrack,session.cameraStream);}
+      await renegotiateServerVoicePeers();renderServerVoiceModal();return;
+    }
+    try{
+      if(isNativeAndroidCallDevice()&&!await ensureNativeCallPermissions(true))throw Object.assign(new Error('Permissão de câmera negada.'),{name:'NotAllowedError'});
+      const stream=await navigator.mediaDevices.getUserMedia({video:true,audio:false});const track=stream.getVideoTracks()[0];if(!track)return;
+      session.cameraStream=stream;session.cameraTrack=track;track.onended=()=>{if(serverVoiceSession===session){session.cameraTrack=null;session.cameraStream=null;renderServerVoiceModal();}};
+      for(const peer of session.peers.values())peer.pc?.addTrack(track,stream);
+      await renegotiateServerVoicePeers();renderServerVoiceModal();
+    }catch(err){showToast(callMediaErrorMessage(err)||'Não foi possível ligar a câmera.');}
+  }
+  async function stopServerVoiceScreen(){
+    const session=serverVoiceSession;if(!session)return;
+    if(session.nativeScreenSharing||session.nativeScreenRequested){try{nativeAndroidScreenBridge()?.stopScreenShare?.(session.roomId);}catch{}session.nativeScreenSharing=false;session.nativeScreenRequested=false;renderServerVoiceModal();return;}
+    const track=session.screenTrack;if(!track)return;
+    for(const peer of session.peers.values()){const sender=peer.pc?.getSenders?.().find(s=>s.track===track);if(sender)await sender.replaceTrack(null);}
+    try{track.stop();}catch{}session.screenTrack=null;session.screenStream=null;await renegotiateServerVoicePeers();renderServerVoiceModal();
+  }
+  async function toggleServerVoiceScreen(){
+    const session=serverVoiceSession;if(!session)return;
+    if(session.screenTrack||session.nativeScreenSharing||session.nativeScreenRequested){await stopServerVoiceScreen();return;}
+    if(isNativeAndroidCallDevice()&&nativeAndroidScreenSupported()){
+      const bridge=nativeAndroidScreenBridge();const targets=[...session.participantIds].filter(id=>id!==String(state.currentAccountId));
+      if(!targets.length){showToast('Entre com outro participante antes de transmitir a tela.');return;}
+      session.nativeScreenRequested=true;session.nativeScreenTargetIds=targets;
+      try{const ok=bridge.startScreenShare(JSON.stringify({callId:session.roomId,peerId:targets[0],peerIds:targets,serverId:session.remoteServerId,channelId:session.remoteChannelId,token:cloudToken,apiBaseUrl:CLOUD_API_URL,serverVoice:true}));if(ok===false)throw new Error('O Android recusou iniciar a captura.');}
+      catch(err){session.nativeScreenRequested=false;showToast(err.message||'Não foi possível iniciar a transmissão Android.');}
+      renderServerVoiceModal();return;
+    }
+    try{
+      const display=getDisplayMediaCompat();if(!display){showToast('Compartilhamento de tela não disponível neste dispositivo.');return;}
+      const stream=await display({video:{frameRate:{ideal:24,max:30}},audio:false});const track=stream.getVideoTracks()[0];if(!track)return;
+      session.screenStream=stream;session.screenTrack=track;track.onended=()=>{if(serverVoiceSession===session)void stopServerVoiceScreen();};
+      for(const peer of session.peers.values())peer.pc?.addTrack(track,stream);
+      await renegotiateServerVoicePeers();renderServerVoiceModal();
+    }catch(err){if(err?.name!=='NotAllowedError')showToast(err.message||'Não foi possível transmitir a tela.');}
   }
   function renderServerVoiceModal(){
     const overlay=ensureServerVoiceModal(),session=serverVoiceSession;
@@ -1957,13 +2005,23 @@
     $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
     $('serverVoiceMicBtn').classList.toggle('off',!!session.micMuted);
     $('serverVoiceMicBtn').textContent=session.micMuted?'🔇':'🎙';
+    $('serverVoiceCameraBtn').classList.toggle('off',!session.cameraTrack||session.cameraTrack.enabled===false);
+    $('serverVoiceCameraBtn').textContent=session.cameraTrack&&session.cameraTrack.enabled!==false?'📹':'📷';
+    $('serverVoiceShareBtn').classList.toggle('active',!!session.screenTrack||!!session.nativeScreenSharing||!!session.nativeScreenRequested);
+    $('serverVoiceShareBtn').textContent=(session.screenTrack||session.nativeScreenSharing)?'▣':'▢';
     $('serverVoiceGrid').innerHTML=ids.map(id=>{
       const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
       const isMe=id===String(state.currentAccountId);
       const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
       const letter=p.avatar?'':esc(String(p.username||'?')[0].toUpperCase());
-      return '<article class="server-voice-tile '+(isMe?'is-self':'')+'"><div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div><span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
+      const peer=session.peers.get(String(id));const videoStream=isMe?(session.screenStream||session.cameraStream):peer?.videoStream;
+      const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
+      return '<article class="server-voice-tile '+(isMe?'is-self':'')+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
     }).join('');
+    for(const id of ids){
+      const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):peer?.videoStream;
+      const el=document.getElementById('serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_'));if(el&&stream&&el.srcObject!==stream){el.srcObject=stream;el.play?.().catch(()=>{});}
+    }
     overlay.hidden=false;
   }
   function closeServerVoicePeer(peerId){
@@ -1980,15 +2038,21 @@
     if(session.peers.has(peerId))return session.peers.get(peerId);
     await ensureAzureCallIceConfig();
     const pc=new RTCPeerConnection(azureCallRtcConfig);
-    const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false};
+    const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false,videoStream:null};
     session.peers.set(peerId,peer);session.participantIds.add(peerId);
     for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
+    if(session.cameraTrack&&session.cameraTrack.enabled!==false)pc.addTrack(session.cameraTrack,session.cameraStream||new MediaStream([session.cameraTrack]));
+    if(session.screenTrack)pc.addTrack(session.screenTrack,session.screenStream||new MediaStream([session.screenTrack]));
     pc.onicecandidate=e=>{
       if(!e.candidate||serverVoiceSession!==session)return;
       directCallSignal(peerId,{...serverVoiceSignalBase(session,'server-voice-ice'),candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});
     };
     pc.ontrack=e=>{
-      const track=e.track;if(!track||track.kind!=='audio')return;
+      const track=e.track;if(!track)return;
+      if(track.kind==='video'){
+        peer.videoStream=new MediaStream([track]);track.onended=()=>{if(peer.videoStream?.getTracks?.().includes(track))peer.videoStream=null;renderServerVoiceModal();};renderServerVoiceModal();return;
+      }
+      if(track.kind!=='audio')return;
       let audio=peer.audio;
       if(!audio){
         audio=document.createElement('audio');audio.autoplay=true;audio.playsInline=true;audio.dataset.serverVoicePeer=peerId;
@@ -2073,7 +2137,7 @@
       const session={
         roomId:serverVoiceRoomKey(server,channel),serverId:server.id,channelId:channel.id,
         remoteServerId:server.backendId||server.id,remoteChannelId:channel.backendId||channel.id,
-        localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),joinedAt:Date.now()
+        localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),joinedAt:Date.now(),cameraTrack:null,cameraStream:null,screenTrack:null,screenStream:null,nativeScreenSharing:false,nativeScreenRequested:false
       };
       serverVoiceSession=session;setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();renderServerVoiceModal();
       const members=(Array.isArray(server.members)?server.members:[]).map(m=>String(m?.id||'')).filter(id=>id&&id!==String(state.currentAccountId));
@@ -2093,6 +2157,9 @@
     }
     for(const peer of session.peers.values()){try{peer.pc?.close?.();}catch{}try{peer.audio?.remove?.();}catch{}}
     for(const track of session.localStream?.getTracks?.()||[])try{track.stop();}catch{}
+    for(const track of session.cameraStream?.getTracks?.()||[])try{track.stop();}catch{}
+    for(const track of session.screenStream?.getTracks?.()||[])try{track.stop();}catch{}
+    if(session.nativeScreenSharing||session.nativeScreenRequested)try{nativeAndroidScreenBridge()?.stopScreenShare?.(session.roomId);}catch{}
     serverVoiceSession=null;setNativeAndroidCallActive(!!activeCall);renderServerChannels();renderServerVoiceModal();
   }
   function openChannel(channelId){
@@ -4312,6 +4379,11 @@
     if(!payload||typeof payload!=='object')return;
     if(payload.type==='callPermissions.result'){
       const waiters=[...nativeCallPermissionWaiters];nativeCallPermissionWaiters=[];for(const done of waiters)try{done(!!payload.granted);}catch{};return;
+    }
+    const session=serverVoiceSession;
+    if(session&&payload.callId&&String(payload.callId)===String(session.roomId)){
+      if(payload.type==='screenShare.state'){session.nativeScreenRequested=false;session.nativeScreenSharing=!!payload.active;renderServerVoiceModal();return;}
+      if(payload.type==='screenShare.error'){session.nativeScreenRequested=false;session.nativeScreenSharing=false;renderServerVoiceModal();showToast(payload.message||'A transmissão nativa do Android falhou.');return;}
     }
     const call=activeCall;if(!call)return;
     if(payload.callId&&String(payload.callId)!==String(call.id))return;
