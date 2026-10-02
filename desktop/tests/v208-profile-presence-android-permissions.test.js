@@ -35,7 +35,7 @@ test('2.0.8: status customizado e horários são persistidos e propagados',()=>{
   assert.match(api,/path === "\/api\/presence" && method === "PATCH"/);
   assert.match(api,/customStatus: details\.customStatus/);
   assert.match(api,/lastSeenAt: details\.lastSeenAt/);
-  assert.match(realtime,/version: "1\.8\.0"/);
+  assert.match(realtime,/version: "1\.8\.1"/);
   assert.match(realtime,/customStatus/);
 });
 
@@ -53,8 +53,8 @@ test('2.0.8: ícones críticos são SVG e a versão Android está alinhada',()=>
   assert.match(app,/function uiIcon/);
   assert.match(app,/uiIcon\('home',20\)/);
   assert.match(css,/\.ui-icon/);
-  assert.match(gradle,/versionCode = 400/);
-  assert.match(gradle,/versionName = "4\.0\.0"/);
+  assert.match(gradle,/versionCode = 401/);
+  assert.match(gradle,/versionName = "4\.0\.1"/);
 });
 
 test('2.0.8: contas salvas podem ser esquecidas sem apagar a conta Cloud',()=>{
