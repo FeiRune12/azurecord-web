@@ -930,7 +930,11 @@
     if(event.type==='server.changed'){
       const remoteServerId=String(event.serverId||'');await hydrateFromCloudSocial({quiet:true});
       const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId);
-      if(srv&&view.mode==='server'&&view.serverId===srv.id)renderShell();
+      if(srv){
+        await refreshServerMembers(srv.id,{quiet:true});
+        if(view.mode==='server'&&view.serverId===srv.id)renderShell();
+        if(serverVoiceSession?.serverId===srv.id)renderServerVoiceModal();
+      }
     }
   }
 
@@ -1921,13 +1925,53 @@
   function serverVoiceSignalBase(session,kind){
     return {kind,callId:session.roomId,callType:'server-voice',serverId:String(session.remoteServerId),channelId:String(session.remoteChannelId)};
   }
+  function ensureServerVoiceModal(){
+    let overlay=$('serverVoiceOverlay');
+    if(overlay)return overlay;
+    overlay=document.createElement('section');
+    overlay.id='serverVoiceOverlay';
+    overlay.className='azure-call-overlay server-voice-overlay';
+    overlay.hidden=true;
+    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">🔊 CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">☎</button></div></div></div>';
+    document.body.appendChild(overlay);
+    $('serverVoiceCloseView').onclick=()=>{overlay.hidden=true;};
+    $('serverVoiceMicBtn').onclick=toggleServerVoiceMic;
+    $('serverVoiceLeaveBtn').onclick=()=>leaveServerVoiceChannel({notify:true});
+    return overlay;
+  }
+  function toggleServerVoiceMic(){
+    const session=serverVoiceSession;if(!session)return;
+    session.micMuted=!session.micMuted;
+    for(const track of session.localStream?.getAudioTracks?.()||[])track.enabled=!session.micMuted;
+    renderServerVoiceModal();
+  }
+  function renderServerVoiceModal(){
+    const overlay=ensureServerVoiceModal(),session=serverVoiceSession;
+    if(!session){overlay.hidden=true;return;}
+    const server=getServer(session.serverId),channel=getChannel(session.serverId,session.channelId);
+    const ids=[...new Set([...session.participantIds].map(String))];
+    if(!ids.includes(String(state.currentAccountId)))ids.unshift(String(state.currentAccountId));
+    $('serverVoiceHeading').textContent=(server?.name||'Servidor')+' | '+(channel?.name||'voz');
+    $('serverVoiceTitle').textContent=channel?.name||'Canal de voz';
+    $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
+    $('serverVoiceMicBtn').classList.toggle('off',!!session.micMuted);
+    $('serverVoiceMicBtn').textContent=session.micMuted?'🔇':'🎙';
+    $('serverVoiceGrid').innerHTML=ids.map(id=>{
+      const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
+      const isMe=id===String(state.currentAccountId);
+      const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
+      const letter=p.avatar?'':esc(String(p.username||'?')[0].toUpperCase());
+      return '<article class="server-voice-tile '+(isMe?'is-self':'')+'"><div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div><span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
+    }).join('');
+    overlay.hidden=false;
+  }
   function closeServerVoicePeer(peerId){
     const session=serverVoiceSession;if(!session)return;
     const peer=session.peers.get(String(peerId));if(!peer)return;
     try{peer.pc?.close?.();}catch{}
     try{peer.audio?.remove?.();}catch{}
     session.peers.delete(String(peerId));session.participantIds.delete(String(peerId));
-    renderServerChannels();
+    renderServerChannels();renderServerVoiceModal();
   }
   async function ensureServerVoicePeer(peerId){
     const session=serverVoiceSession;if(!session)return null;
@@ -1950,7 +1994,7 @@
         audio.style.display='none';document.body.appendChild(audio);peer.audio=audio;
       }
       const stream=new MediaStream([track]);audio.srcObject=stream;audio.play?.().catch(()=>{});
-      session.participantIds.add(peerId);renderServerChannels();
+      session.participantIds.add(peerId);renderServerChannels();renderServerVoiceModal();
     };
     pc.onconnectionstatechange=()=>{
       if(serverVoiceSession!==session)return;
@@ -1975,12 +2019,12 @@
     const from=String(event.fromUserId||'');if(!from||from===String(state.currentAccountId))return true;
     if(String(signal.serverId)!==String(session.remoteServerId)||String(signal.channelId)!==String(session.remoteChannelId))return true;
     if(kind==='server-voice-join'){
-      session.participantIds.add(from);renderServerChannels();
+      session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();
       directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-ack')});
       return true;
     }
     if(kind==='server-voice-ack'){
-      session.participantIds.add(from);renderServerChannels();await offerServerVoicePeer(from);return true;
+      session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();await offerServerVoicePeer(from);return true;
     }
     if(kind==='server-voice-offer'){
       const peer=await ensureServerVoicePeer(from);if(!peer)return true;
@@ -2012,7 +2056,7 @@
     if(!server||!channel||channel.type!=='voice')return;
     if(activeCall){showToast('Encerre a chamada privada antes de entrar no canal de voz.');return;}
     if(serverVoiceSession?.serverId===server.id&&serverVoiceSession?.channelId===channel.id){
-      leaveServerVoiceChannel({notify:true});return;
+      renderServerVoiceModal();return;
     }
     if(serverVoiceSession)leaveServerVoiceChannel({notify:true});
     if(!socialCloudReady()){showToast('Entre na conta Cloud para usar canais de voz.');return;}
@@ -2030,7 +2074,7 @@
         remoteServerId:server.backendId||server.id,remoteChannelId:channel.backendId||channel.id,
         localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),joinedAt:Date.now()
       };
-      serverVoiceSession=session;setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();
+      serverVoiceSession=session;setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();renderServerVoiceModal();
       const members=(Array.isArray(server.members)?server.members:[]).map(m=>String(m?.id||'')).filter(id=>id&&id!==String(state.currentAccountId));
       for(const memberId of members)directCallSignal(memberId,{...serverVoiceSignalBase(session,'server-voice-join')});
       showToast('Conectado ao canal de voz '+(channel.name||'voz')+'.');
@@ -2048,7 +2092,7 @@
     }
     for(const peer of session.peers.values()){try{peer.pc?.close?.();}catch{}try{peer.audio?.remove?.();}catch{}}
     for(const track of session.localStream?.getTracks?.()||[])try{track.stop();}catch{}
-    serverVoiceSession=null;setNativeAndroidCallActive(!!activeCall);renderServerChannels();
+    serverVoiceSession=null;setNativeAndroidCallActive(!!activeCall);renderServerChannels();renderServerVoiceModal();
   }
   function openChannel(channelId){
     const c=getChannel(view.serverId,channelId);
@@ -2835,7 +2879,7 @@
     const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
     let reply=aiResult?.text;
     if(!reply){
-      const diagnostic={AI_NOT_CONFIGURED:'O Workers AI ainda não está disponível no Azurecord Cloud. Confira o binding AI e o Worker 0.6. 🔧',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. 🧠',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. 🧠',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. 💙'};
+      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. 🔧',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. 🧠',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. 🧠',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. 💙'};
       reply=diagnostic[aiResult?.code]||window.AzurecordLola.offlineReply(text,previousReplies,files.length);
     }
     if(!reply)return;
@@ -3495,7 +3539,7 @@
       const data=await socialRequest('/api/servers/join',{method:'POST',body:JSON.stringify({code})});
       const remote=normalizeRemoteServer(data);if(!remote)throw new Error('O servidor não pôde ser carregado.');
       state.servers=mergeServers(state.servers,[remote]).filter(s=>s?.id!=='server-azurecord');save();persistServersNow();
-      sendCloudRealtime({type:'account.commit',reason:'server.join'});sendCloudRealtime({type:'server.commit',serverId:remote.backendId||remote.id,reason:'member.join'});
+      sendCloudRealtime({type:'account.commit',reason:'server.join'});commitCloudRealtime({type:'server.commit',serverId:remote.backendId||remote.id,reason:'member.join'});
       if(data.welcomeMessage&&data.welcomeChannelId){
         applyRealtimeChannelMessage(remote.backendId||remote.id,String(data.welcomeChannelId),data.welcomeMessage);
         sendCloudRealtime({type:'channel.commit',serverId:remote.backendId||remote.id,channelId:String(data.welcomeChannelId),messageId:data.welcomeMessage.id});
@@ -3905,7 +3949,7 @@
   function scheduleCallSignalPoll(){
     clearTimeout(callSignalPollTimer);callSignalPollTimer=null;
     if(!socialCloudReady())return;
-    const delay=(activeCall||serverVoiceSession)?(cloudRealtimeConnected()?350:250):1800;
+    const delay=(activeCall||serverVoiceSession)?(cloudRealtimeConnected()?180:220):700;
     callSignalPollTimer=setTimeout(async()=>{await pollCallSignals();scheduleCallSignalPoll();},delay);
   }
   function startCallSignalPolling(){callSignalCursor=Date.now()-5000;scheduleCallSignalPoll();}
@@ -3913,15 +3957,23 @@
   function sendCallSignal(kind,payload={}){
     const call=activeCall;if(!call)return false;
     const signal={kind,callId:call.id,callType:call.type,signalId:uid('sig'),...payload};
-    if(cloudRealtimeConnected())sendCloudRealtime({type:'call.signal',targetUserId:call.peerId,signal});
-    if(socialCloudReady())void postCallSignalHttp(call.peerId,signal);
-    return cloudRealtimeConnected()||socialCloudReady();
+    const event={type:'call.signal',targetUserId:call.peerId,signal};
+    const wsAccepted=sendCloudRealtime(event);
+    if(socialCloudReady()){
+      void postCloudRealtimeCommit(event);
+      void postCallSignalHttp(call.peerId,signal);
+    }
+    return wsAccepted||socialCloudReady();
   }
   function directCallSignal(targetUserId,signal){
     const outgoing={signalId:signal?.signalId||uid('sig'),...signal};
-    if(cloudRealtimeConnected())sendCloudRealtime({type:'call.signal',targetUserId,signal:outgoing});
-    if(socialCloudReady())void postCallSignalHttp(targetUserId,outgoing);
-    return cloudRealtimeConnected()||socialCloudReady();
+    const event={type:'call.signal',targetUserId,signal:outgoing};
+    const wsAccepted=sendCloudRealtime(event);
+    if(socialCloudReady()){
+      void postCloudRealtimeCommit(event);
+      void postCallSignalHttp(targetUserId,outgoing);
+    }
+    return wsAccepted||socialCloudReady();
   }
   async function chooseDesktopDisplaySource(){
     const desktop=window.azurecordDesktop;
@@ -4368,6 +4420,7 @@
     if(serverVoiceSession)leaveServerVoiceChannel({notify:true});
     startCloudRealtimeSocket();
     startCallSignalPolling();
+    void ensureAzureCallRealtime(900);
     const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'ringing',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,nativeScreenSharing:false,nativeScreenRequested:false,nativeScreenAutoStart:type==='screen'&&nativeAndroidScreenSupported(),nativeScreenPc:null,nativeScreenPendingIce:[],nativeRemoteScreenTrack:null,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
     activeCall=call;setNativeAndroidCallActive(true);updateCallUi();
     directCallSignal(call.peerId,{kind:'ring',callId:call.id,callType:call.type});
