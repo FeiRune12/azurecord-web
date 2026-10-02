@@ -1,1 +1,1 @@
-Azurecord 4.0.3 Server Menu + Leave Server + Persistent Membership
+Azurecord 4.0.4 Server Media + Mention Badges + Reliable Messaging
