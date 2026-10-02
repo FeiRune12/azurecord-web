@@ -1596,3 +1596,53 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
     max-width:104px!important;
   }
 }
+
+
+/* Azurecord 4.0.0: dominant mobile share view + tap to fullscreen */
+.azure-call-remote{cursor:default}
+.remote-screen-share .azure-call-remote{cursor:zoom-in}
+.remote-share-focused .azure-call-remote{cursor:default}
+.channel-item.voice-connected{
+  background:color-mix(in srgb,var(--accent) 18%,transparent)!important;
+  border-color:color-mix(in srgb,var(--accent) 55%,transparent)!important;
+}
+.channel-item.voice-connected small{color:var(--accent)!important}
+@media(max-width:900px){
+  .remote-screen-share .azure-call-stage{
+    position:absolute!important;
+    inset:0!important;
+    width:100%!important;
+    height:100%!important;
+  }
+  .remote-screen-share .azure-call-remote{
+    inset:0 0 54px 0!important;
+    width:100%!important;
+    height:calc(100% - 54px)!important;
+    max-width:none!important;
+    max-height:none!important;
+    border-radius:0!important;
+    object-fit:cover!important;
+    background:#000!important;
+  }
+  .remote-screen-share .azure-call-local{
+    right:8px!important;
+    bottom:62px!important;
+    width:96px!important;
+    max-width:96px!important;
+    z-index:9!important;
+  }
+  .remote-share-focused .azure-call-remote{
+    inset:0!important;
+    width:100%!important;
+    height:100%!important;
+    max-width:none!important;
+    max-height:none!important;
+    object-fit:contain!important;
+    border-radius:0!important;
+  }
+  .remote-share-focused .azure-call-bar{display:none!important}
+  .remote-share-focused .call-share-tag.remote{
+    top:8px!important;
+    right:8px!important;
+  }
+}
