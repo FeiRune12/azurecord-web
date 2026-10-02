@@ -2052,6 +2052,7 @@
     const session=serverVoiceSession;if(!session)return;
     const peer=session.peers.get(String(peerId));if(!peer)return;
     try{peer.pc?.close?.();}catch{}
+    try{peer.nativeScreenPc?.close?.();}catch{}
     try{peer.audio?.remove?.();}catch{}
     session.peers.delete(String(peerId));session.participantIds.delete(String(peerId));
     renderServerChannels();renderServerVoiceModal();
@@ -2100,6 +2101,52 @@
       directCallSignal(peerId,{...serverVoiceSignalBase(session,'server-voice-offer'),description:peer.pc.localDescription});
     }catch(err){console.warn('[AzureCall] server voice offer:',err?.message||err);}
     finally{peer.makingOffer=false;}
+  }
+  async function ensureServerNativeScreenReceiver(peerId){
+    const session=serverVoiceSession;if(!session)return null;
+    const peer=await ensureServerVoicePeer(peerId);if(!peer)return null;
+    if(peer.nativeScreenPc)return peer.nativeScreenPc;
+    await ensureAzureCallIceConfig();
+    const pc=new RTCPeerConnection(azureCallRtcConfig);
+    peer.nativeScreenPc=pc;peer.nativeScreenPendingIce=[];
+    pc.onicecandidate=e=>{if(e.candidate&&serverVoiceSession===session)directCallSignal(String(peerId),{kind:'native-screen-ice',callId:session.roomId,callType:'screen',candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
+    pc.ontrack=e=>{
+      const track=e.track;if(!track||track.kind!=='video')return;
+      peer.videoStream=new MediaStream([track]);
+      track.onunmute=()=>{if(serverVoiceSession===session)renderServerVoiceModal();};
+      track.onended=()=>{if(peer.videoStream?.getTracks?.().includes(track))peer.videoStream=null;renderServerVoiceModal();};
+      renderServerVoiceModal();
+    };
+    pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState)){try{pc.close();}catch{}if(peer.nativeScreenPc===pc)peer.nativeScreenPc=null;}};
+    return pc;
+  }
+  async function handleServerNativeScreenSignal(event){
+    const session=serverVoiceSession,signal=event?.signal||{},kind=String(signal.kind||''),from=String(event?.fromUserId||'');
+    if(!session||!from||from===String(state.currentAccountId)||String(signal.callId||'')!==String(session.roomId))return false;
+    if(!['native-screen-offer','native-screen-ice','native-screen-stop','screen-share-start','screen-share-stop'].includes(kind))return false;
+    const peer=await ensureServerVoicePeer(from);if(!peer)return true;
+    if(kind==='screen-share-start'){session.participantIds.add(from);renderServerVoiceModal();return true;}
+    if(kind==='screen-share-stop'||kind==='native-screen-stop'){
+      try{peer.nativeScreenPc?.close?.();}catch{}peer.nativeScreenPc=null;peer.nativeScreenPendingIce=[];peer.videoStream=null;renderServerVoiceModal();return true;
+    }
+    if(kind==='native-screen-ice'){
+      if(!signal.candidate)return true;
+      const pc=peer.nativeScreenPc;
+      if(pc?.remoteDescription){try{await pc.addIceCandidate(signal.candidate);}catch{}}
+      else{peer.nativeScreenPendingIce=peer.nativeScreenPendingIce||[];peer.nativeScreenPendingIce.push(signal.candidate);}
+      return true;
+    }
+    if(kind==='native-screen-offer'){
+      const pc=await ensureServerNativeScreenReceiver(from);if(!pc||!signal.description)return true;
+      if(pc.signalingState!=='stable'){try{await pc.setLocalDescription({type:'rollback'});}catch{}}
+      await pc.setRemoteDescription(signal.description);
+      for(const candidate of peer.nativeScreenPendingIce||[]){try{await pc.addIceCandidate(candidate);}catch{}}
+      peer.nativeScreenPendingIce=[];
+      const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+      directCallSignal(from,{kind:'native-screen-answer',callId:session.roomId,callType:'screen',description:pc.localDescription});
+      renderServerVoiceModal();return true;
+    }
+    return true;
   }
   async function handleServerVoiceSignal(event){
     const signal=event?.signal||{},kind=String(signal.kind||'');
@@ -4777,6 +4824,7 @@
     activeCall=null;setNativeAndroidCallActive(false);scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
   }
   async function handleCallSignalEvent(event){
+    if(await handleServerNativeScreenSignal(event))return;
     if(await handleServerVoiceSignal(event))return;
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
     if(!from||!callId)return;
