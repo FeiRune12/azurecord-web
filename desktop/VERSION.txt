@@ -1,1 +1,1 @@
-Azurecord 4.0.1 Fast Calls + Live Members + Server Call Modal + Lola AI
+Azurecord 4.0.2 Live Server Members + Vercel Mirror
