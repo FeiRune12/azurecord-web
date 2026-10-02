@@ -162,6 +162,7 @@
   let callSignalPollTimer = null;
   let callSignalCursor = Date.now() - 5000;
   let activeCall = null;
+  let serverVoiceSession = null;
   const AZURECALL_FALLBACK_ICE_SERVERS = [{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:stun.l.google.com:19302'}];
   let azureCallRtcConfig = {iceServers:AZURECALL_FALLBACK_ICE_SERVERS,iceCandidatePoolSize:4};
   let azureCallIceConfigExpiresAt = 0;
@@ -1291,7 +1292,7 @@
     return all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));
   }
   function addNotification(title,body,type='general'){ state.lastNotifications.unshift({id:uid('notif'),title,body,type,time:now(),unread:true}); state.lastNotifications=state.lastNotifications.slice(0,40); save(); renderBadges(); if(state.notificationsEnabled && state.nativeNotifications && window.azurecordDesktop?.notify) window.azurecordDesktop.notify(title,body); }
-  const APP_CORRECTION_NOTICE={id:'3.0.9-screen-share-update-flow-20261001',title:'Azurecord 3.0.9',body:'A transmissão mobile ficou maior, o desktop recebeu recuperação extra para lives do Android e o fluxo de atualização foi simplificado.'};
+  const APP_CORRECTION_NOTICE={id:'4.0.0-fast-calls-group-voice-screen-20261001',title:'Azurecord 4.0.0',body:'Chamadas agora tocam mais rápido, áudio ganhou supressão reforçada, transmissões móveis receberam recuperação extra e canais de voz em servidores suportam vários membros.'};
   function announceAppCorrection(){
     if(!currentUser())return;
     const key='azurecord_correction_notice_'+APP_CORRECTION_NOTICE.id;
@@ -1592,7 +1593,7 @@
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=()=>startDmCall('voice'); $('videoBtn').onclick=()=>startDmCall('video'); $('screenBtn').onclick=()=>activeCall?toggleCallScreen():startDmCall('screen'); $('searchBtn').onclick=openChannelSearch;
-    $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
+    $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('remoteCallVideo').onclick=()=>{if(activeCall?.remoteScreenSharing)void openRemoteSharedScreen();}; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
     document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
@@ -3768,7 +3769,7 @@
   function scheduleCallSignalPoll(){
     clearTimeout(callSignalPollTimer);callSignalPollTimer=null;
     if(!socialCloudReady())return;
-    const delay=activeCall?(cloudRealtimeConnected()?1200:500):3000;
+    const delay=(activeCall||serverVoiceSession)?(cloudRealtimeConnected()?350:250):1800;
     callSignalPollTimer=setTimeout(async()=>{await pollCallSignals();scheduleCallSignalPoll();},delay);
   }
   function startCallSignalPolling(){callSignalCursor=Date.now()-5000;scheduleCallSignalPoll();}
@@ -3898,7 +3899,9 @@
       noiseSuppression:{ideal:true},
       autoGainControl:{ideal:true},
       channelCount:{ideal:1},
-      sampleRate:{ideal:48000}
+      sampleRate:{ideal:48000},
+      sampleSize:{ideal:16},
+      latency:{ideal:0.02}
     };
   }
   async function acquireCallMedia(call,{incoming=false}={}){
@@ -4058,9 +4061,9 @@
     finally{call.iceRestarting=false;armCallConnectTimeout(call);}
   }
   function callConnectTimeoutMs(){
-    if(isNativeAndroidCallDevice())return 25000;
-    if(isMobileCallDevice())return 18000;
-    return 12000;
+    if(isNativeAndroidCallDevice())return 12000;
+    if(isMobileCallDevice())return 9000;
+    return 7000;
   }
   function callConnectMaxAttempts(){return 2;}
   function armCallConnectTimeout(call){
@@ -4222,16 +4225,17 @@
       if(!screenCaptureSupported()){showToast(isMobileCallDevice()?'O navegador deste celular não expôs a captura de tela para esta página. Use o app Android nativo ou atualize o navegador.':'Compartilhamento de tela indisponível neste dispositivo.');return;}
       if(!nativeAndroidScreenSupported())initialScreenCapture=requestAzureDisplayMedia().then(stream=>({stream}),error=>({error}));
     }
-    const realtime=await ensureAzureCallRealtime();
-    if(!realtime.ok){
-      const captured=initialScreenCapture?await initialScreenCapture:null;
-      for(const track of captured?.stream?.getTracks?.()||[])try{track.stop();}catch{}
-      showToast(explainAzureCallRealtimeFailure(realtime));return;
-    }
-    await ensureAzureCallIceConfig();
-    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'connecting',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,nativeScreenSharing:false,nativeScreenRequested:false,nativeScreenAutoStart:type==='screen'&&nativeAndroidScreenSupported(),nativeScreenPc:null,nativeScreenPendingIce:[],nativeRemoteScreenTrack:null,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
-    activeCall=call;setNativeAndroidCallActive(true);scheduleCallSignalPoll();updateCallUi();
+    if(!socialCloudReady()){showToast(explainAzureCallRealtimeFailure({reason:'session'}));return;}
+    if(serverVoiceSession)leaveServerVoiceChannel({notify:true});
+    startCloudRealtimeSocket();
+    startCallSignalPolling();
+    const call={id:uid('call'),peerId:view.dmUserId,type,direction:'outgoing',status:'ringing',pc:null,localStream:null,remoteStream:null,remoteAudioStream:null,remoteCameraStream:null,remoteScreenStream:null,remoteCameraTrack:null,remoteScreenTrack:null,cameraTrack:null,screenTrack:null,screenStream:null,cameraTransceiver:null,screenTransceiver:null,pendingIce:[],pendingOffer:null,tracksAttached:false,ringTimer:null,connectTimer:null,connectAttempts:0,iceRestarting:false,seenSignals:new Set(),controlChannel:null,remoteScreenSharing:false,remoteShareFocused:false,nativeScreenSharing:false,nativeScreenRequested:false,nativeScreenAutoStart:type==='screen'&&nativeAndroidScreenSupported(),nativeScreenPc:null,nativeScreenPendingIce:[],nativeRemoteScreenTrack:null,uiFrame:0,shareStateSyncedAt:0,shareRevision:0};
+    activeCall=call;setNativeAndroidCallActive(true);updateCallUi();
+    directCallSignal(call.peerId,{kind:'ring',callId:call.id,callType:call.type});
+    call.ringTimer=setTimeout(()=>{if(activeCall===call&&call.status==='ringing')endActiveCall({notify:true,message:'A chamada não foi atendida.'});},45000);
+    const iceReady=ensureAzureCallIceConfig();
     try{
+      await iceReady;
       if(initialScreenCapture){
         const captured=await initialScreenCapture;
         if(captured?.error)throw captured.error;
@@ -4243,11 +4247,8 @@
       await acquireCallMedia(call,{incoming:false});
       const pc=createCallPeer(call,{offerer:true});await attachCallLocalTracks(call,{offerer:true});
       if(call.screenTrack)await tuneScreenSender(getCallVideoSender(call,'screen'));
-      setCallStatus('ringing');
-      if(!sendCallSignal('ring'))throw new Error('Realtime desconectado.');
-      const offer=await pc.createOffer();await pc.setLocalDescription(offer);sendCallSignal('offer',{description:pc.localDescription});
+      const offer=await pc.createOffer({iceRestart:false});await pc.setLocalDescription(offer);sendCallSignal('offer',{description:pc.localDescription});
       if(call.screenTrack)void postScreenShareApiSignal(call,'screen-share-start');
-      call.ringTimer=setTimeout(()=>{if(activeCall===call&&call.status==='ringing')endActiveCall({notify:true,message:'A chamada não foi atendida.'});},45000);
     }catch(err){endActiveCall({notify:false});showToast(callMediaErrorMessage(err)||'Não foi possível iniciar a chamada.');}
   }
   async function acceptIncomingCall(){
