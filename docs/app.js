@@ -3623,7 +3623,9 @@
     const canManage=canManageServer(s);
     const canDelete=canManage && textChannels.length>1;
     const box=$('contextMenu');
-    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>↑ Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>↓ Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>🗑 Excluir canal</button></div>`;
+    const prefs=serverPreferenceState(s);
+    const channelMuted=(prefs.mutedChannels||[]).includes(String(channelId));
+    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${channelMuted?'🔔 Ativar notificações':'🔕 Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>↑ Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>↓ Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>🗑 Excluir canal</button></div>`;
     box.hidden=false;
     box.style.left=Math.min(ev.clientX,window.innerWidth-250)+'px'; box.style.top=Math.min(ev.clientY,window.innerHeight-180)+'px';
     box.querySelectorAll('[data-channel-context]').forEach(b=>{b.onclick=()=>channelContextAction(b.dataset.channelContext,channelId);});
@@ -3638,6 +3640,11 @@
   async function channelContextAction(action,id){
     const s=getServer(view.serverId); const c=getChannel(view.serverId,id); hideContext();
     if(!s||!c||c.type!=='text')return;
+    if(action==='mute'){
+      const prefs=serverPreferenceState(s),set=new Set((prefs.mutedChannels||[]).map(String));
+      if(set.has(String(id)))set.delete(String(id));else set.add(String(id));
+      prefs.mutedChannels=[...set];save();renderServerChannels();showToast(set.has(String(id))?'Canal silenciado.':'Notificações do canal ativadas.');return;
+    }
     if(!canManageServer(s)){showToast('Você não tem permissão para gerenciar este canal.');return;}
     const textChannels=s.channels.filter(x=>x.type==='text'); const pos=textChannels.findIndex(x=>x.id===id);
     if(action==='delete'){
@@ -3741,7 +3748,88 @@
       holder.querySelectorAll('[data-revoke-server-invite]').forEach(b=>b.onclick=async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites/${encodeURIComponent(b.dataset.revokeServerInvite)}`,{method:'DELETE'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.revoke'});loadServerSettingsInvites(s);}catch(err){showToast(err.message||'Falha ao revogar convite.');}});
     }catch(err){holder.innerHTML=`<span class="danger-text">${esc(err.message||'Falha ao carregar convites.')}</span>`;}
   }
-  function openServerMenu(){openServerSettings('profile');}
+  function serverPreferenceState(server){
+    const s=typeof server==='string'?getServer(server):server;
+    if(!s)return {muted:false,notificationMode:'mentions',hideMuted:false,showAll:false,mutedChannels:[],allowServerDms:true};
+    state.serverPreferences=state.serverPreferences||{};
+    state.serverPreferences[s.id]={muted:false,notificationMode:'mentions',hideMuted:false,showAll:false,mutedChannels:[],allowServerDms:true,...(state.serverPreferences[s.id]||{})};
+    return state.serverPreferences[s.id];
+  }
+  function markServerRead(server){
+    const s=typeof server==='string'?getServer(server):server;if(!s)return;
+    for(const key of Object.keys(state.unread||{}))if(key.startsWith(s.id+'|'))delete state.unread[key];
+    save();renderServerChannels();renderBadges();showToast('Servidor marcado como lido.');
+  }
+  function closeServerQuickMenu(){document.getElementById('serverQuickMenu')?.remove();}
+  function positionServerQuickMenu(menu,anchor){
+    const rect=anchor?.getBoundingClientRect?.();if(!rect)return;
+    const width=250;menu.style.left=Math.min(window.innerWidth-width-10,Math.max(10,rect.right-width))+'px';
+    menu.style.top=Math.min(window.innerHeight-menu.offsetHeight-10,rect.bottom+6)+'px';
+  }
+  function serverMenuCheckbox(checked){return '<span class="server-menu-check">'+(checked?'✓':'')+'</span>';}
+  function openServerNotificationSettings(s){
+    closeServerQuickMenu();const prefs=serverPreferenceState(s);
+    showModal('Config. de notificação','<p class="muted">Escolha quando o Azurecord deve chamar sua atenção neste servidor.</p><div class="server-option-list">'+
+      '<label class="server-option"><input type="radio" name="serverNotifyMode" value="all" '+(prefs.notificationMode==='all'?'checked':'')+'><span><strong>Todas as mensagens</strong><small>Notificar toda atividade nova.</small></span></label>'+
+      '<label class="server-option"><input type="radio" name="serverNotifyMode" value="mentions" '+(prefs.notificationMode==='mentions'?'checked':'')+'><span><strong>Apenas @menções</strong><small>Modo recomendado.</small></span></label>'+
+      '<label class="server-option"><input type="radio" name="serverNotifyMode" value="none" '+(prefs.notificationMode==='none'?'checked':'')+'><span><strong>Nada</strong><small>Sem alertas deste servidor.</small></span></label>'+
+      '</div><div class="onboarding-actions"><button class="btn btn-primary" id="saveServerNotifyMode">Salvar</button></div>');
+    $('saveServerNotifyMode').onclick=()=>{prefs.notificationMode=document.querySelector('input[name="serverNotifyMode"]:checked')?.value||'mentions';save();closeModal();showToast('Notificações do servidor atualizadas.');};
+  }
+  function openServerPrivacySettings(s){
+    closeServerQuickMenu();const prefs=serverPreferenceState(s);
+    showModal('Config. de privacidade','<div class="settings-section"><h3>Privacidade neste servidor</h3><p class="muted">Essas preferências valem só para '+esc(s.name)+'.</p>'+
+      '<button class="settings-toggle-row" id="serverDmPrivacy"><div><strong>Mensagens diretas de membros</strong><span>Permitir que membros deste servidor possam iniciar DMs quando as regras globais permitirem.</span></div><span class="toggle-switch '+(prefs.allowServerDms?'on':'')+'"><i></i></span></button></div>');
+    $('serverDmPrivacy').onclick=()=>{prefs.allowServerDms=!prefs.allowServerDms;save();openServerPrivacySettings(s);};
+  }
+  function openPerServerProfile(s){
+    closeServerQuickMenu();const me=(s.members||[]).find(m=>String(m.id)===String(state.currentAccountId));
+    showModal('Editar perfil por servidor','<p class="muted">Use um apelido diferente apenas em '+esc(s.name)+'.</p><label>Apelido neste servidor<input id="serverNicknameInput" maxlength="48" value="'+esc(me?.nickname||'')+'" placeholder="'+esc(currentUser()?.username||'Seu nome')+'"></label><div class="onboarding-actions"><button class="btn btn-primary" id="saveServerNickname">Salvar</button></div>');
+    $('saveServerNickname').onclick=async()=>{const nickname=$('serverNicknameInput').value.trim();try{if(socialCloudReady())await cloudRequest('/api/servers/'+encodeURIComponent(s.backendId||s.id)+'/members/@me',{method:'PATCH',body:JSON.stringify({nickname})});if(me)me.nickname=nickname;save();renderMemberPanel();closeModal();showToast('Perfil do servidor atualizado.');}catch(err){showToast(err.message||'Não foi possível salvar o apelido.');}};
+  }
+  async function leaveCurrentServer(s){
+    closeServerQuickMenu();
+    if(s.owner===state.currentAccountId){showToast('O dono não pode sair do próprio servidor. Use Excluir servidor nas configurações.');return;}
+    if(!confirm('Sair de "'+s.name+'"? Você precisará de outro convite para voltar.'))return;
+    try{
+      if(socialCloudReady())await cloudRequest('/api/servers/'+encodeURIComponent(s.backendId||s.id)+'/leave',{method:'DELETE'});
+      sendCloudRealtime({type:'server.commit',serverId:s.backendId||s.id,reason:'member.leave'});
+      sendCloudRealtime({type:'account.commit',reason:'server.leave'});
+      state.servers=state.servers.filter(x=>x.id!==s.id);if(state.serverPreferences)delete state.serverPreferences[s.id];
+      save();persistServersNow();openHome('friends');renderServerRail();showToast('Você saiu do servidor.');
+    }catch(err){showToast(err.message||'Não foi possível sair do servidor.');}
+  }
+  function openServerMenu(event){
+    const s=getServer(view.serverId);if(!s)return;closeServerQuickMenu();const prefs=serverPreferenceState(s);
+    const menu=document.createElement('div');menu.id='serverQuickMenu';menu.className='server-quick-menu';
+    const ownerLeave=s.owner===state.currentAccountId?'':'<button class="danger" data-server-action="leave">Sair do servidor</button><div class="server-menu-sep"></div>';
+    const adminSettings=canManageServer(s)?'<div class="server-menu-sep"></div><button data-server-action="settings">⚙ Configurações do servidor</button>':'';
+    menu.innerHTML=
+      '<button data-server-action="read">Marcar como lida</button><div class="server-menu-sep"></div>'+
+      '<button data-server-action="invite">Convidar para o servidor</button><div class="server-menu-sep"></div>'+
+      '<button data-server-action="mute"><span>Silenciar servidor</span><span>'+(prefs.muted?'✓':'›')+'</span></button>'+
+      '<button data-server-action="notify"><span>Config. de notificação</span><small>'+(prefs.notificationMode==='all'?'Todas as mensagens':prefs.notificationMode==='none'?'Nada':'Apenas @menções')+'</small><span>›</span></button>'+
+      '<button data-server-action="hide-muted"><span>Ocultar canais silenciados</span>'+serverMenuCheckbox(!!prefs.hideMuted)+'</button>'+
+      '<button data-server-action="show-all"><span>Mostrar todos os canais</span>'+serverMenuCheckbox(!!prefs.showAll)+'</button><div class="server-menu-sep"></div>'+
+      '<button data-server-action="privacy">Config. de privacidade</button><button data-server-action="profile">Editar perfil por servidor</button><div class="server-menu-sep"></div>'+
+      ownerLeave+'<button data-server-action="copy-id"><span>▣ &nbsp; Copiar ID do servidor</span></button>'+adminSettings;
+    document.body.appendChild(menu);positionServerQuickMenu(menu,event?.currentTarget||$('serverMenu'));
+    menu.querySelectorAll('[data-server-action]').forEach(b=>b.onclick=()=>{
+      const action=b.dataset.serverAction;
+      if(action==='read'){markServerRead(s);closeServerQuickMenu();}
+      else if(action==='invite'){closeServerQuickMenu();openInvite();}
+      else if(action==='mute'){prefs.muted=!prefs.muted;save();showToast(prefs.muted?'Servidor silenciado.':'Som do servidor ativado.');openServerMenu({currentTarget:$('serverMenu')});}
+      else if(action==='notify')openServerNotificationSettings(s);
+      else if(action==='hide-muted'){prefs.hideMuted=!prefs.hideMuted;save();renderServerChannels();openServerMenu({currentTarget:$('serverMenu')});}
+      else if(action==='show-all'){prefs.showAll=!prefs.showAll;save();renderServerChannels();openServerMenu({currentTarget:$('serverMenu')});}
+      else if(action==='privacy')openServerPrivacySettings(s);
+      else if(action==='profile')openPerServerProfile(s);
+      else if(action==='leave')void leaveCurrentServer(s);
+      else if(action==='copy-id'){navigator.clipboard?.writeText(String(s.backendId||s.id));showToast('ID do servidor copiado.');closeServerQuickMenu();}
+      else if(action==='settings'){closeServerQuickMenu();openServerSettings('profile');}
+    });
+    setTimeout(()=>document.addEventListener('pointerdown',function outside(e){if(!e.target.closest('#serverQuickMenu')&&!e.target.closest('#serverMenu')){closeServerQuickMenu();document.removeEventListener('pointerdown',outside);}}, {capture:true}),0);
+  }
 
 
   function callKindLabel(kind){return kind==='video'?'vídeo':kind==='screen'?'compartilhamento de tela':'voz';}
@@ -4725,12 +4813,14 @@
 
     ensureServerChannels(s);
     const channels=Array.isArray(s.channels)?s.channels:[];
-    const textChannels=channels.filter(c=>c&&c.type==='text');
-    const voiceChannels=channels.filter(c=>c&&c.type==='voice');
+    const prefs=serverPreferenceState(s),mutedSet=new Set((prefs.mutedChannels||[]).map(String));
+    const visibleChannels=channels.filter(ch=>prefs.showAll||!prefs.hideMuted||!mutedSet.has(String(ch.id)));
+    const textChannels=visibleChannels.filter(c=>c&&c.type==='text');
+    const voiceChannels=visibleChannels.filter(c=>c&&c.type==='voice');
     if(!view.channelId || !channels.some(c=>c.id===view.channelId && c.type==='text')){
       view.channelId=textChannels[0]?.id||channels[0]?.id||null;
     }
-    text.innerHTML=textChannels.map(c=>`<button type="button" class="channel-item ${c.id===view.channelId?'active':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${state.unread?.[`${s.id}|${c.id}`]?'●':''}</small></button>`).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
+    text.innerHTML=textChannels.map(c=>`<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?'🔕':(state.unread?.[`${s.id}|${c.id}`]?'●':'')}</small></button>`).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
     voice.innerHTML=voiceChannels.map(c=>{
       const joined=serverVoiceSession?.serverId===s.id&&serverVoiceSession?.channelId===c.id;
       const count=joined?serverVoiceSession.participantIds.size:0;
