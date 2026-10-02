@@ -106,6 +106,8 @@ export class UserHub {
       let delivered = false;
       if (message.type === "dm.commit") delivered = await this.handleDmCommit(session, message);
       else if (message.type === "channel.commit") delivered = await this.handleChannelCommit(session, message);
+      else if (message.type === "call.signal") delivered = await this.handleCallSignalCommit(session, message);
+      else if (message.type === "server.commit") delivered = await this.handleServerCommit(session, message);
       else return json({ ok: false, error: "Unsupported commit" }, 400);
       return json({ ok: delivered });
     }
@@ -284,6 +286,66 @@ export class UserHub {
         .filter(Boolean)
         .map(userId => this.notifyUser(userId, event))
     );
+    return true;
+  }
+
+  async handleCallSignalCommit(session, message) {
+    const targetUserId = String(message.targetUserId || "");
+    const rawSignal = message.signal && typeof message.signal === "object" ? message.signal : null;
+    if (!targetUserId || targetUserId === session.userId || !rawSignal) return false;
+    const kind = String(rawSignal.kind || "");
+    const callId = String(rawSignal.callId || "").slice(0, 120);
+    const callType = ["voice", "video", "screen", "server-voice"].includes(String(rawSignal.callType)) ? String(rawSignal.callType) : "voice";
+    const allowedKinds = ["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop","native-screen-resync","server-voice-join","server-voice-ack","server-voice-offer","server-voice-answer","server-voice-ice","server-voice-leave"];
+    if (!callId || !allowedKinds.includes(kind)) return false;
+    const isServerVoice = kind.startsWith("server-voice-");
+    if (isServerVoice) {
+      const serverId = String(rawSignal.serverId || "");
+      const channelId = String(rawSignal.channelId || "");
+      if (!serverId || !channelId) return false;
+      const members = await this.serverMemberIdsFor(session, serverId);
+      if (!members.includes(session.userId) || !members.includes(targetUserId)) return false;
+    } else {
+      const friends = await this.friendIdsFor(session);
+      if (!friends.includes(targetUserId)) return false;
+    }
+    const signalId = String(rawSignal.signalId || "").slice(0, 120);
+    const signal = { kind, callId, callType, signalId };
+    if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer","server-voice-offer","server-voice-answer"].includes(kind) && rawSignal.description && typeof rawSignal.description === "object") signal.description = rawSignal.description;
+    if (["ice","native-screen-ice","server-voice-ice"].includes(kind) && rawSignal.candidate && typeof rawSignal.candidate === "object") signal.candidate = rawSignal.candidate;
+    if (isServerVoice) {
+      signal.serverId = String(rawSignal.serverId || "").slice(0,120);
+      signal.channelId = String(rawSignal.channelId || "").slice(0,120);
+    }
+    if (Number.isFinite(Number(rawSignal.shareRevision))) signal.shareRevision = Math.max(0, Math.floor(Number(rawSignal.shareRevision)));
+    if (rawSignal.reason) signal.reason = String(rawSignal.reason).slice(0, 80);
+    if (JSON.stringify(signal).length > 180000) return false;
+    await this.notifyUser(targetUserId, {
+      type: "call.signal",
+      eventId: signalId || crypto.randomUUID(),
+      fromUserId: session.userId,
+      signal,
+      at: Date.now(),
+    });
+    return true;
+  }
+
+  async handleServerCommit(session, message) {
+    const serverId = String(message.serverId || "");
+    if (!serverId) return false;
+    let members = [];
+    try {
+      const response = await fetch(`${AZURECORD_API_URL}/api/servers/${encodeURIComponent(serverId)}/members`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      });
+      if (!response.ok) return false;
+      const data = await response.json();
+      members = Array.isArray(data?.members) ? data.members : [];
+    } catch {
+      return false;
+    }
+    const event = { type: "server.changed", eventId: crypto.randomUUID(), serverId, reason: String(message.reason || "server"), at: Date.now() };
+    await Promise.allSettled(members.map(member => String(member?.id || "")).filter(Boolean).map(userId => this.notifyUser(userId, event)));
     return true;
   }
 
@@ -491,7 +553,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.8.0",
+        version: "1.8.1",
         transport: "websocket",
         hibernation: true,
       });
@@ -506,7 +568,7 @@ export default {
       const bodyText = await request.text();
       let body = null;
       try { body = JSON.parse(bodyText); } catch {}
-      if (!body || !["dm.commit","channel.commit"].includes(String(body.type || ""))) {
+      if (!body || !["dm.commit","channel.commit","call.signal","server.commit"].includes(String(body.type || ""))) {
         return json({ ok: false, error: "Invalid commit" }, 400);
       }
 
