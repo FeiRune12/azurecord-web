@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "private": true,
-  "description": "Azurecord 4.0.1: chamadas rápidas, membros em tempo real, modal de voz em servidores e Lola Workers AI resiliente.",
+  "description": "Azurecord 4.0.2: membros de servidor sincronizados em tempo real, refresh resiliente e espelho automático do web no Vercel.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
