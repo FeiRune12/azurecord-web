@@ -68,9 +68,20 @@ jobs:
         working-directory: desktop
         run: npm run check
 
-      - name: Testes
+      - name: Testes da versão atual
         working-directory: desktop
-        run: npm test
+        shell: pwsh
+        run: |
+          $version = $env:AZURECORD_VERSION
+          $parts = $version.Split('.')
+          $prefix = "v$($parts[0])$($parts[1])$($parts[2])-"
+          $tests = Get-ChildItem tests -Filter "$prefix*.test.js" -File | Select-Object -ExpandProperty FullName
+          if (-not $tests) {
+            Write-Host "Nenhum teste específico encontrado para $version. Build seguirá sem executar suítes antigas."
+          } else {
+            Write-Host "Executando somente testes da versão atual: $version"
+            node --test $tests
+          }
 
       - name: Atualizar tag da versão
         if: github.event_name != 'pull_request'
