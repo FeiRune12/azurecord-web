@@ -100,13 +100,14 @@
     friends:[], requests:[], blockedUsers:[], ignoredUsers:[], servers:[],
     cloudSettings:{allowFriendRequests:true,allowDmsFromFriends:true,lolaEnabled:true,lolaMemoryEnabled:true,notificationsEnabled:true,nativeNotifications:true,compactMode:false,reducedMotion:false,mediaAutoplay:true,language:'pt-BR'},
     dmMessages:{}, channelMessages:{}, pinned:{}, deleted:{}, drafts:{}, attachments:[], closedDms:{},
-    unread:{}, profiles:{}, roles:{}, lolaMemory:{}, lolaSecrets:{}, lolaInitiated:{}, lolaSessionInfo:{}, lolaGreetingHistory:{}, lastNotifications:[
+    unread:{}, mentionCounts:{}, profiles:{}, roles:{}, lolaMemory:{}, lolaSecrets:{}, lolaInitiated:{}, lolaSessionInfo:{}, lolaGreetingHistory:{}, lastNotifications:[
       {id:uid('notif'),type:'system',title:'Bem-vindo ao Azurecord',body:'A V52 Beta 8.4 corrige solicitações de amizade, remove o servidor de testes e prepara o Web para GitHub Pages.',time:now(),unread:true}
     ]
   };
 
   let state = loadState();
   if(!state.closedDms||typeof state.closedDms!=='object')state.closedDms={};
+  if(!state.mentionCounts||typeof state.mentionCounts!=='object')state.mentionCounts={};
   if(!Array.isArray(state.blockedUsers))state.blockedUsers=[];
   if(!Array.isArray(state.ignoredUsers))state.ignoredUsers=[];
   if(!state.cloudSettings||typeof state.cloudSettings!=='object')state.cloudSettings=structuredClone(defaultState.cloudSettings);
@@ -772,6 +773,20 @@
     state.unread[key]=(view.mode==='dm'&&view.dmUserId===peerId)?0:1;save();renderDms();
     if(view.mode==='dm'&&view.dmUserId===peerId)renderMessages();
   }
+  function messageMentionsCurrentUser(message){
+    const text=String(message?.text||'');const me=currentUser();if(!me||String(message?.senderId||message?.author||'')===String(state.currentAccountId))return false;
+    const names=[me.username,me.handle,String(me.handle||'').replace(/^@/,'')].filter(Boolean).map(usernameKey);
+    const found=[...text.matchAll(/@([\w\d_.-]+)/g)].map(m=>usernameKey(m[1]));
+    return found.some(name=>name==='everyone'||name==='here'||names.includes(name));
+  }
+  function registerServerMention(serverId,channelId,message){
+    if(!messageMentionsCurrentUser(message))return false;
+    state.mentionCounts=state.mentionCounts||{};const key=String(serverId)+'|'+String(channelId);
+    if(view.mode==='server'&&String(view.serverId)===String(serverId)&&String(view.channelId)===String(channelId)){state.mentionCounts[key]=0;return false;}
+    state.mentionCounts[key]=(Number(state.mentionCounts[key])||0)+1;return true;
+  }
+  function serverMentionCount(serverId){return Object.entries(state.mentionCounts||{}).reduce((n,[key,value])=>n+(key.startsWith(String(serverId)+'|')?(Number(value)||0):0),0);}
+  function clearChannelMentions(serverId,channelId){state.mentionCounts=state.mentionCounts||{};state.mentionCounts[String(serverId)+'|'+String(channelId)]=0;}
   function applyRealtimeChannelMessage(remoteServerId,remoteChannelId,remote){
     if(!remote?.id)return false;
     const srv=state.servers.find(s=>(s.backendId||s.id)===remoteServerId);
@@ -783,7 +798,7 @@
     const normalized={...remote,author:remote.senderId,serverId:remote.id,pending:false,failed:false};
     if(idx>=0){const localId=arr[idx].id;arr[idx]={...arr[idx],...normalized,id:localId};}else arr.push(normalized);
     arr.sort((a,b)=>(a.time||0)-(b.time||0));state.channelMessages[key]=arr;
-    state.unread[key]=(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)?0:1;save();
+    state.unread[key]=(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)?0:1;registerServerMention(srv.id,ch.id,remote);save();
     if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)renderMessages();else renderServerRail();
     return true;
   }
@@ -1198,7 +1213,7 @@
       backendEventSource.addEventListener('friend.request',ev=>{try{const p=JSON.parse(ev.data),r=p.request;if(!r)return;hydrateRemoteUser(r.user);if(!state.requests.some(x=>x.id===r.id))state.requests.push({id:r.id,from:r.from,to:r.to,status:'pending',time:Date.now()});save();renderBadges();if(view.mode==='home')renderHome();addNotification('Nova solicitação',`${r.user?.username||'Alguém'} quer ser seu amigo.`);}catch{}});
       backendEventSource.addEventListener('friend.accepted',ev=>{try{const p=JSON.parse(ev.data);if(p.user){hydrateRemoteUser(p.user);if(!isFriend(p.user.id))state.friends.push({a:state.currentAccountId,b:p.user.id,created:now()});save();renderHome();}}catch{}});
       backendEventSource.addEventListener('server.created',ev=>{try{const p=JSON.parse(ev.data);if(!p.server)return;const srv={...p.server,channels:(p.channels||[]).map(c=>({...c,serverId:p.server.id}))};ensureServerChannels(srv);const i=state.servers.findIndex(x=>x.id===srv.id||x.backendId===srv.id||(srv.clientId&&x.id===srv.clientId));if(i>=0){const local=state.servers[i];state.servers[i]=Object.assign(local,srv,{id:local.id,backendId:srv.id,myRole:srv.myRole||local.myRole});}else state.servers.push(srv);save();persistServersNow();renderServerRail();renderServerChannels();}catch{}});
-      backendEventSource.addEventListener('channel.message',ev=>{try{const m=JSON.parse(ev.data)?.message;if(!m)return;const server=state.servers.find(s=>(s.backendId||s.id)===m.serverId);if(!server)return;const ch=server.channels.find(c=>(c.backendId||c.id)===m.channelId);if(!ch)return;const key=`${server.id}|${ch.id}`;const arr=state.channelMessages[key]||[];if(!arr.some(x=>x.serverId===m.id||x.id===m.id)){if(m.author)hydrateRemoteUser(m.author);arr.push({...m,author:m.senderId,serverId:m.id});state.channelMessages[key]=arr;save();if(view.mode==='server'&&view.serverId===server.id&&view.channelId===ch.id)renderMessages();else{state.unread[key]=1;renderServerRail();}}}catch(err){console.warn(err);}});
+      backendEventSource.addEventListener('channel.message',ev=>{try{const m=JSON.parse(ev.data)?.message;if(!m)return;const server=state.servers.find(s=>(s.backendId||s.id)===m.serverId);if(!server)return;const ch=server.channels.find(c=>(c.backendId||c.id)===m.channelId);if(!ch)return;const key=`${server.id}|${ch.id}`;const arr=state.channelMessages[key]||[];if(!arr.some(x=>x.serverId===m.id||x.id===m.id)){if(m.author)hydrateRemoteUser(m.author);arr.push({...m,author:m.senderId,serverId:m.id});state.channelMessages[key]=arr;registerServerMention(server.id,ch.id,m);save();if(view.mode==='server'&&view.serverId===server.id&&view.channelId===ch.id)renderMessages();else{state.unread[key]=1;renderServerRail();}}}catch(err){console.warn(err);}});
       backendEventSource.addEventListener('server.member_joined',()=>{if(view.mode==='server')renderMemberPanel();});
       backendEventSource.addEventListener('ai.conversation_reset',ev=>{try{
         const data=JSON.parse(ev.data);if(!data.sessionId||!state.currentAccountId)return;
@@ -1822,6 +1837,8 @@
           iconFrame.appendChild(glyph);
         }
         button.appendChild(iconFrame);
+        const mentionCount=serverMentionCount(s.id);
+        if(mentionCount>0){const badge=document.createElement('span');badge.className='server-mention-badge';badge.textContent=mentionCount>99?'99+':String(mentionCount);badge.style.setProperty('--mention-accent',currentUser()?.accent||'#5865f2');badge.setAttribute('aria-label',mentionCount+' menções não lidas');button.appendChild(badge);}
         if(state.unread?.[`server:${s.id}`]){
           const marker=document.createElement('span');
           marker.className='server-unread-marker';
