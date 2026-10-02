@@ -147,15 +147,34 @@ class AzureCallScreenEngine(
         val width = max(2, ((sourceWidth * scale).roundToInt() / 2) * 2)
         val height = max(2, ((sourceHeight * scale).roundToInt() / 2) * 2)
 
-        capturer?.startCapture(width, height, 20)
+        // MediaProjection on some Android devices starts with a few empty frames while
+        // the virtual display settles. 30 fps + adaptation prevents the remote side
+        // from getting stuck on that initial black frame.
+        capturer?.startCapture(width, height, 30)
+        videoSource?.adaptOutputFormat(width, height, 30)
 
         videoTrack = factory?.createVideoTrack("AZURECORD_NATIVE_SCREEN", videoSource)
         videoTrack?.setEnabled(true)
-        peerConnection?.addTrack(videoTrack, listOf("azurecord-native-screen"))
+        val sender = peerConnection?.addTrack(videoTrack, listOf("azurecord-native-screen"))
+        try {
+            val parameters = sender?.parameters
+            val encoding = parameters?.encodings?.firstOrNull()
+            if (encoding != null) {
+                encoding.maxBitrateBps = 2_500_000
+                encoding.maxFramerate = 30
+                sender.parameters = parameters
+            }
+        } catch (_: Exception) {}
 
-        createOffer()
-        onState(true)
-        sendSignal("screen-share-start")
+        // Give ScreenCapturerAndroid time to publish a real frame before creating the
+        // offer. This avoids negotiating against the initial blank MediaProjection frame.
+        executor.schedule({
+            if (!stopping.get()) {
+                createOffer()
+                onState(true)
+                sendSignal("screen-share-start")
+            }
+        }, 320, TimeUnit.MILLISECONDS)
     }
 
     private fun createOffer() {
