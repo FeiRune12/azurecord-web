@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "3.0.9",
+  "version": "4.0.0",
   "private": true,
-  "description": "Azurecord 3.0.9: transmissão mobile ampliada, recuperação de live Android no desktop e atualizador automático refinado.",
+  "description": "Azurecord 4.0.0: chamadas instantâneas, canais de voz em grupo, áudio refinado e transmissão mobile em tela cheia.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
