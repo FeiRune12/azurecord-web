@@ -28,7 +28,7 @@ test('2.0.4: AzureCall usa perfil de tela de baixa latência',()=>{
   const app=fs.readFileSync(path.join(root,'renderer','app.js'),'utf8');
   assert.match(app,/maintain-framerate/);
   assert.match(app,/1400000:2200000/);
-  assert.match(app,/cloudRealtimeConnected\(\)\?1200:500/);
+  assert.match(app,/cloudRealtimeConnected\(\)\?350:250/);
 });
 
 test('2.0.4: protocolo aceita ponte de tela nativa Android',()=>{
