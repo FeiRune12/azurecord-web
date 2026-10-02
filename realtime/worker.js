@@ -372,16 +372,30 @@ export class UserHub {
       const targetUserId = String(message.targetUserId || "");
       const rawSignal = message.signal && typeof message.signal === "object" ? message.signal : null;
       if (!targetUserId || targetUserId === session.userId || !rawSignal) return;
-      const friends = await this.friendIdsFor(session);
-      if (!friends.includes(targetUserId)) return;
       const kind = String(rawSignal.kind || "");
       const callId = String(rawSignal.callId || "").slice(0, 120);
-      const callType = ["voice", "video", "screen"].includes(String(rawSignal.callType)) ? String(rawSignal.callType) : "voice";
-      if (!callId || !["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop"].includes(kind)) return;
+      const callType = ["voice", "video", "screen", "server-voice"].includes(String(rawSignal.callType)) ? String(rawSignal.callType) : "voice";
+      const allowedKinds = ["ring","offer","answer","ice","ice-restart","accepted","hangup","decline","busy","screen-share-start","screen-share-stop","screen-offer","screen-answer","native-screen-offer","native-screen-answer","native-screen-ice","native-screen-stop","native-screen-resync","server-voice-join","server-voice-ack","server-voice-offer","server-voice-answer","server-voice-ice","server-voice-leave"];
+      if (!callId || !allowedKinds.includes(kind)) return;
+      const isServerVoice = kind.startsWith("server-voice-");
+      if (isServerVoice) {
+        const serverId = String(rawSignal.serverId || "");
+        const channelId = String(rawSignal.channelId || "");
+        if (!serverId || !channelId) return;
+        const members = await this.serverMemberIdsFor(session, serverId);
+        if (!members.includes(session.userId) || !members.includes(targetUserId)) return;
+      } else {
+        const friends = await this.friendIdsFor(session);
+        if (!friends.includes(targetUserId)) return;
+      }
       const signalId = String(rawSignal.signalId || "").slice(0, 120);
       const signal = { kind, callId, callType, signalId };
-      if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer"].includes(kind) && rawSignal.description && typeof rawSignal.description === "object") signal.description = rawSignal.description;
-      if ((kind === "ice" || kind === "native-screen-ice") && rawSignal.candidate && typeof rawSignal.candidate === "object") signal.candidate = rawSignal.candidate;
+      if (["offer","answer","screen-offer","screen-answer","native-screen-offer","native-screen-answer","server-voice-offer","server-voice-answer"].includes(kind) && rawSignal.description && typeof rawSignal.description === "object") signal.description = rawSignal.description;
+      if (["ice","native-screen-ice","server-voice-ice"].includes(kind) && rawSignal.candidate && typeof rawSignal.candidate === "object") signal.candidate = rawSignal.candidate;
+      if (isServerVoice) {
+        signal.serverId = String(rawSignal.serverId || "").slice(0,120);
+        signal.channelId = String(rawSignal.channelId || "").slice(0,120);
+      }
       if (Number.isFinite(Number(rawSignal.shareRevision))) signal.shareRevision = Math.max(0, Math.floor(Number(rawSignal.shareRevision)));
       if (rawSignal.reason) signal.reason = String(rawSignal.reason).slice(0, 80);
       if (JSON.stringify(signal).length > 180000) return;
@@ -477,7 +491,7 @@ export default {
       return json({
         ok: true,
         service: "azurecord-realtime",
-        version: "1.7.0",
+        version: "1.8.0",
         transport: "websocket",
         hibernation: true,
       });
