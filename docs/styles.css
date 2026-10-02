@@ -1690,3 +1690,7 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .server-option small{color:var(--muted)}
 .channel-item.channel-muted{opacity:.58}
 @media (max-width:760px){.server-quick-menu{width:min(270px,calc(100vw - 20px))}}
+
+.server-voice-video{width:100%;height:100%;min-height:180px;object-fit:contain;background:#050607;border-radius:10px}
+.server-voice-tile:has(.server-voice-video){padding:8px;overflow:hidden}
+.server-voice-bar .call-control.active{outline:2px solid rgba(35,165,90,.65)}
