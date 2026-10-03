@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.0');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.1');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -2750,7 +2750,20 @@
   }
   function getMessages(){ if(view.mode==='dm')return state.dmMessages[dmKey(view.dmUserId)]||[]; return state.channelMessages[`${view.serverId}|${view.channelId}`]||[]; }
   function setMessages(arr){ if(view.mode==='dm')state.dmMessages[dmKey(view.dmUserId)]=arr; else state.channelMessages[`${view.serverId}|${view.channelId}`]=arr; save(); }
-  function renderMessages(){ const box=$('messages');const all=getMessages();const msgs=all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));const hiddenCount=all.length-msgs.length;box.innerHTML=(hiddenCount?`<div class="message-filter-note">${hiddenCount} mensagem${hiddenCount===1?'':'s'} ocultada${hiddenCount===1?'':'s'} por Bloquear/Ignorar.</div>`:'')+(msgs.map(renderMessage).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem visível. Comece a conversa.</span></div>'); box.querySelectorAll('[data-msg]').forEach(el=>el.addEventListener('contextmenu',e=>openContextMenu(e,el.dataset.msg))); box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption))); }
+  function renderMessages(){
+    const box=$('messages');const all=getMessages();const msgs=all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));const hiddenCount=all.length-msgs.length;
+    box.innerHTML=(hiddenCount?`<div class="message-filter-note">${hiddenCount} mensagem${hiddenCount===1?'':'s'} ocultada${hiddenCount===1?'':'s'} por Bloquear/Ignorar.</div>`:'')+(msgs.map(renderMessage).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem visível. Comece a conversa.</span></div>');
+    box.querySelectorAll('[data-msg]').forEach(el=>el.addEventListener('contextmenu',e=>openContextMenu(e,el.dataset.msg)));
+    box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});
+    box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});
+    box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption)));
+    box.querySelectorAll('[data-inline-video-play]').forEach(btn=>btn.onclick=async e=>{
+      e.preventDefault();e.stopPropagation();
+      const card=btn.closest('.video-attachment'),video=card?.querySelector('video');if(!video)return;
+      video.controls=true;btn.hidden=true;
+      try{await video.play();}catch{btn.hidden=false;video.controls=false;}
+    });
+  }
   function attachmentListForMessage(m){
     if(Array.isArray(m?.files) && m.files.length) return m.files;
     if(m?.file) return [m.file];
@@ -3316,12 +3329,17 @@
   function renderAttachmentCards(files=[]){
     return files.map(f=>{
       const type=String(f.type||'');
+      const name=String(f.name||'Arquivo');
       const source=safeUrl(f.url||f.dataUrl||'');
       const image=type.startsWith('image/')&&source;
+      const video=(type.startsWith('video/')||/\.mp4$/i.test(name))&&source;
       if(image){
-        return `<figure class="message-attachment image-attachment"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(f.name||'Imagem')}" loading="lazy"></a><figcaption><span>${esc(f.name||'Imagem')}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        return `<figure class="message-attachment image-attachment"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(name||'Imagem')}" loading="lazy"></a><figcaption><span>${esc(name||'Imagem')}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
-      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(f.name||'Arquivo')}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
+      if(video){
+        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage"><video src="${source}" preload="metadata" playsinline></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+      }
+      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
       return source?`<a class="attachment-link" href="${source}" target="_blank" rel="noopener">${card}</a>`:card;
     }).join('');
   }
@@ -3573,7 +3591,25 @@
   function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">↩ Responder</button><button class="context-item" data-context="forward">↪ Encaminhar</button><button class="context-item" data-context="pin">📌 ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">● Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">🔗 Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>✎ Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>🗑 Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">🆔 Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
   function messageKey(id){return `${view.mode}|${view.serverId}|${view.channelId}|${view.dmUserId||''}|${id}`;}
   function reactMessage(id,emoji){const arr=getMessages();const m=arr.find(x=>x.id===id);if(!m)return;m.reactions=m.reactions||{};m.reactions[emoji]=(m.reactions[emoji]||0)+1;m.myReaction=emoji;setMessages(arr);hideContext();renderMessages();}
-  function contextAction(action,id){const arr=getMessages();const m=arr.find(x=>x.id===id);if(!m)return;hideContext();if(action==='reply'){replyTo=m;$('messageInput').focus();showToast('Respondendo esta mensagem.');return;}if(action==='forward'){const target=prompt('Encaminhar para qual @usuário?');if(!target)return;const p=allPeople().find(x=>usernameKey(x.username)===usernameKey(target));if(!p){showToast('Usuário não encontrado.');return;}const key=dmKey(p.id);state.dmMessages[key]=state.dmMessages[key]||[];state.dmMessages[key].push({id:uid('msg'),author:state.currentAccountId,text:m.text||'',time:now(),forwarded:true});save();renderDms();showToast(`Mensagem encaminhada para ${p.handle||p.username}.`);return;}if(action==='pin'){const k=messageKey(id);state.pinned[k]=!state.pinned[k];save();showToast(state.pinned[k]?'Mensagem fixada.':'Mensagem desfixada.');return;}if(action==='unread'){const k=view.mode==='dm'?dmKey(view.dmUserId):`${view.serverId}|${view.channelId}`;state.unread[k]=1;save();renderDms();showToast('Marcado como não lido.');return;}if(action==='copy'){navigator.clipboard?.writeText(m.text||'');showToast('Texto copiado.');return;}if(action==='id'){navigator.clipboard?.writeText(m.id);showToast('ID da mensagem copiado.');return;}if(action==='edit'){const next=prompt('Editar mensagem:',m.text||'');if(next!==null&&next.trim()){m.text=next.trim();m.edited=true;setMessages(arr);renderMessages();}return;}if(action==='delete'){m.deleted=true;m.text='Mensagem excluída.';m.reactions={};setMessages(arr);renderMessages();}}
+  async function deleteMessagePermanently(m,id){
+    if(!m)return;
+    if(view.mode==='server'&&socialCloudReady()){
+      const srv=getServer(view.serverId),ch=getChannel(view.serverId,view.channelId);
+      if(!srv||!ch)return;
+      const remoteId=m.serverId||m.id;
+      try{
+        await socialRequest('/api/servers/'+encodeURIComponent(srv.backendId||srv.id)+'/channels/'+encodeURIComponent(ch.backendId||ch.id)+'/messages/'+encodeURIComponent(remoteId),{method:'DELETE'});
+        const arr=getMessages().filter(x=>x!==m&&x.id!==id&&x.serverId!==remoteId);
+        setMessages(arr);renderMessages();
+        sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:remoteId,reason:'message.delete'});
+        wakeCloudRealtimeSync();
+        showToast('Mensagem apagada do canal.');
+      }catch(err){showToast(err.message||'Não foi possível apagar a mensagem do canal.');}
+      return;
+    }
+    const arr=getMessages().filter(x=>x!==m&&x.id!==id);setMessages(arr);renderMessages();
+  }
+  function contextAction(action,id){const arr=getMessages();const m=arr.find(x=>x.id===id);if(!m)return;hideContext();if(action==='reply'){replyTo=m;$('messageInput').focus();showToast('Respondendo esta mensagem.');return;}if(action==='forward'){const target=prompt('Encaminhar para qual @usuário?');if(!target)return;const p=allPeople().find(x=>usernameKey(x.username)===usernameKey(target));if(!p){showToast('Usuário não encontrado.');return;}const key=dmKey(p.id);state.dmMessages[key]=state.dmMessages[key]||[];state.dmMessages[key].push({id:uid('msg'),author:state.currentAccountId,text:m.text||'',time:now(),forwarded:true});save();renderDms();showToast(`Mensagem encaminhada para ${p.handle||p.username}.`);return;}if(action==='pin'){const k=messageKey(id);state.pinned[k]=!state.pinned[k];save();showToast(state.pinned[k]?'Mensagem fixada.':'Mensagem desfixada.');return;}if(action==='unread'){const k=view.mode==='dm'?dmKey(view.dmUserId):`${view.serverId}|${view.channelId}`;state.unread[k]=1;save();renderDms();showToast('Marcado como não lido.');return;}if(action==='copy'){navigator.clipboard?.writeText(m.text||'');showToast('Texto copiado.');return;}if(action==='id'){navigator.clipboard?.writeText(m.id);showToast('ID da mensagem copiado.');return;}if(action==='edit'){const next=prompt('Editar mensagem:',m.text||'');if(next!==null&&next.trim()){m.text=next.trim();m.edited=true;setMessages(arr);renderMessages();}return;}if(action==='delete'){void deleteMessagePermanently(m,id);return;}}
   function closeContextOnOutside(e){if(!$('contextMenu').hidden&&!e.target.closest('#contextMenu'))hideContext();if($('composerPopover')&&!$('composerPopover').hidden&&!e.target.closest('#composerPopover')&&!e.target.closest('.composer-quick'))closeComposerPopover();}
   function closeProfilePeek(){const panel=$('profilePeek');if(!panel)return;selectedProfile=null;view.showProfile=false;panel.hidden=true;panel.style.left='';panel.style.top='';}
   function closeProfilePeekOnOutside(e){const panel=$('profilePeek');if(!panel||panel.hidden)return;if(e.target.closest('#profilePeek'))return;if(e.target.closest('[data-profile-msg], [data-member], #userBar, #chatTitleTrigger'))return;closeProfilePeek();}
