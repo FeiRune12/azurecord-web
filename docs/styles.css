@@ -1758,3 +1758,19 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .composer-popover[data-mode="mentions"]{left:8px!important;right:8px!important;bottom:64px!important}
   .mention-command{grid-template-columns:90px minmax(0,1fr)}
 }
+
+
+/* Azurecord 5.0.0: indicador de fala e palco de transmissão em servidor */
+.server-voice-tile{
+  transition:border-color .12s ease,box-shadow .12s ease,transform .12s ease;
+}
+.server-voice-tile.is-speaking{
+  border-color:#23a55a!important;
+  box-shadow:0 0 0 3px rgba(35,165,90,.34),0 0 28px rgba(35,165,90,.18)!important;
+}
+.server-voice-tile.is-speaking .server-voice-name::after{
+  content:'  ●';color:#23a55a;font-size:10px
+}
+.server-voice-video{
+  width:100%!important;height:100%!important;object-fit:contain!important;background:#000!important
+}
