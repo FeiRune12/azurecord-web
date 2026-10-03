@@ -236,7 +236,7 @@ app.whenReady().then(async () => {
       try {
         const sources = await desktopCapturer.getSources({
           types: ['screen', 'window'],
-          thumbnailSize: { width: 224, height: 126 },
+          thumbnailSize: { width: 384, height: 216 },
           fetchWindowIcons: false
         });
         return sources.slice(0, 30).map(source => ({
