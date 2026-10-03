@@ -1845,7 +1845,7 @@
         }
         button.appendChild(iconFrame);
         const mentionCount=serverMentionCount(s.id);
-        if(mentionCount>0){const badge=document.createElement('span');badge.className='server-mention-badge';badge.textContent=mentionCount>99?'99+':String(mentionCount);badge.style.setProperty('--mention-accent',currentUser()?.accent||'#5865f2');badge.style.setProperty('--mention-accent-soft',(currentUser()?.accent||'#5865f2')+'55');badge.setAttribute('aria-label',mentionCount+' menções não lidas');button.appendChild(badge);}
+        if(mentionCount>0){const badge=document.createElement('span');badge.className='server-mention-badge';badge.textContent=mentionCount>99?'99+':String(mentionCount);badge.setAttribute('aria-label',mentionCount+' menções não lidas');button.appendChild(badge);}
         if(state.unread?.[`server:${s.id}`]){
           const marker=document.createElement('span');
           marker.className='server-unread-marker';
@@ -1854,6 +1854,10 @@
         }
         wrap.appendChild(button);
       }
+      const totalPings=servers.reduce((sum,s)=>sum+serverMentionCount(s.id),0);
+      try{window.AzurecordNative?.setBadgeCount?.(totalPings);}catch{}
+      try{window.azurecordDesktop?.setBadgeCount?.(totalPings);}catch{}
+      try{if('setAppBadge' in navigator){if(totalPings)navigator.setAppBadge(totalPings);else navigator.clearAppBadge?.();}}catch{}
 
       if(!wrap._azurecordBound){
         wrap.addEventListener('click',e=>{
