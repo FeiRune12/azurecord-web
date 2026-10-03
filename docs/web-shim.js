@@ -4,7 +4,7 @@
   window.azurecordDesktop = {
     platform: null,
     version: 'web',
-    appVersion: '4.0.8',
+    appVersion: '4.0.9',
     async getBackendInfo() {
       return { available: false, baseUrl: null, host: null, port: 0 };
     },
