@@ -1700,3 +1700,61 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .server-mention-badge{position:absolute;right:-5px;bottom:-5px;z-index:8;min-width:18px;height:18px;padding:0 5px;display:grid;place-items:center;border-radius:999px;background:var(--mention-accent,#5865f2);color:#fff;border:2px solid #080c12;box-shadow:0 0 0 2px var(--mention-accent-soft,rgba(88,101,242,.3));font-size:10px;font-weight:900;line-height:1}
 
 .channel-item small{margin-left:auto;display:flex;align-items:center;justify-content:flex-end;min-width:20px}.channel-mention-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#f23f42;color:#fff;font-size:10px;font-weight:900;line-height:1;box-sizing:border-box;box-shadow:0 2px 7px rgba(0,0,0,.28)}
+
+
+/* Azurecord 4.0.8: squircle, mention picker e transmissão ampliada */
+.rail-brand,.server-icon-frame,.server-icon-frame>img{
+  border-radius:15px!important;
+}
+.rail-brand{overflow:hidden!important}
+.rail-brand img{width:100%!important;height:100%!important;object-fit:cover!important;border-radius:15px!important}
+
+.mention{
+  display:inline-flex;align-items:center;padding:1px 4px;border-radius:4px;
+  background:rgba(88,101,242,.18);color:#aeb7ff;font-weight:850
+}
+.mention.mention-self{
+  background:rgba(88,101,242,.42);color:#fff;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)
+}
+.composer-popover[data-mode="mentions"]{
+  left:14px!important;right:14px!important;bottom:70px!important;width:auto!important;
+  max-height:min(430px,52vh);padding:8px;overflow:auto;border-radius:8px;
+  background:#232428;border-color:rgba(255,255,255,.08)
+}
+.mention-picker{display:flex;flex-direction:column;gap:2px}
+.mention-picker-title{padding:6px 8px 8px;color:#949ba4;font-size:10px;font-weight:900;letter-spacing:.04em}
+.mention-suggestion,.mention-command{
+  width:100%;min-height:40px;border:0;border-radius:4px;background:transparent;color:#dbdee1;
+  display:grid;align-items:center;text-align:left;cursor:pointer
+}
+.mention-suggestion{grid-template-columns:30px minmax(0,1fr) auto;gap:8px;padding:5px 8px}
+.mention-command{grid-template-columns:minmax(120px,1fr) minmax(220px,2fr);gap:14px;padding:9px 8px}
+.mention-suggestion:hover,.mention-suggestion.active,.mention-command:hover,.mention-command.active{background:#35373c;color:#fff}
+.mention-avatar{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:#313338 center/cover no-repeat;font-size:11px;font-weight:900}
+.mention-suggestion strong,.mention-command strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mention-suggestion>span:last-child,.mention-command>span{color:#b5bac1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mention-picker-divider{height:1px;background:rgba(255,255,255,.07);margin:5px 2px}
+
+.screen-source-dialog{
+  width:min(1320px,calc(100vw - 40px))!important;
+  max-height:min(900px,calc(100dvh - 40px))!important;
+}
+.screen-source-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:14px!important;padding:18px!important}
+.screen-source-card img,.screen-source-placeholder{aspect-ratio:16/9!important}
+.server-voice-shell{
+  width:min(1560px,calc(100vw - 24px))!important;
+  height:min(940px,calc(100dvh - 24px))!important;
+  border-radius:16px!important;
+}
+.server-voice-grid{grid-auto-rows:minmax(300px,1fr)!important}
+.server-voice-video{min-height:300px!important}
+@media(max-width:900px){
+  .screen-source-dialog{width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}
+  .screen-source-grid{grid-template-columns:1fr!important;padding:10px!important}
+  .server-voice-shell{width:100vw!important;height:100dvh!important;border-radius:0!important}
+  .server-voice-grid{grid-auto-rows:minmax(220px,1fr)!important}
+  .server-voice-video{min-height:220px!important}
+  .composer-popover[data-mode="mentions"]{left:8px!important;right:8px!important;bottom:64px!important}
+  .mention-command{grid-template-columns:90px minmax(0,1fr)}
+}
