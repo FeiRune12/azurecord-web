@@ -274,6 +274,11 @@ app.whenReady().then(async () => {
       available: Boolean(backendAddress)
     }));
 
+    ipcMain.handle('desktop:set-badge-count', (_event, count = 0) => {
+      const value = Math.max(0, Math.floor(Number(count) || 0));
+      try { app.setBadgeCount(value); } catch {}
+      return value;
+    });
     ipcMain.handle('desktop:notify', (_event, payload = {}) => {
       if (!Notification.isSupported()) return false;
       new Notification({ title: String(payload.title || 'Azurecord'), body: String(payload.body || '') }).show();
