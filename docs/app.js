@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.9');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.0');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -1955,6 +1955,9 @@
   function serverVoiceSignalBase(session,kind){
     return {kind,callId:session.roomId,callType:'server-voice',serverId:String(session.remoteServerId),channelId:String(session.remoteChannelId)};
   }
+  function serverScreenSignalBase(session,kind,ownerId=String(state.currentAccountId)){
+    return {kind,callId:session.roomId,callType:'server-screen',serverId:String(session.remoteServerId),channelId:String(session.remoteChannelId),ownerId:String(ownerId)};
+  }
   function ensureServerVoiceModal(){
     let overlay=$('serverVoiceOverlay');
     if(overlay)return overlay;
@@ -2001,8 +2004,11 @@
     const session=serverVoiceSession;if(!session)return;
     if(session.nativeScreenSharing||session.nativeScreenRequested){try{nativeAndroidScreenBridge()?.stopScreenShare?.(session.roomId);}catch{}session.nativeScreenSharing=false;session.nativeScreenRequested=false;renderServerVoiceModal();return;}
     const track=session.screenTrack;if(!track)return;
-    for(const peer of session.peers.values()){const sender=peer.pc?.getSenders?.().find(s=>s.track===track);if(sender)await sender.replaceTrack(null);}
-    try{track.stop();}catch{}session.screenTrack=null;session.screenStream=null;await renegotiateServerVoicePeers();renderServerVoiceModal();
+    const targets=[...session.participantIds].filter(id=>id!==String(state.currentAccountId));
+    for(const id of targets)directCallSignal(id,{...serverScreenSignalBase(session,'server-screen-stop')});
+    for(const entry of session.screenPeers?.values?.()||[])try{entry.pc?.close?.();}catch{}
+    session.screenPeers?.clear?.();
+    try{track.stop();}catch{}session.screenTrack=null;session.screenStream=null;renderServerVoiceModal();
   }
   async function toggleServerVoiceScreen(){
     const session=serverVoiceSession;if(!session)return;
@@ -2025,9 +2031,65 @@
       }
       const stream=await requestAzureDisplayMedia({skipDesktopPicker:desktopSourceSelected});const track=stream.getVideoTracks()[0];if(!track)return;
       session.screenStream=stream;session.screenTrack=track;track.onended=()=>{if(serverVoiceSession===session)void stopServerVoiceScreen();};
-      for(const peer of session.peers.values())peer.pc?.addTrack(track,stream);
-      await renegotiateServerVoicePeers();renderServerVoiceModal();
+      session.screenPeers=session.screenPeers||new Map();
+      const targets=[...session.participantIds].filter(id=>id!==String(state.currentAccountId));
+      for(const peerId of targets)await startServerScreenSender(peerId);
+      renderServerVoiceModal();
     }catch(err){if(err?.name!=='NotAllowedError')showToast(err.message||'Não foi possível transmitir a tela.');}
+  }
+  function updateServerSpeakerHighlights(session=serverVoiceSession){
+    if(!session)return;
+    document.querySelectorAll('#serverVoiceGrid [data-server-voice-user]').forEach(tile=>{
+      tile.classList.toggle('is-speaking',session.speakingIds?.has(String(tile.dataset.serverVoiceUser)));
+    });
+  }
+  function ensureServerVoiceActivityMonitor(session){
+    if(!session||session.voiceActivityTimer)return;
+    session.voiceActivityTimer=setInterval(()=>{
+      if(serverVoiceSession!==session)return;
+      const next=new Set();
+      for(const [id,meter] of session.voiceMeters||[]){
+        try{
+          meter.analyser.getByteTimeDomainData(meter.data);
+          let total=0;
+          for(const value of meter.data){const sample=(value-128)/128;total+=sample*sample;}
+          const rms=Math.sqrt(total/meter.data.length);
+          if(rms>0.045)next.add(String(id));
+        }catch{}
+      }
+      let changed=next.size!==(session.speakingIds?.size||0);
+      if(!changed)for(const id of next)if(!session.speakingIds?.has(id)){changed=true;break;}
+      session.speakingIds=next;
+      if(changed)updateServerSpeakerHighlights(session);
+    },110);
+  }
+  function attachServerVoiceActivity(session,userId,stream){
+    if(!session||!stream?.getAudioTracks?.().length)return;
+    try{
+      const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;
+      session.voiceActivityContext=session.voiceActivityContext||new AudioCtx();
+      session.voiceMeters=session.voiceMeters||new Map();
+      const id=String(userId);
+      const old=session.voiceMeters.get(id);try{old?.source?.disconnect?.();}catch{}
+      const source=session.voiceActivityContext.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+      const analyser=session.voiceActivityContext.createAnalyser();analyser.fftSize=256;analyser.smoothingTimeConstant=.5;
+      source.connect(analyser);
+      session.voiceMeters.set(id,{source,analyser,data:new Uint8Array(analyser.fftSize)});
+      ensureServerVoiceActivityMonitor(session);
+    }catch(err){console.warn('[AzureCall] voice activity:',err?.message||err);}
+  }
+  function detachServerVoiceActivity(session,userId){
+    if(!session)return;
+    const id=String(userId),meter=session.voiceMeters?.get(id);try{meter?.source?.disconnect?.();}catch{}
+    session.voiceMeters?.delete(id);session.speakingIds?.delete(id);updateServerSpeakerHighlights(session);
+  }
+  function stopServerVoiceActivity(session){
+    if(!session)return;
+    clearInterval(session.voiceActivityTimer);session.voiceActivityTimer=null;
+    for(const meter of session.voiceMeters?.values?.()||[])try{meter.source?.disconnect?.();}catch{}
+    session.voiceMeters?.clear?.();session.speakingIds?.clear?.();
+    try{session.voiceActivityContext?.close?.();}catch{}
+    session.voiceActivityContext=null;
   }
   function renderServerVoiceModal(){
     const overlay=ensureServerVoiceModal(),session=serverVoiceSession;
@@ -2049,21 +2111,26 @@
       const isMe=id===String(state.currentAccountId);
       const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
       const letter=p.avatar?'':esc(String(p.username||'?')[0].toUpperCase());
-      const peer=session.peers.get(String(id));const videoStream=isMe?(session.screenStream||session.cameraStream):peer?.videoStream;
+      const peer=session.peers.get(String(id));const videoStream=isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
       const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
-      return '<article class="server-voice-tile '+(isMe?'is-self':'')+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
+      const speaking=session.speakingIds?.has(String(id));
+      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
     }).join('');
     for(const id of ids){
-      const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):peer?.videoStream;
+      const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
       const el=document.getElementById('serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_'));if(el&&stream&&el.srcObject!==stream){el.srcObject=stream;el.play?.().catch(()=>{});}
     }
-    overlay.hidden=false;
+    overlay.hidden=false;updateServerSpeakerHighlights(session);
   }
   function closeServerVoicePeer(peerId){
     const session=serverVoiceSession;if(!session)return;
     const peer=session.peers.get(String(peerId));if(!peer)return;
     try{peer.pc?.close?.();}catch{}
     try{peer.nativeScreenPc?.close?.();}catch{}
+    try{peer.screenPc?.close?.();}catch{}
+    try{session.screenPeers?.get(String(peerId))?.pc?.close?.();}catch{}
+    session.screenPeers?.delete(String(peerId));
+    detachServerVoiceActivity(session,peerId);
     try{peer.audio?.remove?.();}catch{}
     session.peers.delete(String(peerId));session.participantIds.delete(String(peerId));
     renderServerChannels();renderServerVoiceModal();
@@ -2074,11 +2141,10 @@
     if(session.peers.has(peerId))return session.peers.get(peerId);
     await ensureAzureCallIceConfig();
     const pc=new RTCPeerConnection(azureCallRtcConfig);
-    const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false,videoStream:null};
+    const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false,videoStream:null,screenStream:null,screenPc:null,screenPendingIce:[]};
     session.peers.set(peerId,peer);session.participantIds.add(peerId);
     for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
     if(session.cameraTrack&&session.cameraTrack.enabled!==false)pc.addTrack(session.cameraTrack,session.cameraStream||new MediaStream([session.cameraTrack]));
-    if(session.screenTrack)pc.addTrack(session.screenTrack,session.screenStream||new MediaStream([session.screenTrack]));
     pc.onicecandidate=e=>{
       if(!e.candidate||serverVoiceSession!==session)return;
       directCallSignal(peerId,{...serverVoiceSignalBase(session,'server-voice-ice'),candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});
@@ -2095,6 +2161,7 @@
         audio.style.display='none';document.body.appendChild(audio);peer.audio=audio;
       }
       const stream=new MediaStream([track]);audio.srcObject=stream;audio.play?.().catch(()=>{});
+      attachServerVoiceActivity(session,peerId,stream);
       session.participantIds.add(peerId);renderServerChannels();renderServerVoiceModal();
     };
     pc.onconnectionstatechange=()=>{
@@ -2113,6 +2180,89 @@
     }catch(err){console.warn('[AzureCall] server voice offer:',err?.message||err);}
     finally{peer.makingOffer=false;}
   }
+  async function startServerScreenSender(peerId){
+    const session=serverVoiceSession;if(!session?.screenTrack)return false;
+    peerId=String(peerId||'');if(!peerId||peerId===String(state.currentAccountId))return false;
+    session.screenPeers=session.screenPeers||new Map();
+    const existing=session.screenPeers.get(peerId);
+    if(existing&&['new','connecting','connected'].includes(existing.pc?.connectionState||''))return true;
+    try{existing?.pc?.close?.();}catch{}
+    await ensureAzureCallIceConfig();
+    const pc=new RTCPeerConnection(azureCallRtcConfig),entry={pc,pendingIce:[]};
+    session.screenPeers.set(peerId,entry);
+    pc.onicecandidate=e=>{if(e.candidate&&serverVoiceSession===session)directCallSignal(peerId,{...serverScreenSignalBase(session,'server-screen-ice'),candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
+    pc.onconnectionstatechange=()=>{
+      if(serverVoiceSession!==session)return;
+      if(['failed','disconnected'].includes(pc.connectionState)){
+        setTimeout(()=>{if(serverVoiceSession===session&&session.screenTrack&&session.screenPeers.get(peerId)?.pc===pc){try{pc.close();}catch{}session.screenPeers.delete(peerId);void startServerScreenSender(peerId);}},650);
+      }
+    };
+    pc.addTrack(session.screenTrack,session.screenStream||new MediaStream([session.screenTrack]));
+    const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+    directCallSignal(peerId,{...serverScreenSignalBase(session,'server-screen-offer'),description:pc.localDescription});
+    return true;
+  }
+  async function ensureServerScreenReceiver(peerId){
+    const session=serverVoiceSession;if(!session)return null;
+    const peer=await ensureServerVoicePeer(peerId);if(!peer)return null;
+    if(peer.screenPc&&!['closed','failed'].includes(peer.screenPc.connectionState))return peer.screenPc;
+    try{peer.screenPc?.close?.();}catch{}
+    await ensureAzureCallIceConfig();
+    const pc=new RTCPeerConnection(azureCallRtcConfig);peer.screenPc=pc;peer.screenPendingIce=[];
+    pc.onicecandidate=e=>{if(e.candidate&&serverVoiceSession===session)directCallSignal(String(peerId),{...serverScreenSignalBase(session,'server-screen-ice',peerId),candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
+    pc.ontrack=e=>{
+      const track=e.track;if(!track||track.kind!=='video')return;
+      peer.screenStream=new MediaStream([track]);
+      track.onunmute=()=>{if(serverVoiceSession===session)renderServerVoiceModal();};
+      track.onended=()=>{if(peer.screenStream?.getTracks?.().includes(track))peer.screenStream=null;renderServerVoiceModal();};
+      renderServerVoiceModal();
+    };
+    pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState)){try{pc.close();}catch{}if(peer.screenPc===pc)peer.screenPc=null;}};
+    return pc;
+  }
+  async function handleServerScreenSignal(event){
+    const session=serverVoiceSession,signal=event?.signal||{},kind=String(signal.kind||''),from=String(event?.fromUserId||'');
+    if(!kind.startsWith('server-screen-'))return false;
+    if(!session||!from||from===String(state.currentAccountId)||String(signal.callId||'')!==String(session.roomId))return true;
+    if(String(signal.serverId||'')!==String(session.remoteServerId)||String(signal.channelId||'')!==String(session.remoteChannelId))return true;
+    const ownerId=String(signal.ownerId||from);
+    if(kind==='server-screen-stop'){
+      const peer=session.peers.get(from);try{peer?.screenPc?.close?.();}catch{}
+      if(peer){peer.screenPc=null;peer.screenPendingIce=[];peer.screenStream=null;}
+      renderServerVoiceModal();return true;
+    }
+    if(kind==='server-screen-offer'){
+      const peer=await ensureServerVoicePeer(from),pc=await ensureServerScreenReceiver(from);if(!peer||!pc||!signal.description)return true;
+      if(pc.signalingState!=='stable'){try{await pc.setLocalDescription({type:'rollback'});}catch{}}
+      await pc.setRemoteDescription(signal.description);
+      for(const candidate of peer.screenPendingIce||[]){try{await pc.addIceCandidate(candidate);}catch{}}
+      peer.screenPendingIce=[];
+      const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+      directCallSignal(from,{...serverScreenSignalBase(session,'server-screen-answer',ownerId),description:pc.localDescription});
+      return true;
+    }
+    if(kind==='server-screen-answer'){
+      const entry=session.screenPeers?.get(from);if(entry?.pc&&signal.description&&entry.pc.signalingState==='have-local-offer'){
+        await entry.pc.setRemoteDescription(signal.description);
+        for(const candidate of entry.pendingIce.splice(0)){try{await entry.pc.addIceCandidate(candidate);}catch{}}
+      }
+      return true;
+    }
+    if(kind==='server-screen-ice'){
+      if(!signal.candidate)return true;
+      if(ownerId===String(state.currentAccountId)){
+        const entry=session.screenPeers?.get(from);
+        if(entry?.pc?.remoteDescription){try{await entry.pc.addIceCandidate(signal.candidate);}catch{}}
+        else if(entry)entry.pendingIce.push(signal.candidate);
+      }else{
+        const peer=await ensureServerVoicePeer(from);
+        if(peer?.screenPc?.remoteDescription){try{await peer.screenPc.addIceCandidate(signal.candidate);}catch{}}
+        else if(peer)peer.screenPendingIce.push(signal.candidate);
+      }
+      return true;
+    }
+    return true;
+  }
   async function ensureServerNativeScreenReceiver(peerId){
     const session=serverVoiceSession;if(!session)return null;
     const peer=await ensureServerVoicePeer(peerId);if(!peer)return null;
@@ -2123,9 +2273,9 @@
     pc.onicecandidate=e=>{if(e.candidate&&serverVoiceSession===session)directCallSignal(String(peerId),{kind:'native-screen-ice',callId:session.roomId,callType:'screen',candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
     pc.ontrack=e=>{
       const track=e.track;if(!track||track.kind!=='video')return;
-      peer.videoStream=new MediaStream([track]);peer.nativeScreenReady=true;peer.nativeScreenResyncAttempts=0;
+      peer.screenStream=new MediaStream([track]);peer.nativeScreenReady=true;peer.nativeScreenResyncAttempts=0;
       track.onunmute=()=>{peer.nativeScreenReady=true;if(serverVoiceSession===session)renderServerVoiceModal();};
-      track.onended=()=>{if(peer.videoStream?.getTracks?.().includes(track))peer.videoStream=null;renderServerVoiceModal();};
+      track.onended=()=>{if(peer.screenStream?.getTracks?.().includes(track))peer.screenStream=null;renderServerVoiceModal();};
       renderServerVoiceModal();
     };
     pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState)){try{pc.close();}catch{}if(peer.nativeScreenPc===pc)peer.nativeScreenPc=null;}};
@@ -2148,7 +2298,7 @@
       return true;
     }
     if(kind==='screen-share-stop'||kind==='native-screen-stop'){
-      try{peer.nativeScreenPc?.close?.();}catch{}peer.nativeScreenPc=null;peer.nativeScreenPendingIce=[];peer.videoStream=null;renderServerVoiceModal();return true;
+      try{peer.nativeScreenPc?.close?.();}catch{}peer.nativeScreenPc=null;peer.nativeScreenPendingIce=[];peer.screenStream=null;renderServerVoiceModal();return true;
     }
     if(kind==='native-screen-ice'){
       if(!signal.candidate)return true;
@@ -2183,10 +2333,11 @@
     if(kind==='server-voice-join'){
       session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();
       directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-ack')});
+      if(session.screenTrack)setTimeout(()=>void startServerScreenSender(from),120);
       return true;
     }
     if(kind==='server-voice-ack'){
-      session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();await offerServerVoicePeer(from);return true;
+      session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();await offerServerVoicePeer(from);if(session.screenTrack)await startServerScreenSender(from);return true;
     }
     if(kind==='server-voice-offer'){
       const peer=await ensureServerVoicePeer(from);if(!peer)return true;
@@ -2234,9 +2385,9 @@
       const session={
         roomId:serverVoiceRoomKey(server,channel),serverId:server.id,channelId:channel.id,
         remoteServerId:server.backendId||server.id,remoteChannelId:channel.backendId||channel.id,
-        localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),seenSignals:new Set(),joinedAt:Date.now(),cameraTrack:null,cameraStream:null,screenTrack:null,screenStream:null,nativeScreenSharing:false,nativeScreenRequested:false
+        localStream,peers:new Map(),screenPeers:new Map(),participantIds:new Set([String(state.currentAccountId)]),seenSignals:new Set(),voiceMeters:new Map(),speakingIds:new Set(),voiceActivityTimer:null,voiceActivityContext:null,joinedAt:Date.now(),cameraTrack:null,cameraStream:null,screenTrack:null,screenStream:null,nativeScreenSharing:false,nativeScreenRequested:false
       };
-      serverVoiceSession=session;setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();renderServerVoiceModal();
+      serverVoiceSession=session;attachServerVoiceActivity(session,state.currentAccountId,localStream);setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();renderServerVoiceModal();
       const members=(Array.isArray(server.members)?server.members:[]).map(m=>String(m?.id||'')).filter(id=>id&&id!==String(state.currentAccountId));
       for(const memberId of members)directCallSignal(memberId,{...serverVoiceSignalBase(session,'server-voice-join')});
       showToast('Conectado ao canal de voz '+(channel.name||'voz')+'.');
@@ -2252,7 +2403,9 @@
       targets.delete(String(state.currentAccountId));
       for(const id of targets)directCallSignal(id,{...serverVoiceSignalBase(session,'server-voice-leave')});
     }
-    for(const peer of session.peers.values()){try{peer.pc?.close?.();}catch{}try{peer.audio?.remove?.();}catch{}}
+    for(const peer of session.peers.values()){try{peer.pc?.close?.();}catch{}try{peer.nativeScreenPc?.close?.();}catch{}try{peer.screenPc?.close?.();}catch{}try{peer.audio?.remove?.();}catch{}}
+    for(const entry of session.screenPeers?.values?.()||[])try{entry.pc?.close?.();}catch{}
+    session.screenPeers?.clear?.();stopServerVoiceActivity(session);
     for(const track of session.localStream?.getTracks?.()||[])try{track.stop();}catch{}
     for(const track of session.cameraStream?.getTracks?.()||[])try{track.stop();}catch{}
     for(const track of session.screenStream?.getTracks?.()||[])try{track.stop();}catch{}
@@ -4942,6 +5095,7 @@
   }
   async function handleCallSignalEvent(event){
     if(duplicateServerCallSignal(event))return;
+    if(await handleServerScreenSignal(event))return;
     if(await handleServerNativeScreenSignal(event))return;
     if(await handleServerVoiceSignal(event))return;
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
