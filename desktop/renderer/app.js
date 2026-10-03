@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.8');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.9');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -2115,12 +2115,12 @@
     if(peer.nativeScreenPc)return peer.nativeScreenPc;
     await ensureAzureCallIceConfig();
     const pc=new RTCPeerConnection(azureCallRtcConfig);
-    peer.nativeScreenPc=pc;peer.nativeScreenPendingIce=[];
+    peer.nativeScreenPc=pc;peer.nativeScreenPendingIce=[];peer.nativeScreenReady=false;peer.nativeScreenResyncAttempts=0;
     pc.onicecandidate=e=>{if(e.candidate&&serverVoiceSession===session)directCallSignal(String(peerId),{kind:'native-screen-ice',callId:session.roomId,callType:'screen',candidate:e.candidate.toJSON?e.candidate.toJSON():e.candidate});};
     pc.ontrack=e=>{
       const track=e.track;if(!track||track.kind!=='video')return;
-      peer.videoStream=new MediaStream([track]);
-      track.onunmute=()=>{if(serverVoiceSession===session)renderServerVoiceModal();};
+      peer.videoStream=new MediaStream([track]);peer.nativeScreenReady=true;peer.nativeScreenResyncAttempts=0;
+      track.onunmute=()=>{peer.nativeScreenReady=true;if(serverVoiceSession===session)renderServerVoiceModal();};
       track.onended=()=>{if(peer.videoStream?.getTracks?.().includes(track))peer.videoStream=null;renderServerVoiceModal();};
       renderServerVoiceModal();
     };
@@ -2132,7 +2132,17 @@
     if(!session||!from||from===String(state.currentAccountId)||String(signal.callId||'')!==String(session.roomId))return false;
     if(!['native-screen-offer','native-screen-ice','native-screen-stop','screen-share-start','screen-share-stop'].includes(kind))return false;
     const peer=await ensureServerVoicePeer(from);if(!peer)return true;
-    if(kind==='screen-share-start'){session.participantIds.add(from);renderServerVoiceModal();return true;}
+    if(kind==='screen-share-start'){
+      session.participantIds.add(from);renderServerVoiceModal();
+      setTimeout(()=>{
+        if(serverVoiceSession!==session)return;
+        const current=session.peers.get(from);
+        if(current?.nativeScreenReady)return;
+        current.nativeScreenResyncAttempts=(current.nativeScreenResyncAttempts||0)+1;
+        if(current.nativeScreenResyncAttempts<=4)directCallSignal(from,{kind:'native-screen-resync',callId:session.roomId,callType:'screen'});
+      },900);
+      return true;
+    }
     if(kind==='screen-share-stop'||kind==='native-screen-stop'){
       try{peer.nativeScreenPc?.close?.();}catch{}peer.nativeScreenPc=null;peer.nativeScreenPendingIce=[];peer.videoStream=null;renderServerVoiceModal();return true;
     }
@@ -2151,6 +2161,11 @@
       peer.nativeScreenPendingIce=[];
       const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
       directCallSignal(from,{kind:'native-screen-answer',callId:session.roomId,callType:'screen',description:pc.localDescription});
+      setTimeout(()=>{
+        if(serverVoiceSession!==session||peer.nativeScreenReady)return;
+        peer.nativeScreenResyncAttempts=(peer.nativeScreenResyncAttempts||0)+1;
+        if(peer.nativeScreenResyncAttempts<=4)directCallSignal(from,{kind:'native-screen-resync',callId:session.roomId,callType:'screen'});
+      },1400);
       renderServerVoiceModal();return true;
     }
     return true;
@@ -2215,7 +2230,7 @@
       const session={
         roomId:serverVoiceRoomKey(server,channel),serverId:server.id,channelId:channel.id,
         remoteServerId:server.backendId||server.id,remoteChannelId:channel.backendId||channel.id,
-        localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),joinedAt:Date.now(),cameraTrack:null,cameraStream:null,screenTrack:null,screenStream:null,nativeScreenSharing:false,nativeScreenRequested:false
+        localStream,peers:new Map(),participantIds:new Set([String(state.currentAccountId)]),seenSignals:new Set(),joinedAt:Date.now(),cameraTrack:null,cameraStream:null,screenTrack:null,screenStream:null,nativeScreenSharing:false,nativeScreenRequested:false
       };
       serverVoiceSession=session;setNativeAndroidCallActive(true);startCloudRealtimeSocket();startCallSignalPolling();renderServerChannels();renderServerVoiceModal();
       const members=(Array.isArray(server.members)?server.members:[]).map(m=>String(m?.id||'')).filter(id=>id&&id!==String(state.currentAccountId));
@@ -4911,7 +4926,18 @@
     const remote=$('remoteCallVideo'),remoteAudio=$('remoteCallAudio'),local=$('localCallVideo');if(remote)remote.srcObject=null;if(remoteAudio)remoteAudio.srcObject=null;if(local)local.srcObject=null;
     activeCall=null;setNativeAndroidCallActive(false);scheduleCallSignalPoll();updateCallUi();if(message)showToast(message);
   }
+  function duplicateServerCallSignal(event){
+    const session=serverVoiceSession,signal=event?.signal||{};
+    if(!session||String(signal.callId||'')!==String(session.roomId))return false;
+    const signalId=String(signal.signalId||'');if(!signalId)return false;
+    session.seenSignals=session.seenSignals||new Set();
+    if(session.seenSignals.has(signalId))return true;
+    session.seenSignals.add(signalId);
+    if(session.seenSignals.size>500){const first=session.seenSignals.values().next().value;session.seenSignals.delete(first);}
+    return false;
+  }
   async function handleCallSignalEvent(event){
+    if(duplicateServerCallSignal(event))return;
     if(await handleServerNativeScreenSignal(event))return;
     if(await handleServerVoiceSignal(event))return;
     const from=String(event.fromUserId||''),signal=event.signal||{},kind=String(signal.kind||''),callId=String(signal.callId||'');
