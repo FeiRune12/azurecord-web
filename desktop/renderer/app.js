@@ -2643,6 +2643,7 @@
   function openComposerPopover(type){
     const box=$('composerPopover');
     if(!box)return;
+    delete box.dataset.mode;
     const active=$('.composer-quick.active');
     if(!box.hidden && active && active.dataset.composerType===type){closeComposerPopover();return;}
     $$('.composer-quick').forEach(b=>b.classList.toggle('active',b.dataset.composerType===type));
