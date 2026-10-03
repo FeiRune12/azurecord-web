@@ -39,6 +39,12 @@ class AzurecordBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun setBadgeCount(count: Int): Boolean {
+        activity.setLauncherBadgeCount(count.coerceAtLeast(0))
+        return true
+    }
+
+    @JavascriptInterface
     fun getAppVersion(): String = BuildConfig.VERSION_NAME
 
     @JavascriptInterface
