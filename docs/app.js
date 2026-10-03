@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.7');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.8');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -903,6 +903,7 @@
     if(active&&stamp-typingLastSentAt>1200){publishTyping(true);typingLastSentAt=stamp;}
     clearTimeout(typingStopTimer);typingStopTimer=setTimeout(()=>publishTyping(false),2200);
     if(!active)publishTyping(false);
+    renderMentionAutocomplete();
   }
   function stopTypingNow(){clearTimeout(typingStopTimer);typingStopTimer=null;typingLastSentAt=0;publishTyping(false);}
   function applyPresenceEvent(event){
@@ -2016,7 +2017,13 @@
     }
     try{
       if(!screenCaptureSupported()){showToast('Compartilhamento de tela não disponível neste dispositivo.');return;}
-      const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
+      let desktopSourceSelected=false;
+      if(window.azurecordDesktop?.getDisplaySources&&window.azurecordDesktop?.selectDisplaySource){
+        const selected=await chooseDesktopDisplaySource();
+        if(!selected)return;
+        desktopSourceSelected=true;
+      }
+      const stream=await requestAzureDisplayMedia({skipDesktopPicker:desktopSourceSelected});const track=stream.getVideoTracks()[0];if(!track)return;
       session.screenStream=stream;session.screenTrack=track;track.onended=()=>{if(serverVoiceSession===session)void stopServerVoiceScreen();};
       for(const peer of session.peers.values())peer.pc?.addTrack(track,stream);
       await renegotiateServerVoicePeers();renderServerVoiceModal();
@@ -2571,11 +2578,70 @@
     if(type.includes('sheet')||type.includes('excel'))return 'XLS';
     return 'FILE';
   }
+  let mentionSuggestionIndex=0;
+  function mentionTokenAtCursor(){
+    const input=$('messageInput');if(!input)return null;
+    const end=input.selectionStart??input.value.length;
+    const before=input.value.slice(0,end);
+    const match=before.match(/(^|\s)@([\w.-]*)$/);
+    if(!match)return null;
+    return {start:end-match[2].length-1,end,query:usernameKey(match[2]||'')};
+  }
+  function mentionCandidates(query=''){
+    if(view.mode!=='server'||!view.serverId)return [];
+    const server=getServer(view.serverId);
+    const members=(Array.isArray(server?.members)?server.members:[]).map(member=>{
+      const p=getProfile(member?.id)||member||{};
+      const handle=String(p.handle||p.username||'').replace(/^@/,'').replace(/\s+/g,'_');
+      return {kind:'member',value:handle,label:String(member?.nickname||p.username||handle||'Usuário'),meta:String(p.handle||('@'+handle)),avatar:p.avatar||''};
+    }).filter(x=>x.value);
+    const commands=[
+      {kind:'command',value:'game',label:'@game',meta:'Mencione um jogo'},
+      {kind:'command',value:'time',label:'@time',meta:'Consulte um horário dinamicamente no fuso horário do espectador'}
+    ];
+    const all=[...members,...commands];
+    if(!query)return all.slice(0,12);
+    return all.filter(x=>usernameKey(x.value).includes(query)||usernameKey(x.label).includes(query)).slice(0,12);
+  }
+  function applyMentionChoice(value){
+    const input=$('messageInput'),token=mentionTokenAtCursor();if(!input||!token)return;
+    const insert='@'+String(value||'').replace(/^@/,'')+' ';
+    input.value=input.value.slice(0,token.start)+insert+input.value.slice(token.end);
+    const pos=token.start+insert.length;input.selectionStart=input.selectionEnd=pos;
+    closeComposerPopover();input.focus();autoResizeComposer();publishTyping(true);
+  }
+  function syncMentionSelection(){
+    const box=$('composerPopover');if(!box||box.dataset.mode!=='mentions')return;
+    const buttons=[...box.querySelectorAll('[data-mention-value]')];
+    if(!buttons.length)return;
+    mentionSuggestionIndex=(mentionSuggestionIndex+buttons.length)%buttons.length;
+    buttons.forEach((b,i)=>b.classList.toggle('active',i===mentionSuggestionIndex));
+    buttons[mentionSuggestionIndex]?.scrollIntoView?.({block:'nearest'});
+  }
+  function renderMentionAutocomplete(){
+    const box=$('composerPopover'),token=mentionTokenAtCursor();if(!box)return;
+    if(!token){if(box.dataset.mode==='mentions')closeComposerPopover();return;}
+    const items=mentionCandidates(token.query);
+    if(!items.length){if(box.dataset.mode==='mentions')closeComposerPopover();return;}
+    mentionSuggestionIndex=0;box.dataset.mode='mentions';
+    $('.composer-quick').forEach(b=>b.classList.remove('active'));
+    const memberRows=items.filter(x=>x.kind==='member').map(x=>{
+      const avatar=x.avatar?`style="background-image:url('${safeUrl(x.avatar)}')"`:'';
+      const letter=x.avatar?'':esc((x.label||'?')[0].toUpperCase());
+      return `<button type="button" class="mention-suggestion" data-mention-value="${esc(x.value)}"><span class="mention-avatar avatar-img" ${avatar}>${letter}</span><strong>${esc(x.label)}</strong><span>${esc(x.meta)}</span></button>`;
+    }).join('');
+    const commandRows=items.filter(x=>x.kind==='command').map(x=>`<button type="button" class="mention-command" data-mention-value="${esc(x.value)}"><strong>${esc(x.label)}</strong><span>${esc(x.meta)}</span></button>`).join('');
+    box.innerHTML=`<div class="mention-picker">${memberRows?`<div class="mention-picker-title">MEMBROS</div>${memberRows}`:''}${commandRows?`<div class="mention-picker-divider"></div>${commandRows}`:''}</div>`;
+    box.hidden=false;
+    box.querySelectorAll('[data-mention-value]').forEach(btn=>btn.onclick=()=>applyMentionChoice(btn.dataset.mentionValue));
+    syncMentionSelection();
+  }
   function closeComposerPopover(){
     const box=$('composerPopover');
     if(!box)return;
     box.hidden=true;
     box.innerHTML='';
+    delete box.dataset.mode;
     $$('.composer-quick').forEach(b=>b.classList.remove('active'));
   }
   function openComposerPopover(type){
@@ -2611,6 +2677,14 @@
   function autoResizeComposer(){const input=$('messageInput');if(!input)return;input.style.height='auto';input.style.height=Math.min(input.scrollHeight,132)+'px';}
   function handleComposerKey(e){
     if(e.isComposing)return;
+    const box=$('composerPopover'),mentionOpen=box&&!box.hidden&&box.dataset.mode==='mentions';
+    if(mentionOpen&&(e.key==='ArrowDown'||e.key==='ArrowUp')){
+      e.preventDefault();mentionSuggestionIndex+=e.key==='ArrowDown'?1:-1;syncMentionSelection();return;
+    }
+    if(mentionOpen&&(e.key==='Enter'||e.key==='Tab')){
+      const choices=[...box.querySelectorAll('[data-mention-value]')],choice=choices[mentionSuggestionIndex]||choices[0];
+      if(choice){e.preventDefault();applyMentionChoice(choice.dataset.mentionValue);return;}
+    }
     if(e.key==='Enter' && !e.shiftKey){e.preventDefault();$('composer')?.requestSubmit?.();return;}
     if(e.key==='Escape')closeComposerPopover();
   }
@@ -3109,7 +3183,17 @@
     const deliveryLabel=own&&m.failed?'Falha no envio':own&&m.pending?'Enviando':'Enviada';
     return `<article class="message-row ${deliveryClass}" data-msg="${m.id}" data-delivery="${deliveryLabel}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">↩ ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${renderPollCard(m)}${own&&m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?'⚠ Não enviada':'◌ Enviando'} ${m.failed&&view.mode==='dm'?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`;
   }
-  function formatText(text,username){ let s=esc(text);s=s.replace(/@([\w\d_]+)/g,(m,n)=>`<span class="mention">@${esc(n)}</span>`); if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`; return s; }
+  function formatText(text,username){
+    let s=esc(text);
+    const me=currentUser();
+    const mine=new Set([me?.username,me?.handle,String(me?.handle||'').replace(/^@/,'')].filter(Boolean).map(usernameKey));
+    s=s.replace(/@([\w\d_.-]+)/g,(m,n)=>{
+      const key=usernameKey(n),self=key==='everyone'||key==='here'||mine.has(key);
+      return `<span class="mention${self?' mention-self':''}">@${esc(n)}</span>`;
+    });
+    if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`;
+    return s;
+  }
   async function sendDmToBackend(m,id){
     if(!m || m.sending || m.serverId || !id)return !!m?.serverId;
     const fail=(reason,{retryable=true}={})=>{
@@ -4312,8 +4396,8 @@
     return null;
   }
   function screenCaptureSupported(){return nativeAndroidScreenSupported()||!!screenCaptureGetter();}
-  async function requestAzureDisplayMedia(){
-    if(window.azurecordDesktop?.getDisplaySources&&window.azurecordDesktop?.selectDisplaySource){
+  async function requestAzureDisplayMedia({skipDesktopPicker=false}={}){
+    if(!skipDesktopPicker&&window.azurecordDesktop?.getDisplaySources&&window.azurecordDesktop?.selectDisplaySource){
       const selected=await chooseDesktopDisplaySource();
       if(!selected){const err=new Error('Compartilhamento cancelado.');err.name='NotAllowedError';throw err;}
     }
