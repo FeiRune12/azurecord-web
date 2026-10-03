@@ -41,6 +41,8 @@ class MainActivity : Activity() {
         private const val REQ_NOTIFICATIONS = 903
         private const val CALL_CHANNEL = "azurecord_calls"
         private const val CALL_NOTIFICATION_ID = 3107
+        private const val PING_CHANNEL = "azurecord_pings"
+        private const val PING_NOTIFICATION_ID = 3110
     }
 
     private lateinit var webView: WebView
@@ -380,6 +382,51 @@ class MainActivity : Activity() {
                 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 try { audioManager.mode = AudioManager.MODE_NORMAL } catch (_: Exception) {}
             }
+        }
+    }
+
+    fun setLauncherBadgeCount(count: Int) {
+        runOnUiThread {
+            val manager = getSystemService(NotificationManager::class.java)
+            if (count <= 0) {
+                manager.cancel(PING_NOTIFICATION_ID)
+                return@runOnUiThread
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        PING_CHANNEL,
+                        "Pings do Azurecord",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply {
+                        description = "Mostra a quantidade de menções não lidas no ícone do Azurecord."
+                        setShowBadge(true)
+                        enableVibration(false)
+                        setSound(null, null)
+                    }
+                )
+            }
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) return@runOnUiThread
+            val openIntent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val pending = PendingIntent.getActivity(
+                this, PING_NOTIFICATION_ID, openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val label = if (count == 1) "1 ping não lido" else "$count pings não lidos"
+            val notification = Notification.Builder(this, PING_CHANNEL)
+                .setSmallIcon(R.drawable.ic_azurecord)
+                .setContentTitle("Azurecord")
+                .setContentText(label)
+                .setNumber(count)
+                .setContentIntent(pending)
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(false)
+                .build()
+            manager.notify(PING_NOTIFICATION_ID, notification)
         }
     }
 
