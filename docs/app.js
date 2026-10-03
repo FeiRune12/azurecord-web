@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.5');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '4.0.7');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -806,7 +806,7 @@
     if(idx>=0){const localId=arr[idx].id;arr[idx]={...arr[idx],...normalized,id:localId};}else arr.push(normalized);
     arr.sort((a,b)=>(a.time||0)-(b.time||0));state.channelMessages[key]=arr;
     state.unread[key]=(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)?0:1;registerServerMention(srv.id,ch.id,remote);save();
-    if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)renderMessages();else renderServerRail();
+    if(view.mode==='server'&&view.serverId===srv.id&&view.channelId===ch.id)renderMessages();else{renderServerRail();renderServerChannels();}
     return true;
   }
   function effectiveOwnPresence(){
@@ -1220,7 +1220,7 @@
       backendEventSource.addEventListener('friend.request',ev=>{try{const p=JSON.parse(ev.data),r=p.request;if(!r)return;hydrateRemoteUser(r.user);if(!state.requests.some(x=>x.id===r.id))state.requests.push({id:r.id,from:r.from,to:r.to,status:'pending',time:Date.now()});save();renderBadges();if(view.mode==='home')renderHome();addNotification('Nova solicitação',`${r.user?.username||'Alguém'} quer ser seu amigo.`);}catch{}});
       backendEventSource.addEventListener('friend.accepted',ev=>{try{const p=JSON.parse(ev.data);if(p.user){hydrateRemoteUser(p.user);if(!isFriend(p.user.id))state.friends.push({a:state.currentAccountId,b:p.user.id,created:now()});save();renderHome();}}catch{}});
       backendEventSource.addEventListener('server.created',ev=>{try{const p=JSON.parse(ev.data);if(!p.server)return;const srv={...p.server,channels:(p.channels||[]).map(c=>({...c,serverId:p.server.id}))};ensureServerChannels(srv);const i=state.servers.findIndex(x=>x.id===srv.id||x.backendId===srv.id||(srv.clientId&&x.id===srv.clientId));if(i>=0){const local=state.servers[i];state.servers[i]=Object.assign(local,srv,{id:local.id,backendId:srv.id,myRole:srv.myRole||local.myRole});}else state.servers.push(srv);save();persistServersNow();renderServerRail();renderServerChannels();}catch{}});
-      backendEventSource.addEventListener('channel.message',ev=>{try{const m=JSON.parse(ev.data)?.message;if(!m)return;const server=state.servers.find(s=>(s.backendId||s.id)===m.serverId);if(!server)return;const ch=server.channels.find(c=>(c.backendId||c.id)===m.channelId);if(!ch)return;const key=`${server.id}|${ch.id}`;const arr=state.channelMessages[key]||[];if(!arr.some(x=>x.serverId===m.id||x.id===m.id)){if(m.author)hydrateRemoteUser(m.author);arr.push({...m,author:m.senderId,serverId:m.id});state.channelMessages[key]=arr;registerServerMention(server.id,ch.id,m);save();if(view.mode==='server'&&view.serverId===server.id&&view.channelId===ch.id)renderMessages();else{state.unread[key]=1;renderServerRail();}}}catch(err){console.warn(err);}});
+      backendEventSource.addEventListener('channel.message',ev=>{try{const m=JSON.parse(ev.data)?.message;if(!m)return;const server=state.servers.find(s=>(s.backendId||s.id)===m.serverId);if(!server)return;const ch=server.channels.find(c=>(c.backendId||c.id)===m.channelId);if(!ch)return;const key=`${server.id}|${ch.id}`;const arr=state.channelMessages[key]||[];if(!arr.some(x=>x.serverId===m.id||x.id===m.id)){if(m.author)hydrateRemoteUser(m.author);arr.push({...m,author:m.senderId,serverId:m.id});state.channelMessages[key]=arr;registerServerMention(server.id,ch.id,m);save();if(view.mode==='server'&&view.serverId===server.id&&view.channelId===ch.id)renderMessages();else{state.unread[key]=1;renderServerRail();renderServerChannels();}}}catch(err){console.warn(err);}});
       backendEventSource.addEventListener('server.member_joined',()=>{if(view.mode==='server')renderMemberPanel();});
       backendEventSource.addEventListener('ai.conversation_reset',ev=>{try{
         const data=JSON.parse(ev.data);if(!data.sessionId||!state.currentAccountId)return;
@@ -2015,8 +2015,8 @@
       renderServerVoiceModal();return;
     }
     try{
-      const display=getDisplayMediaCompat();if(!display){showToast('Compartilhamento de tela não disponível neste dispositivo.');return;}
-      const stream=await display({video:{frameRate:{ideal:24,max:30}},audio:false});const track=stream.getVideoTracks()[0];if(!track)return;
+      if(!screenCaptureSupported()){showToast('Compartilhamento de tela não disponível neste dispositivo.');return;}
+      const stream=await requestAzureDisplayMedia();const track=stream.getVideoTracks()[0];if(!track)return;
       session.screenStream=stream;session.screenTrack=track;track.onended=()=>{if(serverVoiceSession===session)void stopServerVoiceScreen();};
       for(const peer of session.peers.values())peer.pc?.addTrack(track,stream);
       await renegotiateServerVoicePeers();renderServerVoiceModal();
@@ -2244,6 +2244,9 @@
     view.mode='server';
     view.channelId=channelId;
     view.dmUserId=null;
+    clearChannelMentions(view.serverId,channelId);
+    state.unread[String(view.serverId)+'|'+String(channelId)]=0;
+    save();
     hideContext();
     requestRenderShell();
     void syncChannelMessages(view.serverId,view.channelId);
@@ -4974,7 +4977,7 @@
     if(!view.channelId || !channels.some(c=>c.id===view.channelId && c.type==='text')){
       view.channelId=textChannels[0]?.id||channels[0]?.id||null;
     }
-    text.innerHTML=textChannels.map(c=>`<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?'🔕':(state.unread?.[`${s.id}|${c.id}`]?'●':'')}</small></button>`).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
+    text.innerHTML=textChannels.map(c=>{const mentions=Number(state.mentionCounts?.[String(s.id)+'|'+String(c.id)]||0);return `<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?'🔕':(mentions>0?`<span class="channel-mention-badge">${mentions>99?'99+':mentions}</span>`:(state.unread?.[`${s.id}|${c.id}`]?'●':''))}</small></button>`}).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
     voice.innerHTML=voiceChannels.map(c=>{
       const joined=serverVoiceSession?.serverId===s.id&&serverVoiceSession?.channelId===c.id;
       const count=joined?serverVoiceSession.participantIds.size:0;
