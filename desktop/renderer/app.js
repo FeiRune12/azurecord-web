@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.1');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.2');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -2757,11 +2757,24 @@
     box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});
     box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});
     box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption)));
+    box.querySelectorAll('.video-attachment video').forEach(video=>{
+      const card=video.closest('.video-attachment'),stage=video.closest('.inline-video-stage'),btn=card?.querySelector('[data-inline-video-play]'),error=card?.querySelector('.inline-video-error');
+      const syncRatio=()=>{
+        const w=Number(video.videoWidth||0),h=Number(video.videoHeight||0);if(!stage||!w||!h)return;
+        const ratio=Math.max(.45,Math.min(2.4,w/h));stage.style.setProperty('--video-aspect',String(ratio));
+        stage.classList.toggle('portrait',ratio<.85);
+      };
+      video.addEventListener('loadedmetadata',syncRatio,{once:true});
+      video.addEventListener('loadeddata',()=>{syncRatio();if(error)error.hidden=true;},{once:true});
+      video.addEventListener('play',()=>{if(btn)btn.hidden=true;});
+      video.addEventListener('ended',()=>{if(btn)btn.hidden=false;});
+      video.addEventListener('error',()=>{if(error)error.hidden=false;if(btn)btn.hidden=true;});
+    });
     box.querySelectorAll('[data-inline-video-play]').forEach(btn=>btn.onclick=async e=>{
       e.preventDefault();e.stopPropagation();
       const card=btn.closest('.video-attachment'),video=card?.querySelector('video');if(!video)return;
-      video.controls=true;btn.hidden=true;
-      try{await video.play();}catch{btn.hidden=false;video.controls=false;}
+      btn.hidden=true;
+      try{await video.play();}catch{btn.hidden=false;}
     });
   }
   function attachmentListForMessage(m){
@@ -3337,7 +3350,8 @@
         return `<figure class="message-attachment image-attachment"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(name||'Imagem')}" loading="lazy"></a><figcaption><span>${esc(name||'Imagem')}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       if(video){
-        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage"><video src="${source}" preload="metadata" playsinline></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        const videoType=type.startsWith('video/')?type:(/\.webm$/i.test(name)?'video/webm':(/\.mov$/i.test(name)?'video/quicktime':'video/mp4'));
+        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage"><video src="${source}" type="${esc(videoType)}" preload="metadata" playsinline controls controlslist="nodownload" disablepictureinpicture></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button><div class="inline-video-error" hidden><strong>Não foi possível reproduzir este vídeo.</strong><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
       return source?`<a class="attachment-link" href="${source}" target="_blank" rel="noopener">${card}</a>`:card;
