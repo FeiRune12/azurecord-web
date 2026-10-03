@@ -1,5 +1,5 @@
 name = "azurecord-api"
-main = "worker-v0.9.4.js"
+main = "worker-v0.9.5.js"
 compatibility_date = "2026-10-01"
 
 [[d1_databases]]
