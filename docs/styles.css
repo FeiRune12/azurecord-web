@@ -1774,3 +1774,30 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .server-voice-video{
   width:100%!important;height:100%!important;object-fit:contain!important;background:#000!important
 }
+
+
+/* Azurecord 5.0.0: voice activity + server screen stage */
+.server-voice-tile{
+  transition:border-color .12s ease,box-shadow .12s ease,transform .12s ease;
+}
+.server-voice-tile.is-speaking{
+  border-color:#23a55a!important;
+  box-shadow:0 0 0 3px rgba(35,165,90,.92),0 0 26px rgba(35,165,90,.34)!important;
+}
+.server-voice-tile.is-speaking .server-voice-avatar{
+  box-shadow:0 0 0 3px rgba(35,165,90,.75),0 14px 42px rgba(0,0,0,.42)!important;
+}
+.server-voice-tile:has(.server-voice-video){
+  min-height:340px!important;
+}
+.server-voice-video{
+  width:100%!important;
+  height:100%!important;
+  min-height:320px!important;
+  object-fit:contain!important;
+  background:#000!important;
+}
+@media(max-width:900px){
+  .server-voice-tile:has(.server-voice-video){min-height:240px!important}
+  .server-voice-video{min-height:220px!important}
+}
