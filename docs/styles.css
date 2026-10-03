@@ -1880,3 +1880,21 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .inline-video-stage{min-height:150px;max-height:62vh!important}
   .inline-video-stage.portrait{width:min(330px,100%)!important;max-height:68vh!important}
 }
+
+
+/* Azurecord 5.0.3: GIFs inline */
+.gif-media-picker{display:grid;gap:8px}
+.gif-media-upload{
+  width:100%;display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--line);
+  border-radius:12px;background:var(--panel-2);color:var(--text);text-align:left;cursor:pointer
+}
+.gif-media-upload:hover{background:var(--panel-3);border-color:var(--line-strong)}
+.gif-media-upload>span{
+  width:42px;height:42px;display:grid;place-items:center;border-radius:10px;
+  background:var(--accent-soft);color:#9bc8ff;font-size:11px;font-weight:950
+}
+.gif-media-upload>div{min-width:0;display:grid;gap:3px}
+.gif-media-upload strong{font-size:11px}
+.gif-media-upload small{color:var(--muted);font-size:9px;line-height:1.35}
+.gif-attachment img{max-height:420px}
+.gif-attachment figcaption small{white-space:nowrap}
