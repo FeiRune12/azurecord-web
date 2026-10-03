@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.2');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.3');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -2872,12 +2872,11 @@
     if(!box.hidden && active && active.dataset.composerType===type){closeComposerPopover();return;}
     $$('.composer-quick').forEach(b=>b.classList.toggle('active',b.dataset.composerType===type));
     const emoji=['😀','😂','😍','😎','😭','😡','🥹','😴','🤔','😳','🔥','💙','✨','🎮','🎨','🗿','👍','👀'];
-    const gifs=['LOL','HYPE','GG','WHAT','NO WAY','NICE'];
     const stickers=['💙 AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
-    const apps=['📊 Enquete','@ Menção','</> Código','✦ Ação'];
+    const apps=['📊 Enquete','@ Menção','</> Código'];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
-    if(type==='gif'){title='GIF';items=gifs;helper='Selecione um GIF rápido. Nesta V38 ele entra como um cartão textual leve, sem baixar mídia externa.'}
+    if(type==='gif'){box.dataset.mode='gif-media';box.innerHTML='<h4>GIF</h4><div class="gif-media-picker"><button type="button" class="gif-media-upload" id="composerGifUpload"><span>GIF</span><div><strong>Enviar GIF</strong><small>Escolha um arquivo .gif. Ele será exibido no chat como mídia, igual a uma foto.</small></div></button><p class="composer-helper">GIFs agora são enviados como mídia real e continuam animados dentro da conversa.</p></div>';box.hidden=false;const input=document.createElement('input');input.type='file';input.accept='image/gif,.gif';input.hidden=true;input.onchange=async()=>{if(input.files?.length)await handleFiles({target:input});closeComposerPopover();};box.appendChild(input);box.querySelector('#composerGifUpload').onclick=()=>input.click();return;}
     if(type==='sticker'){title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
     if(type==='apps'){title='Apps rápidos';items=apps;helper='Atalhos para recursos que já existem no Azurecord.'}
     box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>`<button type="button" class="composer-chip ${item.length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(item)}">${esc(item)}</button>`).join('')}</div><p class="composer-helper">${helper}</p>`;
@@ -2885,13 +2884,13 @@
     box.querySelectorAll('[data-composer-choice]').forEach(btn=>btn.onclick=()=>{
       const val=btn.dataset.composerValue||'';
       if(type==='emoji'){insertAtCursor(val);closeComposerPopover();return;}
-      if(type==='gif'){insertAtCursor(`[GIF: ${val}]`);closeComposerPopover();return;}
+      
       if(type==='sticker'){insertAtCursor(`[Sticker: ${val}]`);closeComposerPopover();return;}
       if(type==='apps'){
         if(val.includes('Enquete')){closeComposerPopover();openCreatePoll();return;}
         if(val.includes('Menção')){insertAtCursor('@lola');closeComposerPopover();return;}
         if(val.includes('Código')){insertAtCursor('```\n\n```');closeComposerPopover();return;}
-        if(val.includes('Ação')){insertAtCursor('*Lola entra em cena.*');closeComposerPopover();return;}
+        
       }
     });
   }
@@ -2933,7 +2932,7 @@
     if(!socialCloudReady())throw new Error('Entre na sua conta Cloud para enviar arquivos.');
 
     const init=await cloudRequest('/api/uploads/init',{method:'POST',body:JSON.stringify({
-      name:file.name,type:file.type||'application/octet-stream',size:file.size
+      name:file.name,type:file.type||(/\.gif$/i.test(file.name)?'image/gif':'application/octet-stream'),size:file.size
     })});
     const chunkSize=Math.max(5*1024*1024,Number(init.partSize)||8*1024*1024);
     const parts=[];
@@ -2953,7 +2952,7 @@
         if(end>=file.size)break;
       }
       const done=await cloudRequest('/api/uploads/complete',{method:'POST',body:JSON.stringify({
-        key:init.key,uploadId:init.uploadId,parts,name:file.name,type:file.type||'application/octet-stream',size:file.size
+        key:init.key,uploadId:init.uploadId,parts,name:file.name,type:file.type||(/\.gif$/i.test(file.name)?'image/gif':'application/octet-stream'),size:file.size
       })});
       item.uploading=false;item.progress=100;
       return {...done.file,visual:item.visual||null};
@@ -2978,14 +2977,14 @@
     pendingAttachmentReads+=files.length;
     for(const file of files){
       try{
-        const image=String(file.type||'').startsWith('image/');
+        const image=String(file.type||'').startsWith('image/')||/\.gif$/i.test(String(file.name||''));
         const previewable=image&&file.size<=24*1024*1024;
         const previewUrl=previewable?URL.createObjectURL(file):'';
         const visual=previewable
           ? await analyzeImageFile(file,previewUrl)
           : {kind:guessAttachmentKind(file.name,file.type||'')};
         pendingAttachments.push({
-          id:uid('file'),name:file.name,size:file.size,type:file.type||'application/octet-stream',
+          id:uid('file'),name:file.name,size:file.size,type:file.type||(/\.gif$/i.test(file.name)?'image/gif':'application/octet-stream'),
           visual,_file:file,_previewUrl:previewUrl,uploading:false,progress:0
         });
       }catch(err){
@@ -3344,10 +3343,11 @@
       const type=String(f.type||'');
       const name=String(f.name||'Arquivo');
       const source=safeUrl(f.url||f.dataUrl||'');
-      const image=type.startsWith('image/')&&source;
-      const video=(type.startsWith('video/')||/\.mp4$/i.test(name))&&source;
+      const gif=(type==='image/gif'||/\.gif$/i.test(name))&&source;
+      const image=(type.startsWith('image/')||gif)&&source;
+      const video=(type.startsWith('video/')||/\.(mp4|webm|mov)$/i.test(name))&&source;
       if(image){
-        return `<figure class="message-attachment image-attachment"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(name||'Imagem')}" loading="lazy"></a><figcaption><span>${esc(name||'Imagem')}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        return `<figure class="message-attachment image-attachment${gif?' gif-attachment':''}"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(name||'Imagem')}" loading="lazy" decoding="async"></a><figcaption><span>${esc(name||'Imagem')}</span><small>${gif?'GIF • ':''}${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       if(video){
         const videoType=type.startsWith('video/')?type:(/\.webm$/i.test(name)?'video/webm':(/\.mov$/i.test(name)?'video/quicktime':'video/mp4'));
@@ -3363,7 +3363,7 @@
     box.hidden=false;
     box.innerHTML=`<div class="attachment-preview-head"><span>Anexos (${pendingAttachments.length})</span><button type="button" class="attachment-clear" id="clearPendingAttachments">Limpar</button></div><div class="attachment-preview-grid">${pendingAttachments.map((f,i)=>{
       const preview=safeUrl(f._previewUrl||f.url||f.dataUrl||'');
-      const image=String(f.type||'').startsWith('image/')&&preview;
+      const image=(String(f.type||'').startsWith('image/')||/\.gif$/i.test(String(f.name||'')))&&preview;
       const visual=f.visual?.width&&f.visual?.height?`${f.visual.width}×${f.visual.height}`:'';
       const progress=f.uploading?` • enviando ${Number(f.progress||0)}%`:'';
       return `<div class="pending-attachment">${image?`<img src="${preview}" alt="${esc(f.name)}">`:`<div class="pending-file-icon">${fileIcon(f.type)}</div>`}<div class="pending-attachment-name" title="${esc(f.name)}">${esc(f.name)}</div><div class="pending-attachment-meta">${visual?`${visual} • `:''}${formatFileSize(f.size)}${progress}</div><button type="button" class="pending-remove" data-remove-attachment="${i}" aria-label="Remover ${esc(f.name)}" ${f.uploading?'disabled':''}>×</button></div>`;
