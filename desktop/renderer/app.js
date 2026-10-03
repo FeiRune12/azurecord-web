@@ -170,6 +170,28 @@
   let azureCallIceConfigExpiresAt = 0;
   let azureCallIceConfigPromise = null;
 
+  async function desktopCloudRequest(url, fetchOptions={}){
+    const bridge=window.azurecordDesktop;
+    if(!bridge?.cloudFetch)return null;
+    const headers={};
+    try{for(const [key,value] of new Headers(fetchOptions.headers||{}).entries())headers[key]=value;}catch{Object.assign(headers,fetchOptions.headers||{});}
+    const result=await bridge.cloudFetch({
+      url,
+      method:String(fetchOptions.method||'GET').toUpperCase(),
+      headers,
+      body:typeof fetchOptions.body==='string'?fetchOptions.body:null
+    });
+    if(!result)return null;
+    let data={};try{data=result.text?JSON.parse(result.text):{};}catch{}
+    if(!result.ok){
+      const error=new Error(data.message||data.error||`HTTP ${result.status||0}`);
+      error.status=Number(result.status||0);error.code=data.error||'http_error';error.data=data;
+      throw error;
+    }
+    cloudOnline=true;
+    return data;
+  }
+
   async function cloudRequest(path, options = {}){
     const {auth=true, timeoutMs=20000, ...fetchOptions} = options;
     const headers = {'Content-Type':'application/json', ...(fetchOptions.headers||{})};
@@ -182,6 +204,10 @@
       response=await fetch(`${CLOUD_API_URL}${path}`, {...fetchOptions, headers, signal:externalSignal||controller?.signal});
     }catch(err){
       const timeout=err?.name==='AbortError';
+      if(!timeout&&window.azurecordDesktop?.cloudFetch){
+        try{return await desktopCloudRequest(`${CLOUD_API_URL}${path}`,{...fetchOptions,headers});}
+        catch(nativeErr){console.warn('[Azurecord Cloud] fallback desktop:',nativeErr?.message||nativeErr);}
+      }
       const error=new Error(timeout?'O Azurecord Cloud demorou demais para responder.':'Não foi possível alcançar o Azurecord Cloud. Verifique a internet e tente novamente.');
       error.status=0;error.code=timeout?'cloud_timeout':'cloud_network_error';error.cause=err;
       throw error;
