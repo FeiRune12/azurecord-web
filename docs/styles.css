@@ -1829,3 +1829,54 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .video-attachment figcaption span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .video-attachment figcaption small{flex:0 0 auto;color:var(--muted)}
 @media(max-width:700px){.video-attachment{max-width:88vw}.inline-video-play{width:56px;height:56px}}
+
+
+/* Azurecord 5.0.2: player de vídeo inline estável */
+.video-attachment{
+  width:min(680px,78vw)!important;
+  max-width:min(680px,78vw)!important;
+  border-radius:14px!important;
+}
+.inline-video-stage{
+  --video-aspect:1.7777778;
+  position:relative!important;
+  width:100%!important;
+  aspect-ratio:var(--video-aspect)!important;
+  max-height:min(560px,68vh)!important;
+  min-height:180px;
+  background:#05070a!important;
+  overflow:hidden!important;
+}
+.inline-video-stage.portrait{
+  width:min(390px,100%)!important;
+  margin-inline:auto;
+  max-height:min(680px,72vh)!important;
+}
+.inline-video-stage video{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  min-width:0!important;
+  min-height:0!important;
+  max-width:100%!important;
+  max-height:100%!important;
+  object-fit:contain!important;
+  background:#05070a!important;
+}
+.inline-video-play{
+  z-index:4!important;
+  pointer-events:auto!important;
+}
+.inline-video-error{
+  position:absolute;inset:0;z-index:5;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  padding:18px;text-align:center;background:rgba(5,7,10,.94);color:#fff
+}
+.inline-video-error[hidden]{display:none!important}
+.inline-video-error strong{font-size:12px}
+.inline-video-error a{color:#8fc5ff;font-size:11px;font-weight:800}
+@media(max-width:700px){
+  .video-attachment{width:92vw!important;max-width:92vw!important}
+  .inline-video-stage{min-height:150px;max-height:62vh!important}
+  .inline-video-stage.portrait{width:min(330px,100%)!important;max-height:68vh!important}
+}
