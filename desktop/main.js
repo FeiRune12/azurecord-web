@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, Notification, shell, safeStorage, desktopCapturer, session } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, Notification, shell, safeStorage, desktopCapturer, session, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater } = require('./updater');
@@ -265,6 +265,27 @@ app.whenReady().then(async () => {
         log('[display-source-select]', err?.message || err);
         return false;
       }
+    });
+
+    ipcMain.handle('desktop:cloud-fetch', async (_event, payload = {}) => {
+      const rawUrl = String(payload.url || '');
+      let target;
+      try { target = new URL(rawUrl); } catch { throw new Error('URL Cloud inválida.'); }
+      const allowedHosts = new Set([
+        'azurecord-api.giovannisilvaalves604.workers.dev',
+        'azurecord-realtime.giovannisilvaalves604.workers.dev'
+      ]);
+      if (target.protocol !== 'https:' || !allowedHosts.has(target.hostname)) {
+        throw new Error('Destino Cloud não autorizado.');
+      }
+      const method = String(payload.method || 'GET').toUpperCase();
+      if (!['GET','POST','PUT','PATCH','DELETE'].includes(method)) throw new Error('Método Cloud inválido.');
+      const headers = payload.headers && typeof payload.headers === 'object' ? payload.headers : {};
+      const init = { method, headers };
+      if (payload.body != null && method !== 'GET') init.body = String(payload.body);
+      const response = await net.fetch(target.toString(), init);
+      const body = await response.text();
+      return { ok: response.ok, status: response.status, text: body };
     });
 
     ipcMain.handle('desktop:backend-info', () => ({
