@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.4');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.5');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -155,6 +155,39 @@
   let backendEventSource = null;
   let pendingAttachments = [];
   let pendingAttachmentReads = 0;
+  const inlineVideoBlobCache = new Map();
+  function rememberInlineVideoBlob(source,blobUrl){
+    const old=inlineVideoBlobCache.get(source);
+    if(old?.url&&old.url!==blobUrl)try{URL.revokeObjectURL(old.url);}catch{}
+    inlineVideoBlobCache.delete(source);
+    inlineVideoBlobCache.set(source,{url:blobUrl,at:Date.now()});
+    while(inlineVideoBlobCache.size>6){
+      const first=inlineVideoBlobCache.keys().next().value;
+      const item=inlineVideoBlobCache.get(first);
+      inlineVideoBlobCache.delete(first);
+      try{if(item?.url)URL.revokeObjectURL(item.url);}catch{}
+    }
+    return blobUrl;
+  }
+  async function loadInlineVideoBlob(source,videoType='video/mp4',{force=false}={}){
+    const src=String(source||'');if(!src)throw new Error('Fonte de vídeo ausente.');
+    if(!force){
+      const cached=inlineVideoBlobCache.get(src);
+      if(cached?.url){
+        inlineVideoBlobCache.delete(src);inlineVideoBlobCache.set(src,{...cached,at:Date.now()});
+        return cached.url;
+      }
+    }else{
+      const cached=inlineVideoBlobCache.get(src);
+      if(cached?.url)try{URL.revokeObjectURL(cached.url);}catch{}
+      inlineVideoBlobCache.delete(src);
+    }
+    const response=await fetch(src,{method:'GET',mode:'cors',credentials:'omit',cache:force?'reload':'force-cache'});
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    let blob=await response.blob();
+    if(!String(blob.type||'').startsWith('video/')&&videoType)blob=new Blob([blob],{type:videoType});
+    return rememberInlineVideoBlob(src,URL.createObjectURL(blob));
+  }
   const realtimePresence = new Map();
   const realtimeTyping = new Map();
   let typingLastSentAt = 0;
@@ -2758,38 +2791,39 @@
     box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});
     box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption)));
     box.querySelectorAll('.video-attachment video').forEach(video=>{
-      const card=video.closest('.video-attachment'),stage=video.closest('[data-inline-video-stage]'),btn=card?.querySelector('[data-inline-video-play]'),retry=card?.querySelector('[data-inline-video-retry]'),error=card?.querySelector('.inline-video-error');
+      const card=video.closest('.video-attachment'),stage=video.closest('[data-inline-video-stage]'),btn=card?.querySelector('[data-inline-video-play]'),retry=card?.querySelector('[data-inline-video-retry]'),error=card?.querySelector('.inline-video-error'),errorText=error?.querySelector('strong');
       const syncRatio=()=>{
         const w=Number(video.videoWidth||0),h=Number(video.videoHeight||0);if(!stage||!w||!h)return;
         const ratio=Math.max(.45,Math.min(2.4,w/h));stage.style.setProperty('--video-aspect',String(ratio));
         stage.classList.toggle('portrait',ratio<.85);
       };
-      const resetError=()=>{if(error)error.hidden=true;if(btn)btn.hidden=false;};
-      const prepare=()=>{
-        const src=String(video.dataset.src||'');if(!src)return false;
-        if(video.dataset.loadedSrc===src)return true;
-        video.pause();video.removeAttribute('src');while(video.firstChild)video.removeChild(video.firstChild);
-        const source=document.createElement('source');source.src=src;source.type=String(video.dataset.videoType||'video/mp4');video.appendChild(source);
-        video.dataset.loadedSrc=src;video.controls=true;video.load();return true;
+      const setLoading=loading=>{
+        stage?.classList.toggle('is-loading',!!loading);
+        if(btn){btn.disabled=!!loading;btn.hidden=false;btn.setAttribute('aria-busy',loading?'true':'false');const icon=btn.querySelector('span');if(icon)icon.textContent=loading?'…':'▶';}
       };
-      const play=async()=>{
-        resetError();if(btn)btn.hidden=true;
+      const resetError=()=>{if(error)error.hidden=true;if(errorText)errorText.textContent='Não foi possível carregar este vídeo.';};
+      const prepareAndPlay=async({force=false}={})=>{
+        const source=String(video.dataset.src||''),videoType=String(video.dataset.videoType||'video/mp4');
+        resetError();setLoading(true);
         try{
-          if(!prepare())throw new Error('Fonte de vídeo ausente.');
+          const blobUrl=await loadInlineVideoBlob(source,videoType,{force});
+          if(video.src!==blobUrl){video.pause();video.src=blobUrl;video.controls=true;video.preload='metadata';video.load();}
           await video.play();
+          if(btn)btn.hidden=true;
         }catch(err){
-          console.warn('[Azurecord] vídeo inline:',err?.message||err);
+          const message=String(err?.message||'Falha ao carregar o vídeo.');
+          console.warn('[Azurecord] vídeo inline:',message);
+          if(errorText)errorText.textContent=message.startsWith('HTTP ')?'O servidor de mídia respondeu '+message+'.':'Não foi possível carregar este vídeo.';
           if(error)error.hidden=false;if(btn)btn.hidden=true;
-        }
+        }finally{setLoading(false);}
       };
-      video.addEventListener('loadedmetadata',()=>{syncRatio();if(error)error.hidden=true;});
-      video.addEventListener('loadeddata',()=>{syncRatio();if(error)error.hidden=true;});
-      video.addEventListener('play',()=>{if(btn)btn.hidden=true;if(error)error.hidden=true;});
-      video.addEventListener('pause',()=>{if(video.currentTime===0&&btn)btn.hidden=false;});
-      video.addEventListener('ended',()=>{if(btn)btn.hidden=false;});
+      video.addEventListener('loadedmetadata',()=>{syncRatio();resetError();});
+      video.addEventListener('loadeddata',()=>{syncRatio();resetError();});
+      video.addEventListener('play',()=>{if(btn)btn.hidden=true;resetError();});
+      video.addEventListener('ended',()=>{if(btn){btn.hidden=false;const icon=btn.querySelector('span');if(icon)icon.textContent='▶';}});
       video.addEventListener('error',()=>{if(error)error.hidden=false;if(btn)btn.hidden=true;});
-      if(btn)btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await play();};
-      if(retry)retry.onclick=async e=>{e.preventDefault();e.stopPropagation();video.dataset.loadedSrc='';await play();};
+      if(btn)btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await prepareAndPlay();};
+      if(retry)retry.onclick=async e=>{e.preventDefault();e.stopPropagation();await prepareAndPlay({force:true});};
     });
   }
   function attachmentListForMessage(m){
