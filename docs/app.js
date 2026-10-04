@@ -3082,12 +3082,12 @@
       return `<button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button>`;
     }).join('');
     box.querySelectorAll('[data-klipy-id]').forEach(btn=>btn.onclick=()=>{
-      const url=String(btn.dataset.tenorUrl||'');if(!url)return;
-      const id=String(btn.dataset.tenorId||uid('klipy'));
-      const title=String(btn.dataset.tenorTitle||'GIF da KLIPY');
-      const width=Number(btn.dataset.tenorWidth||0),height=Number(btn.dataset.tenorHeight||0);
+      const url=String(btn.dataset.klipyUrl||'');if(!url)return;
+      const id=String(btn.dataset.klipyId||uid('klipy'));
+      const title=String(btn.dataset.klipyTitle||'GIF da KLIPY');
+      const width=Number(btn.dataset.klipyWidth||0),height=Number(btn.dataset.klipyHeight||0);
       pendingAttachments.push({
-        id:uid('file'),name:`klipy-${id}.gif`,size:Number(btn.dataset.tenorSize||0),type:'image/gif',url,
+        id:uid('file'),name:`klipy-${id}.gif`,size:Number(btn.dataset.klipySize||0),type:'image/gif',url,
         visual:{kind:'gif',width,height,source:'klipy',description:title},uploading:false,progress:100
       });
       renderAttachmentPreview();
@@ -3112,7 +3112,7 @@
     }
   }
   function openKlipyGifPicker(box){
-    box.dataset.mode='gif-tenor';
+    box.dataset.mode='gif-klipy';
     box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><span class="klipy-powered">Powered by KLIPY</span></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
     box.hidden=false;
     const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='image/gif,.gif';fileInput.hidden=true;
