@@ -2914,7 +2914,7 @@ function normalizeKlipyResult(item) {
   return {
     id: String(item?.id || ""),
     title: String(item?.title || "").slice(0, 180),
-    description: String(item?.content_description || item?.title || "GIF do Tenor").slice(0, 240),
+    description: String(item?.content_description || item?.title || "GIF da KLIPY").slice(0, 240),
     url: String((full || preview)?.url || ""),
     previewUrl: String((preview || full)?.url || ""),
     dims: Array.isArray(media?.dims) ? media.dims.slice(0, 2).map(x => Number(x) || 0) : [0, 0],
@@ -2963,7 +2963,7 @@ async function handleKlipy(request, env, url, path) {
       let data = {};
       try { data = await response.json(); } catch {}
       if (!response.ok) {
-        console.error("TENOR API ERROR", response.status, data?.error || data);
+        console.error("KLIPY API ERROR", response.status, data?.error || data);
         return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
       }
       const results = (Array.isArray(data?.results) ? data.results : [])
