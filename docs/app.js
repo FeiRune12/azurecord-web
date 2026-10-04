@@ -1452,8 +1452,11 @@
     clearTimeout(t._tm);t._tm=null;t.classList.remove('show','clickable');t.onclick=null;delete t.dataset.toastKey;
   }
   function showToast(text,options={}){
+    const message=String(text||'').trim();
+    const transientCloud=/^(Reconectando ao Azurecord Cloud|Sincronizando sua sessão Cloud)/i.test(message);
+    if(transientCloud && !(typeof navigator!=='undefined'&&navigator.onLine===false))return;
     const t=$('toast');if(!t)return;
-    clearTimeout(t._tm);t._tm=null;t.textContent=text;t.classList.add('show');
+    clearTimeout(t._tm);t._tm=null;t.textContent=message;t.classList.add('show');
     t.classList.toggle('clickable',typeof options.onClick==='function');
     if(options.key)t.dataset.toastKey=String(options.key);else delete t.dataset.toastKey;
     t.onclick=typeof options.onClick==='function'?()=>{options.onClick();if(!options.keepAfterClick)hideToast(options.key||'');}:null;
