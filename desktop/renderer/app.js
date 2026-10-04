@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.7');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.4');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -1435,6 +1435,14 @@
   function getProfile(id){
     const demo = DEMO_USERS.find(a=>a.id===id);
     const stored = state.profiles[id] || state.accounts.find(a=>a.id===id) || null;
+    if(id==='user-lumen'){
+      const merged={...(demo||DEMO_LUMEN),...(stored||{})};
+      merged.avatar=LUMEN_AVATAR_URL;
+      merged.banner=stored?.banner||demo?.banner||'';
+      merged.role='DJ';
+      merged.badge='♫';
+      return merged;
+    }
     if (demo && stored) return {...demo, ...stored, avatar: stored.avatar || demo.avatar, banner: stored.banner || demo.banner};
     return stored || demo || null;
   }
