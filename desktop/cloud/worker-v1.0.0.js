@@ -1898,6 +1898,54 @@ async function handleSocial(request, env, url, path) {
     if (!membership.server) return json({ error: "server_not_found", message: "Servidor não encontrado." }, 404);
     const manager = membership.server.owner_id === userId || membership.role === "Admin";
 
+    if (parts[3] === "lumen" && parts[4] === "library" && method === "GET") {
+      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
+      const features = parseJsonValue(membership.server.features_json, []);
+      if (!features.includes("lumen-dj")) {
+        return json({ error: "lumen_not_added", message: "Adicione a Lumen ao servidor antes de usar o DJ." }, 409);
+      }
+      const query = cleanText(url.searchParams.get("q") || "", 120).toLowerCase();
+      const rows = await env.DB.prepare(`
+        SELECT cm.id, cm.channel_id, cm.created_at, cm.files_json
+        FROM channel_messages cm
+        JOIN channels c ON c.id = cm.channel_id
+        WHERE c.server_id = ?
+          AND cm.deleted_at IS NULL
+          AND cm.files_json IS NOT NULL
+          AND cm.files_json <> '[]'
+        ORDER BY cm.created_at DESC
+        LIMIT 400
+      `).bind(serverId).all();
+
+      const tracks = [];
+      for (const row of rows.results || []) {
+        const files = parseJsonValue(row.files_json, []);
+        for (const file of Array.isArray(files) ? files : []) {
+          const name = String(file?.name || "Áudio");
+          const type = String(file?.type || "").toLowerCase();
+          const isAudio = type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(name);
+          if (!isAudio) continue;
+          if (query && !name.toLowerCase().includes(query)) continue;
+          const key = String(file?.key || "");
+          const urlValue = String(file?.url || "");
+          if (!urlValue && !key) continue;
+          tracks.push({
+            id: String(row.id) + ":" + tracks.length,
+            name,
+            type: type || "audio/mpeg",
+            size: Math.max(0, Number(file?.size) || 0),
+            url: urlValue,
+            key,
+            channelId: row.channel_id,
+            createdAt: row.created_at,
+          });
+          if (tracks.length >= 30) break;
+        }
+        if (tracks.length >= 30) break;
+      }
+      return json({ ok: true, query, tracks });
+    }
+
     if (parts[3] === "stickers") {
       if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
 
@@ -3170,6 +3218,7 @@ export default {
             serverSettingsCloud: true,
             webClient: true,
             klipyGifs: Boolean(env.KLIPY_API_KEY),
+            lumenDj: true,
         friendSearchV2: true,
         reliableMessaging: true,
         reliableMessagingV2: true,
