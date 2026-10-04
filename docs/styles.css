@@ -2087,3 +2087,19 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .link-preview-image{display:block;width:min(100%,360px);max-height:260px;object-fit:cover;border-radius:7px;margin-top:7px;background:#06080c}
 @media(max-width:700px){.message-link-preview{max-width:100%}.link-preview-image{width:100%}}
 
+/* Azurecord 6.0.4 server stickers */
+.server-sticker-picker{display:grid;gap:10px;min-width:min(520px,82vw)}
+.server-sticker-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.server-sticker-head h4{margin:0}
+.server-sticker-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;max-height:360px;overflow:auto}
+.server-sticker-card{position:relative;min-width:0}
+.server-sticker-use{width:100%;display:grid;gap:5px;place-items:center;padding:8px;border:1px solid var(--line);border-radius:11px;background:var(--panel-2);color:var(--text);cursor:pointer}
+.server-sticker-use:hover{border-color:rgba(0,102,255,.55);transform:translateY(-1px)}
+.server-sticker-use img{width:100%;height:92px;object-fit:contain;border-radius:8px;background:transparent}
+.server-sticker-use span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px;color:var(--muted)}
+.server-sticker-delete{position:absolute;top:4px;right:4px;width:22px;height:22px;border:0;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;cursor:pointer}
+.sticker-empty{grid-column:1/-1;padding:24px 12px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:10px}
+.message-attachment.sticker-attachment{border:0!important;background:transparent!important;max-width:180px!important;box-shadow:none!important}
+.message-attachment.sticker-attachment img{display:block;width:auto;max-width:180px;height:auto;max-height:180px;object-fit:contain;background:transparent}
+@media(max-width:700px){.server-sticker-picker{min-width:0;width:min(94vw,520px)}.server-sticker-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.server-sticker-use img{height:80px}}
+
