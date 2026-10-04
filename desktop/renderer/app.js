@@ -2799,7 +2799,13 @@
       };
       const setLoading=loading=>{
         stage?.classList.toggle('is-loading',!!loading);
-        if(btn){btn.disabled=!!loading;btn.hidden=false;btn.setAttribute('aria-busy',loading?'true':'false');const icon=btn.querySelector('span');if(icon)icon.textContent=loading?'…':'▶';}
+        if(btn){
+          btn.disabled=!!loading;
+          if(loading)btn.hidden=false;
+          btn.setAttribute('aria-busy',loading?'true':'false');
+          const icon=btn.querySelector('span');
+          if(icon)icon.textContent=loading?'…':'▶';
+        }
       };
       const resetError=()=>{if(error)error.hidden=true;if(errorText)errorText.textContent='Não foi possível carregar este vídeo.';};
       const prepareAndPlay=async({force=false}={})=>{
@@ -2807,7 +2813,16 @@
         resetError();setLoading(true);
         try{
           const blobUrl=await loadInlineVideoBlob(source,videoType,{force});
-          if(video.src!==blobUrl){video.pause();video.src=blobUrl;video.controls=true;video.preload='metadata';video.load();}
+          if(video.src!==blobUrl){
+            video.pause();
+            video.src=blobUrl;
+            video.dataset.loadedSrc=source;
+            video.controls=true;
+            video.preload='metadata';
+            video.load();
+          }else{
+            video.dataset.loadedSrc=source;
+          }
           await video.play();
           if(btn)btn.hidden=true;
         }catch(err){
