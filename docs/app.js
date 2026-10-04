@@ -25,10 +25,6 @@
     try {
       const parsed = new URL(value, window.location.href);
       const cloudHost = new URL(CLOUD_API_URL).hostname;
-      if (parsed.protocol === 'file:' && window.azurecordDesktop) {
-        const baseDir = new URL('./', window.location.href).href;
-        if (parsed.href.startsWith(baseDir)) return parsed.href;
-      }
       if (parsed.protocol === 'https:' && (
         parsed.hostname === 'gunvolt.com' ||
         parsed.hostname.endsWith('.gunvolt.com') ||
@@ -73,13 +69,12 @@
     memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
   };
 
-  const LUMEN_AVATAR_URL = new URL('./assets/lumen-avatar.jpg', document.currentScript?.src || window.location.href).href;
   const DEMO_LUMEN = {
     id:'user-lumen', username:'Lumen', email:'lumen@azurecord.local', handle:'@lumen',
-    bio:'A Muse de Azure Striker Gunvolt e DJ oficial do Azurecord.',
-    accent:'#8b5cff', status:'online', avatar:LUMEN_AVATAR_URL, banner:'',
+    bio:'A Muse de Azure Striker Gunvolt e mascote musical do Azurecord.',
+    accent:'#8b5cff', status:'online', avatar:'', banner:'',
     personality:'Brilhante, energética e musical. Representa o lado mais elétrico e performático do Azurecord.',
-    memberSince:'4 de out. de 2026', role:'DJ', badge:'♫'
+    memberSince:'4 de out. de 2026', role:'Mascote', badge:'♫'
   };
   const SYSTEM_MASCOT_IDS = new Set(['user-lola','user-lumen']);
   function isSystemMascot(id){return SYSTEM_MASCOT_IDS.has(String(id||''));}
@@ -2037,7 +2032,6 @@
     return ensureServerChannels(s);
   }
   function getChannel(serverId,id){ return getServer(serverId)?.channels.find(c=>c.id===id); }
-  function serverHasLumen(server){const s=typeof server==='string'?getServer(server):server;return !!s&&Array.isArray(s.features)&&s.features.includes('lumen-dj');}
   let renderFrame = null;
   function requestRenderShell(){
     if(renderFrame) return;
@@ -2234,88 +2228,12 @@
     try{session.voiceActivityContext?.close?.();}catch{}
     session.voiceActivityContext=null;
   }
-  function lumenSignalState(session,active,name=''){
-    if(!session)return;
-    const targets=new Set([...session.participantIds,...session.peers.keys()]);
-    targets.delete(String(state.currentAccountId));
-    for(const id of targets)directCallSignal(id,{...serverVoiceSignalBase(session,'server-voice-lumen-state'),active:!!active,name:String(name||'').slice(0,160)});
-  }
-  async function stopLumenDj({silent=false}={}){
-    const session=serverVoiceSession;if(!session)return;
-    const micTrack=session.localStream?.getAudioTracks?.()[0]||null;
-    for(const peer of session.peers.values()){
-      const sender=peer.pc?.getSenders?.().find(s=>s.track?.kind==='audio');
-      if(sender)try{await sender.replaceTrack(micTrack);}catch{}
-    }
-    try{session.lumenAudio?.pause?.();}catch{}
-    try{session.lumenSource?.disconnect?.();}catch{}
-    try{session.lumenMicSource?.disconnect?.();}catch{}
-    try{session.lumenAudioContext?.close?.();}catch{}
-    lumenSignalState(session,false,'');
-    session.lumenAudio=null;session.lumenAudioContext=null;session.lumenSource=null;session.lumenMicSource=null;session.lumenMixStream=null;session.lumenMixTrack=null;session.lumenNowPlaying=null;
-    renderServerVoiceModal();
-    if(!silent)showToast('Lumen parou a música.');
-  }
-  async function startLumenTrack(track){
-    const session=serverVoiceSession;if(!session)throw new Error('Entre em um canal de voz primeiro.');
-    await stopLumenDj({silent:true});
-    const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)throw new Error('Web Audio não está disponível neste dispositivo.');
-    const audio=new Audio();audio.crossOrigin='anonymous';audio.preload='auto';audio.src=String(track?.url||'');
-    const ctx=new AudioCtx();await ctx.resume?.();
-    const dest=ctx.createMediaStreamDestination();
-    const source=ctx.createMediaElementSource(audio);source.connect(dest);source.connect(ctx.destination);
-    const micTracks=session.localStream?.getAudioTracks?.()||[];
-    let micSource=null;if(micTracks.length){micSource=ctx.createMediaStreamSource(new MediaStream(micTracks));micSource.connect(dest);}
-    const mixTrack=dest.stream.getAudioTracks()[0];try{mixTrack.contentHint='music';}catch{}
-    session.lumenAudio=audio;session.lumenAudioContext=ctx;session.lumenSource=source;session.lumenMicSource=micSource;session.lumenMixStream=dest.stream;session.lumenMixTrack=mixTrack;session.lumenNowPlaying={...track,startedAt:Date.now()};
-    for(const peer of session.peers.values()){
-      const sender=peer.pc?.getSenders?.().find(s=>s.track?.kind==='audio');
-      if(sender)await sender.replaceTrack(mixTrack);
-    }
-    audio.onended=()=>{if(serverVoiceSession===session)void stopLumenDj({silent:true});};
-    audio.onerror=()=>{if(serverVoiceSession===session){showToast('Lumen não conseguiu reproduzir este áudio.');void stopLumenDj({silent:true});}};
-    await audio.play();
-    lumenSignalState(session,true,track?.name||'Música');
-    renderServerVoiceModal();
-    showToast('♫ Lumen: '+String(track?.name||'tocando agora'));
-  }
-  async function lumenPlayByName(query){
-    const server=getServer(view.serverId);if(!server)return false;
-    if(!serverHasLumen(server)){showToast('Adicione a Lumen ao servidor em Configurações → Integrações.');return false;}
-    const q=String(query||'').trim();if(!q){showToast('Digite o nome da música depois de /lumen play.');return false;}
-    if(!serverVoiceSession||serverVoiceSession.serverId!==server.id){
-      const voice=(server.channels||[]).find(ch=>ch.type==='voice');
-      if(!voice){showToast('Este servidor não tem canal de voz.');return false;}
-      await joinServerVoiceChannel(server.id,voice.id);
-    }
-    if(!serverVoiceSession||serverVoiceSession.serverId!==server.id)return false;
-    try{
-      const data=await socialRequest('/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/lumen/library?q='+encodeURIComponent(q));
-      const track=Array.isArray(data?.tracks)?data.tracks[0]:null;
-      if(!track){showToast('Lumen não achou esse áudio na biblioteca do servidor. Envie o arquivo primeiro.');return false;}
-      await startLumenTrack(track);return true;
-    }catch(err){showToast(err.message||'A Lumen não conseguiu procurar essa música.');return false;}
-  }
-  async function handleLumenCommand(text){
-    const raw=String(text||'').trim();
-    const play=raw.match(/^(?:\/lumen|@lumen|lumen[:,]?)\s+(?:play|toca|tocar)\s+(.+)$/i);
-    if(play)return await lumenPlayByName(play[1]);
-    if(!/^(?:\/lumen|@lumen|lumen[:,]?)/i.test(raw))return null;
-    const session=serverVoiceSession;
-    if(/\s+(?:stop|parar|para)$/i.test(raw)){await stopLumenDj();return true;}
-    if(/\s+(?:pause|pausa)$/i.test(raw)){if(session?.lumenAudio){session.lumenAudio.pause();lumenSignalState(session,true,(session.lumenNowPlaying?.name||'Música')+' • pausada');showToast('Lumen pausou a música.');}return true;}
-    if(/\s+(?:resume|continuar|voltar)$/i.test(raw)){if(session?.lumenAudio){await session.lumenAudio.play();lumenSignalState(session,true,session.lumenNowPlaying?.name||'Música');showToast('Lumen continuou a música.');}return true;}
-    showToast('Use /lumen play nome, /lumen pause, /lumen resume ou /lumen stop.');return true;
-  }
-
   function renderServerVoiceModal(){
     const overlay=ensureServerVoiceModal(),session=serverVoiceSession;
     if(!session){overlay.hidden=true;return;}
     const server=getServer(session.serverId),channel=getChannel(session.serverId,session.channelId);
     const ids=[...new Set([...session.participantIds].map(String))];
     if(!ids.includes(String(state.currentAccountId)))ids.unshift(String(state.currentAccountId));
-    const lumenActive=!!session.lumenNowPlaying||!!session.remoteLumen?.active;
-    if(lumenActive&&!ids.includes('user-lumen'))ids.push('user-lumen');
     $('serverVoiceHeading').textContent=(server?.name||'Servidor')+' | '+(channel?.name||'voz');
     $('serverVoiceTitle').textContent=channel?.name||'Canal de voz';
     $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
@@ -2327,15 +2245,13 @@
     $('serverVoiceShareBtn').textContent=(session.screenTrack||session.nativeScreenSharing)?'▣':'▢';
     $('serverVoiceGrid').innerHTML=ids.map(id=>{
       const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
-      const isLumen=id==='user-lumen';
       const isMe=id===String(state.currentAccountId);
       const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
       const letter=p.avatar?'':esc(String(p.username||'?')[0].toUpperCase());
-      const peer=session.peers.get(String(id));const videoStream=isLumen?null:(isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream));
+      const peer=session.peers.get(String(id));const videoStream=isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
       const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
-      const speaking=isLumen?lumenActive:session.speakingIds?.has(String(id));
-      const nowPlaying=isLumen?String(session.lumenNowPlaying?.name||session.remoteLumen?.name||'DJ Lumen'):'';
-      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(nowPlaying?'<small class="server-voice-now-playing">♫ '+esc(nowPlaying)+'</small>':'')+'</article>';
+      const speaking=session.speakingIds?.has(String(id));
+      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
     }).join('');
     for(const id of ids){
       const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
@@ -2364,8 +2280,7 @@
     const pc=new RTCPeerConnection(azureCallRtcConfig);
     const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false,videoStream:null,screenStream:null,screenPc:null,screenPendingIce:[]};
     session.peers.set(peerId,peer);session.participantIds.add(peerId);
-    if(session.lumenMixTrack)pc.addTrack(session.lumenMixTrack,session.lumenMixStream||new MediaStream([session.lumenMixTrack]));
-    else for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
+    for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
     if(session.cameraTrack&&session.cameraTrack.enabled!==false)pc.addTrack(session.cameraTrack,session.cameraStream||new MediaStream([session.cameraTrack]));
     pc.onicecandidate=e=>{
       if(!e.candidate||serverVoiceSession!==session)return;
@@ -2552,7 +2467,6 @@
     const session=serverVoiceSession;if(!session)return true;
     const from=String(event.fromUserId||'');if(!from||from===String(state.currentAccountId))return true;
     if(String(signal.serverId)!==String(session.remoteServerId)||String(signal.channelId)!==String(session.remoteChannelId))return true;
-    if(kind==='server-voice-lumen-state'){session.remoteLumen=signal.active?{active:true,name:String(signal.name||'Música'),hostId:from}:null;renderServerVoiceModal();return true;}
     if(kind==='server-voice-join'){
       session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();
       directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-ack')});
@@ -2621,7 +2535,6 @@
   }
   function leaveServerVoiceChannel({notify=true}={}){
     const session=serverVoiceSession;if(!session)return;
-    if(session.lumenAudio||session.lumenMixTrack)void stopLumenDj({silent:true});
     if(notify){
       const targets=new Set([...session.participantIds,...session.peers.keys()]);
       targets.delete(String(state.currentAccountId));
@@ -3961,15 +3874,6 @@
     e.preventDefault();
     const input=$('messageInput'),text=input.value.trim();
     const mode=view.mode, dmId=view.dmUserId, serverId=view.serverId, channelId=view.channelId;
-    if(mode==='server'&&!pendingAttachments.length&&/^\/lumen\b/i.test(text)){
-      try{
-        const lumenHandled=await handleLumenCommand(text);
-        if(lumenHandled!==null){input.value='';autoResizeComposer();return;}
-      }catch(err){
-        console.warn('[Azurecord] Lumen command:',err?.message||err);
-        showToast('A Lumen falhou, mas o chat continua funcionando.');
-      }
-    }
     if(mode==='dm'&&dmId==='user-lola'&&!pendingAttachments.length&&window.AzurecordLola.wantsNewConversation(text)){
       input.value='';await startNewLolaChat();return;
     }
@@ -4070,8 +3974,7 @@
     const server=getServer(view.serverId);
     if(server&&!server._membersLoading&&(!server._membersFetchedAt||Date.now()-server._membersFetchedAt>3500))void refreshServerMembers(server.id,{quiet:true});
     const members=Array.isArray(server?.members)?server.members.filter(Boolean):[];
-    if(serverHasLumen(server)&&!members.some(m=>m?.id==='user-lumen'))members.push({...DEMO_LUMEN,role:'DJ',serverRole:'DJ',systemBot:true});
-    for(const member of members)if(member?.id!=='user-lumen')hydrateRemoteUser(member);
+    for(const member of members)hydrateRemoteUser(member);
     const onlineCount=members.filter(member=>resolvedPresence(member.id)!=='offline').length;
     const head='<div class="member-panel-head"><strong>MEMBROS • '+members.length+'</strong><span class="presence-legend">'+onlineCount+' online</span></div>';
     const rows=members.map(member=>{
@@ -4598,7 +4501,7 @@
     if(tab==='invites')return `<div class="settings-section"><div class="settings-title-row"><div><h3>Convites</h3><p class="muted">Compartilhe códigos para outras pessoas entrarem.</p></div>${manager?'<button class="btn btn-primary" id="createServerInviteV83">Criar convite</button>':''}</div><div id="serverSettingsInvites"><span class="muted">Carregando convites...</span></div></div>`;
     if(tab==='access')return `<div class="settings-section"><h3>Acesso</h3><div class="settings-feature-card"><strong>Entrada por convite</strong><p>O Azurecord usa convites Cloud. Permissões por canal e regras avançadas entram junto da camada completa de cargos.</p></div></div>`;
     if(tab==='moderation')return `<div class="settings-section"><h3>Moderação</h3><div class="settings-feature-card"><strong>Bloqueio e controle de usuários já estão ativos</strong><p>Ferramentas específicas do servidor, como timeout, AutoMod e banimento, estão preparadas como próxima expansão.</p></div></div>`;
-    if(tab==='integrations')return `<div class="settings-section"><h3>Integrações</h3><div class="settings-feature-card lumen-integration-card"><div class="settings-user-line"><div class="mini-avatar avatar-img" style="background-image:url('${safeUrl(DEMO_LUMEN.avatar)}')"></div><div><strong>Lumen DJ</strong><span>@lumen • mascote musical</span></div></div><p>A Lumen procura músicas entre os áudios enviados neste servidor e toca no canal de voz.</p><div class="settings-actions"><button class="btn ${serverHasLumen(s)?'btn-danger':'btn-primary'}" id="toggleLumenServer" ${manager?'':'disabled'}>${serverHasLumen(s)?'Remover Lumen':'Adicionar Lumen'}</button></div><p class="tiny-note">Comandos: <code>/lumen play nome</code>, <code>/lumen pause</code>, <code>/lumen resume</code>, <code>/lumen stop</code>.</p></div></div>`;
+    if(tab==='integrations')return `<div class="settings-section"><h3>Integrações</h3><div class="settings-feature-card"><strong>Lola e AzurePoints</strong><p>Apps nativos do Azurecord já usam o backend Cloud. Integrações de terceiros entram depois.</p></div></div>`;
     if(tab==='audit')return `<div class="settings-section"><h3>Registro de auditoria</h3><div class="settings-feature-card"><strong>Em preparação</strong><p>O Worker ainda não grava um log administrativo completo. A interface já reserva esse espaço.</p></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Excluir servidor</h3><p>Essa ação apaga o servidor Cloud e não pode ser desfeita.</p><label>Digite o nome do servidor<input id="deleteServerPhrase" placeholder="${esc(s.name)}"></label><div class="settings-actions"><button class="btn btn-danger" id="deleteServerV83" ${s.owner===state.currentAccountId?'':'disabled'}>Excluir servidor</button></div></div>`;
   }
@@ -4627,13 +4530,12 @@
     if(tab==='channels'){ $('serverAddText')?.addEventListener('click',()=>{closeModal();openCreateChannel('text');});$('serverAddVoice')?.addEventListener('click',()=>{closeModal();openCreateChannel('voice');});$$('[data-settings-delete-channel]').forEach(b=>b.onclick=async()=>{const id=b.dataset.settingsDeleteChannel;const c=getChannel(s.id,id);if(!c)return;if(c.type==='text'){await channelContextAction('delete',id);}else{if(!confirm(`Excluir o canal de voz ${c.name}?`))return;s.channels=s.channels.filter(x=>x.id!==id);save();persistServersNow();renderShell();if(socialCloudReady()&&s.backendId&&c.backendId){try{await cloudRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});}catch(err){showToast(err.message||'Falha ao excluir canal.');}}}setTimeout(()=>openServerSettings('channels'),80);});}
     if(tab==='members'||tab==='roles')loadServerSettingsMembers(s,tab==='roles');
     if(tab==='invites'){loadServerSettingsInvites(s);$('createServerInviteV83')?.addEventListener('click',async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`,{method:'POST',body:'{}'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.create'});loadServerSettingsInvites(s);showToast('Convite criado.');}catch(err){showToast(err.message||'Falha ao criar convite.');}});}
-    if(tab==='integrations'){$('toggleLumenServer')?.addEventListener('click',async()=>{if(!manager)return;const features=new Set(Array.isArray(s.features)?s.features:[]);const adding=!features.has('lumen-dj');if(adding)features.add('lumen-dj');else features.delete('lumen-dj');try{if(socialCloudReady()){const data=await socialRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify({features:[...features]})});Object.assign(s,data?.server||{features:[...features]});}else s.features=[...features];save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'lumen.toggle'});renderMemberPanel();openServerSettings('integrations');showToast(adding?'Lumen entrou no servidor. ♫':'Lumen saiu do servidor.');}catch(err){showToast(err.message||'Não foi possível atualizar a Lumen.');}});}
     $('deleteServerV83')?.addEventListener('click',async()=>{if($('deleteServerPhrase').value.trim()!==s.name){showToast('Digite o nome exato do servidor.');return;}try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'DELETE'});sendCloudRealtime({type:'account.commit',reason:'server.delete'});state.servers=state.servers.filter(x=>x.id!==s.id);save();persistServersNow();closeModal();openHome('friends');showToast('Servidor excluído.');}catch(err){showToast(err.message||'Falha ao excluir servidor.');}});
   }
   async function loadServerSettingsMembers(s,rolesMode=false){
     const holder=$(rolesMode?'serverSettingsRoles':'serverSettingsMembers');if(!holder)return;const sid=s.backendId||s.id;
-    try{let members=[];if(socialCloudReady()){const data=await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/members`);members=data.members||[];for(const m of members)hydrateRemoteUser(m);}else members=[currentUser()].filter(Boolean);if(serverHasLumen(s)&&!rolesMode&&!members.some(m=>m?.id==='user-lumen'))members.push({...DEMO_LUMEN,serverRole:'DJ',role:'DJ',systemBot:true});
-      holder.innerHTML=members.map(m=>`<div class="settings-list-card"><div class="settings-user-line"><div class="mini-avatar avatar-img" style="${m.avatar?`background-image:url('${safeUrl(m.avatar)}')`:''}">${m.avatar?'':esc((m.username||'?')[0])}</div><div><strong>${esc(m.username)}</strong><span>${esc(m.handle||'')}</span></div></div>${rolesMode&&canManageServer(s)&&m.id!==s.owner?`<select data-server-role-user="${esc(m.id)}"><option ${m.serverRole==='Admin'?'selected':''}>Admin</option><option ${m.serverRole==='Moderador'?'selected':''}>Moderador</option><option ${!m.serverRole||m.serverRole==='Membro'?'selected':''}>Membro</option></select>`:`<span class="pill">${esc(m.serverRole||getServerRole(s,m.id))}</span>`}${!rolesMode&&canManageServer(s)&&m.id!==s.owner&&!m.systemBot?`<button class="home-mini-btn danger" data-remove-server-member="${esc(m.id)}">Remover</button>`:''}</div>`).join('')||'<span class="muted">Nenhum membro.</span>';
+    try{let members=[];if(socialCloudReady()){const data=await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/members`);members=data.members||[];for(const m of members)hydrateRemoteUser(m);}else members=[currentUser(),...DEMO_USERS.filter(x=>x.id!==state.currentAccountId)].filter(Boolean);
+      holder.innerHTML=members.map(m=>`<div class="settings-list-card"><div class="settings-user-line"><div class="mini-avatar avatar-img" style="${m.avatar?`background-image:url('${safeUrl(m.avatar)}')`:''}">${m.avatar?'':esc((m.username||'?')[0])}</div><div><strong>${esc(m.username)}</strong><span>${esc(m.handle||'')}</span></div></div>${rolesMode&&canManageServer(s)&&m.id!==s.owner?`<select data-server-role-user="${esc(m.id)}"><option ${m.serverRole==='Admin'?'selected':''}>Admin</option><option ${m.serverRole==='Moderador'?'selected':''}>Moderador</option><option ${!m.serverRole||m.serverRole==='Membro'?'selected':''}>Membro</option></select>`:`<span class="pill">${esc(m.serverRole||getServerRole(s,m.id))}</span>`}${!rolesMode&&canManageServer(s)&&m.id!==s.owner?`<button class="home-mini-btn danger" data-remove-server-member="${esc(m.id)}">Remover</button>`:''}</div>`).join('')||'<span class="muted">Nenhum membro.</span>';
       holder.querySelectorAll('[data-server-role-user]').forEach(sel=>sel.onchange=async()=>{try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/members/${encodeURIComponent(sel.dataset.serverRoleUser)}`,{method:'PATCH',body:JSON.stringify({role:sel.value})});state.roles[s.id]=state.roles[s.id]||{};state.roles[s.id][sel.dataset.serverRoleUser]=sel.value;save();showToast('Cargo atualizado.');}catch(err){showToast(err.message||'Falha ao atualizar cargo.');}});
       holder.querySelectorAll('[data-remove-server-member]').forEach(btn=>btn.onclick=async()=>{if(!confirm('Remover este membro do servidor?'))return;try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/members/${encodeURIComponent(btn.dataset.removeServerMember)}`,{method:'DELETE'});loadServerSettingsMembers(s,false);}catch(err){showToast(err.message||'Falha ao remover membro.');}});
     }catch(err){holder.innerHTML=`<span class="danger-text">${esc(err.message||'Falha ao carregar membros.')}</span>`;}
