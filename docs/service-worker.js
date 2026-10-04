@@ -1,4 +1,4 @@
-const CACHE_NAME = 'azurecord-5-0-8-media-shell';
+const CACHE_NAME = 'azurecord-5-0-9-lumen-tenor-shell';
 const APP_SHELL = [
   './',
   './index.html',
