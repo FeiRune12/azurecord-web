@@ -2902,6 +2902,117 @@ async function serveAttachment(request, env, path) {
   }
 }
 
+
+const TENOR_CLIENT_KEY = "azurecord";
+
+function normalizeTenorResult(item) {
+  const formats = item?.media_formats || {};
+  const full = formats.gif || formats.mediumgif || formats.tinygif || null;
+  const preview = formats.tinygif || formats.nanogif || formats.gif || null;
+  if (!full?.url && !preview?.url) return null;
+  const media = full || preview;
+  return {
+    id: String(item?.id || ""),
+    title: String(item?.title || "").slice(0, 180),
+    description: String(item?.content_description || item?.title || "GIF do Tenor").slice(0, 240),
+    url: String((full || preview)?.url || ""),
+    previewUrl: String((preview || full)?.url || ""),
+    dims: Array.isArray(media?.dims) ? media.dims.slice(0, 2).map(x => Number(x) || 0) : [0, 0],
+    size: Math.max(0, Number((full || preview)?.size) || 0),
+    itemUrl: String(item?.itemurl || item?.url || "").slice(0, 1200),
+  };
+}
+
+async function handleTenor(request, env, url, path) {
+  if (!path.startsWith("/api/tenor/")) return null;
+
+  const authResult = await requireSocialAuth(request, env);
+  if (authResult.response) return authResult.response;
+
+  const apiKey = String(env.TENOR_API_KEY || "").trim();
+  if (!apiKey) {
+    return json({
+      ok: false,
+      error: "TENOR_NOT_CONFIGURED",
+      message: "O painel Tenor ainda não foi configurado no Azurecord.",
+    }, 503);
+  }
+
+  const common = new URLSearchParams({
+    key: apiKey,
+    client_key: TENOR_CLIENT_KEY,
+    country: "BR",
+    locale: "pt_BR",
+    contentfilter: "high",
+    media_filter: "gif,tinygif",
+    limit: "24",
+  });
+
+  if (request.method === "GET" && (path === "/api/tenor/search" || path === "/api/tenor/featured")) {
+    const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
+    const endpoint = path.endsWith("/search") && query ? "search" : "featured";
+    if (endpoint === "search") common.set("q", query);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(`https://tenor.googleapis.com/v2/${endpoint}?${common.toString()}`, {
+        method: "GET",
+        signal: controller.signal,
+        headers: { "Accept": "application/json" },
+      });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok) {
+        console.error("TENOR API ERROR", response.status, data?.error || data);
+        return json({ ok: false, error: "TENOR_UPSTREAM_ERROR", message: "O Tenor não conseguiu responder agora." }, 502);
+      }
+      const results = (Array.isArray(data?.results) ? data.results : [])
+        .map(normalizeTenorResult)
+        .filter(Boolean);
+      return json({ ok: true, provider: "tenor", query, next: String(data?.next || ""), results });
+    } catch (error) {
+      const timeout = error?.name === "AbortError";
+      console.error("TENOR FETCH ERROR", String(error?.message || error));
+      return json({
+        ok: false,
+        error: timeout ? "TENOR_TIMEOUT" : "TENOR_NETWORK_ERROR",
+        message: timeout ? "O Tenor demorou demais para responder." : "Não foi possível alcançar o Tenor agora.",
+      }, 502);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  if (request.method === "POST" && path === "/api/tenor/register-share") {
+    const body = await readJson(request);
+    const id = String(body?.id || "").trim().slice(0, 120);
+    const query = String(body?.q || "").trim().slice(0, 100);
+    if (!id) return json({ ok: false, error: "missing_tenor_id" }, 400);
+
+    const share = new URLSearchParams({
+      key: apiKey,
+      client_key: TENOR_CLIENT_KEY,
+      id,
+      country: "BR",
+      locale: "pt_BR",
+    });
+    if (query) share.set("q", query);
+
+    try {
+      const response = await fetch(`https://tenor.googleapis.com/v2/registershare?${share.toString()}`, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+      });
+      return json({ ok: response.ok, provider: "tenor" }, response.ok ? 200 : 502);
+    } catch {
+      return json({ ok: false, error: "TENOR_SHARE_FAILED" }, 502);
+    }
+  }
+
+  return null;
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
@@ -2943,6 +3054,7 @@ export default {
             settingsCloud: true,
             serverSettingsCloud: true,
             webClient: true,
+            tenorGifs: Boolean(env.TENOR_API_KEY),
         friendSearchV2: true,
         reliableMessaging: true,
         reliableMessagingV2: true,
@@ -2988,6 +3100,9 @@ export default {
 
         const lolaResponse = await handleLola(request, env, url, path);
         if (lolaResponse) return lolaResponse;
+
+        const tenorResponse = await handleTenor(request, env, url, path);
+        if (tenorResponse) return tenorResponse;
 
         const pointsResponse = await handleAzurePoints(request, env, path);
         if (pointsResponse) return pointsResponse;
