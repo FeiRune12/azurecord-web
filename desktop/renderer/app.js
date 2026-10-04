@@ -859,7 +859,10 @@
     }
     if(view.mode==='home')renderHome();
     if(view.mode==='server')renderMemberPanel();
-    if(view.mode==='dm')renderChat();
+    if(view.mode==='dm'){
+      const p=getProfile(view.dmUserId);
+      if($('channelTopic'))$('channelTopic').textContent=`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`;
+    }
   }
   async function syncPresenceHeartbeat(status=effectiveOwnPresence()){
     if(!socialCloudReady()||!state.currentAccountId)return false;
@@ -1968,10 +1971,13 @@
       const sid=srv.backendId||srv.id, cid=ch.backendId||ch.id;
       const result=await socialRequest(`/api/servers/${encodeURIComponent(sid)}/channels/${encodeURIComponent(cid)}/messages?limit=100`);
       const key=`${serverId}|${channelId}`;
+      const beforeSignature=messageListUiSignature(state.channelMessages[key]||[]);
       const local=(state.channelMessages[key]||[]).filter(m=>m.pending&&!m.serverId);
       for(const m of (result.messages||[])){if(m.author)hydrateRemoteUser(m.author);}
       state.channelMessages[key]=[...(result.messages||[]).map(m=>({...m,author:m.senderId,serverId:m.id})),...local];
-      save();if(view.mode==='server'&&view.serverId===serverId&&view.channelId===channelId)renderMessages();
+      const messagesChanged=beforeSignature!==messageListUiSignature(state.channelMessages[key]);
+      save();
+      if(messagesChanged&&view.mode==='server'&&view.serverId===serverId&&view.channelId===channelId)renderMessages();
       return true;
     }catch(err){
       console.warn('[Azurecord] Falha ao sincronizar canal:',err.message);
@@ -2635,11 +2641,16 @@
         state.lolaSessionInfo[me]={id:remote,pendingReset:false};
       }
       const local=state.dmMessages[key]||[];
+      const beforeSignature=messageListUiSignature(local);
       const merged=new Map(local.map(m=>[m.clientId||m.serverId||m.id,m]));
       for(const m of data.messages||[])merged.set(m.clientId||m.id,{...m,author:m.senderId,serverId:m.id,pending:false,failed:false});
       state.dmMessages[key]=[...merged.values()].sort((a,b)=>(a.time||0)-(b.time||0));
+      const messagesChanged=beforeSignature!==messageListUiSignature(state.dmMessages[key]);
       save();
-      if(view.mode==='dm'&&view.dmUserId===id){renderDms();renderChat();}
+      if(view.mode==='dm'&&view.dmUserId===id){
+        renderDms();
+        if(messagesChanged)renderMessages();
+      }
       flushPendingDms(id).catch(err=>console.warn('[Azurecord] Fila DM:',err));
       return true;
     }catch(err){
@@ -2753,6 +2764,16 @@
   }
   function getMessages(){ if(view.mode==='dm')return state.dmMessages[dmKey(view.dmUserId)]||[]; return state.channelMessages[`${view.serverId}|${view.channelId}`]||[]; }
   function setMessages(arr){ if(view.mode==='dm')state.dmMessages[dmKey(view.dmUserId)]=arr; else state.channelMessages[`${view.serverId}|${view.channelId}`]=arr; save(); }
+  function messageListUiSignature(list=[]){
+    return JSON.stringify((list||[]).map(m=>({
+      id:m?.id||'',serverId:m?.serverId||'',clientId:m?.clientId||'',author:m?.author||m?.senderId||'',
+      text:m?.text||'',time:m?.time||0,edited:!!m?.edited,pending:!!m?.pending,failed:!!m?.failed,
+      files:(Array.isArray(m?.files)?m.files:(m?.file?[m.file]:[])).map(f=>({
+        name:f?.name||'',type:f?.type||'',size:Number(f?.size||0),url:f?.url||f?.dataUrl||''
+      })),
+      reactions:m?.reactions||null,poll:m?.poll||null,replyTo:m?.replyTo||null
+    })));
+  }
   function renderMessages(){
     const box=$('messages');const all=getMessages();const msgs=all.filter(m=>!isMessageSourceHidden(m.author||m.senderId));const hiddenCount=all.length-msgs.length;
     box.innerHTML=(hiddenCount?`<div class="message-filter-note">${hiddenCount} mensagem${hiddenCount===1?'':'s'} ocultada${hiddenCount===1?'':'s'} por Bloquear/Ignorar.</div>`:'')+(msgs.map(renderMessage).join('')||'<div class="home-empty compact"><span>Nenhuma mensagem visível. Comece a conversa.</span></div>');
