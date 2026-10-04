@@ -1,4 +1,4 @@
-const CACHE_NAME = 'azurecord-6-0-0-klipy-hotfix1-shell';
+const CACHE_NAME = 'azurecord-6-0-1-lumen-dj-shell';
 const APP_SHELL = [
   './',
   './index.html',
