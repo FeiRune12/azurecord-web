@@ -1984,3 +1984,22 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .inline-video-stage{min-height:180px!important;max-height:64vh!important}
   .inline-video-play{width:58px!important;height:58px!important}
 }
+
+
+/* Azurecord 5.0.5: player de vídeo carregado sob demanda */
+.inline-video-stage.is-loading::after{
+  content:'Carregando vídeo…';
+  position:absolute;left:50%;bottom:18px;transform:translateX(-50%);
+  z-index:3;padding:6px 10px;border-radius:999px;
+  background:rgba(8,11,16,.82);color:#dfe8f5;font-size:10px;font-weight:800;
+  pointer-events:none
+}
+.inline-video-stage.is-loading .inline-video-play{
+  cursor:progress!important;opacity:.9
+}
+.inline-video-play:disabled{pointer-events:none}
+.inline-video-error button{
+  border:1px solid rgba(255,255,255,.12);border-radius:9px;
+  padding:8px 11px;background:#1b2430;color:#fff;font:inherit;font-size:10px;font-weight:850;cursor:pointer
+}
+.inline-video-error button:hover{background:#26364a}
