@@ -29,6 +29,12 @@
         parsed.hostname === 'gunvolt.com' ||
         parsed.hostname.endsWith('.gunvolt.com') ||
         parsed.hostname === 'static.klipy.com' ||
+        parsed.hostname === 'i.ytimg.com' ||
+        parsed.hostname === 'img.youtube.com' ||
+        parsed.hostname === 'i.scdn.co' ||
+        parsed.hostname === 'mosaic.scdn.co' ||
+        parsed.hostname === 'image-cdn-ak.spotifycdn.com' ||
+        parsed.hostname === 'i1.sndcdn.com' ||
         parsed.hostname === cloudHost ||
         parsed.origin === window.location.origin
       )) return parsed.href;
@@ -2893,6 +2899,7 @@
     box.querySelectorAll('[data-profile-msg]').forEach(el=>el.onclick=(e)=>{e.preventDefault();e.stopPropagation();openProfilePeek(el.dataset.profileMsg,el);});
     box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});
     box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption)));
+    void hydrateLinkPreviews(box);
     box.querySelectorAll('.video-attachment video').forEach(video=>{
       const card=video.closest('.video-attachment'),stage=video.closest('[data-inline-video-stage]'),btn=card?.querySelector('[data-inline-video-play]'),retry=card?.querySelector('[data-inline-video-retry]'),error=card?.querySelector('.inline-video-error'),errorText=error?.querySelector('strong');
       const syncRatio=()=>{
@@ -3720,6 +3727,43 @@
       return `<div class="pending-attachment">${image?`<img src="${preview}" alt="${esc(name)}">`:`<div class="pending-file-icon">${fileIcon(type)}</div>`}<div class="pending-attachment-name" title="${esc(name)}">${esc(name)}</div><div class="pending-attachment-meta">${visual?`${visual} • `:''}${formatFileSize(f.size)}${progress}</div><button type="button" class="pending-remove" data-remove-attachment="${i}" aria-label="Remover ${esc(name)}" ${f.uploading?'disabled':''}>×</button></div>`;
     }).join('')}</div>`;
     $('clearPendingAttachments').onclick=()=>{pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();};
+  }
+  const linkPreviewCache=new Map();
+  function extractSupportedPreviewUrl(text=''){
+    const matches=String(text||'').match(/https?:\/\/[^\s<>\"']+/gi)||[];
+    for(const raw of matches){
+      try{
+        const u=new URL(raw);
+        const h=u.hostname.toLowerCase();
+        if(h==='youtu.be'||h==='youtube.com'||h==='www.youtube.com'||h==='m.youtube.com'||h==='music.youtube.com'||h==='open.spotify.com'||h==='soundcloud.com'||h.endsWith('.soundcloud.com'))return u.toString();
+      }catch{}
+    }
+    return '';
+  }
+  function renderLinkPreviewShell(m){
+    const url=extractSupportedPreviewUrl(m?.text||'');
+    if(!url)return '';
+    return '<div class="message-link-preview" data-link-preview-url="'+esc(url)+'"><div class="link-preview-loading">Carregando preview…</div></div>';
+  }
+  async function hydrateLinkPreviews(root){
+    for(const box of root.querySelectorAll('[data-link-preview-url]')){
+      if(box.dataset.loaded==='1')continue;
+      box.dataset.loaded='1';
+      const url=String(box.dataset.linkPreviewUrl||'');
+      if(!url)continue;
+      let data=linkPreviewCache.get(url);
+      if(!data){
+        try{
+          const response=await fetch(CLOUD_API_URL+'/api/link-preview?url='+encodeURIComponent(url),{headers:{'Accept':'application/json'},cache:'force-cache'});
+          data=response.ok?await response.json():null;
+          if(data?.ok)linkPreviewCache.set(url,data);
+        }catch{data=null;}
+      }
+      if(!data?.ok){box.remove();continue;}
+      const thumb=safeUrl(data.thumbnail||'');
+      const target=String(data.url||url);
+      box.innerHTML='<a class="link-preview-card" href="'+esc(target)+'" target="_blank" rel="noopener"><div class="link-preview-accent"></div><div class="link-preview-body"><span class="link-preview-provider">'+esc(data.provider||'Link')+'</span><strong>'+esc(data.title||target)+'</strong>'+(data.author?'<span class="link-preview-author">'+esc(data.author)+'</span>':'')+(thumb?'<img class="link-preview-image" src="'+thumb+'" alt="" loading="lazy" decoding="async">':'')+'</div></a>';
+    }
   }
   function renderPollCard(m){
     const poll=m?.poll;if(!poll||!Array.isArray(poll.options))return '';
