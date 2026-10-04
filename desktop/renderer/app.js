@@ -25,6 +25,7 @@
     try {
       const parsed = new URL(value, window.location.href);
       const cloudHost = new URL(CLOUD_API_URL).hostname;
+      if (parsed.protocol === 'file:' && window.azurecordDesktop) return parsed.href;
       if (parsed.protocol === 'https:' && (
         parsed.hostname === 'gunvolt.com' ||
         parsed.hostname.endsWith('.gunvolt.com') ||
