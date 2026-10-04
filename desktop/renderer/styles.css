@@ -2087,3 +2087,27 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .message-attachment.sticker-attachment img{display:block;width:auto;max-width:180px;height:auto;max-height:180px;object-fit:contain;background:transparent}
 @media(max-width:700px){.server-sticker-picker{min-width:0;width:min(94vw,520px)}.server-sticker-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.server-sticker-use img{height:80px}}
 
+/* Azurecord 6.0.4 GIF favorites + Lumen voice */
+.klipy-gif-card-wrap{position:relative;min-width:0}
+.klipy-favorite-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;border:0;border-radius:999px;background:rgba(5,8,14,.78);color:#fff;font-size:16px;line-height:1;cursor:pointer;backdrop-filter:blur(5px);z-index:2}
+.klipy-favorite-btn:hover{transform:scale(1.06)}
+.klipy-favorite-btn.active{color:#ffd75e;background:rgba(44,36,10,.88)}
+
+.lumen-voice-panel{margin:10px 12px 0;padding:12px;border:1px solid rgba(139,92,255,.35);border-radius:13px;background:linear-gradient(180deg,rgba(139,92,255,.12),rgba(48,28,96,.08));display:grid;gap:10px}
+.lumen-voice-panel[hidden]{display:none!important}
+.lumen-voice-head{display:flex;align-items:center;gap:10px}
+.lumen-voice-head .mini-avatar{width:38px;height:38px;flex:0 0 38px;background-size:cover;background-position:center}
+.lumen-voice-head>div:last-child{display:grid;gap:2px;min-width:0}
+.lumen-voice-head strong{font-size:11px}
+.lumen-voice-head span{font-size:9px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lumen-voice-controls{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
+.lumen-voice-controls input{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--text);padding:9px 10px;font:inherit;font-size:10px;outline:none}
+.lumen-voice-controls input:focus{border-color:rgba(139,92,255,.6);box-shadow:0 0 0 2px rgba(139,92,255,.14)}
+.lumen-voice-embed{overflow:hidden;border-radius:10px;background:#05070a;border:1px solid var(--line)}
+.lumen-voice-embed[hidden]{display:none!important}
+.lumen-voice-embed iframe{display:block;width:100%;height:152px;border:0}
+.server-voice-tile.is-lumen{border-color:rgba(139,92,255,.55);box-shadow:0 0 0 1px rgba(139,92,255,.2),0 0 26px rgba(139,92,255,.12)}
+.server-voice-now-playing{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:#c9b8ff;margin-top:3px}
+.lumen-integration-card{border-color:rgba(139,92,255,.3)!important}
+@media(max-width:700px){.lumen-voice-controls{grid-template-columns:1fr 1fr}.lumen-voice-controls input{grid-column:1/-1}.lumen-voice-embed iframe{height:130px}}
+
