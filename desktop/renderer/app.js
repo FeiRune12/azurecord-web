@@ -68,6 +68,17 @@
     memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
   };
 
+  const DEMO_LUMEN = {
+    id:'user-lumen', username:'Lumen', email:'lumen@azurecord.local', handle:'@lumen',
+    bio:'A Muse de Azure Striker Gunvolt e mascote musical do Azurecord.',
+    accent:'#8b5cff', status:'online', avatar:'', banner:'',
+    personality:'Brilhante, energética e musical. Representa o lado mais elétrico e performático do Azurecord.',
+    memberSince:'4 de out. de 2026', role:'Mascote', badge:'♫'
+  };
+  const SYSTEM_MASCOT_IDS = new Set(['user-lola','user-lumen']);
+  function isSystemMascot(id){return SYSTEM_MASCOT_IDS.has(String(id||''));}
+  function systemMascotKind(id){return id==='user-lola'?'Assistente do sistema':id==='user-lumen'?'Mascote do Azurecord':'';}
+
   function uiIcon(name,size=18){
     const paths={
       home:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h5v-5h3v5h5v-9.5"/>',
@@ -93,7 +104,7 @@
     return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
   }
 
-  const DEMO_USERS = [DEMO_LOLA];
+  const DEMO_USERS = [DEMO_LOLA,DEMO_LUMEN];
 
   const defaultState = {
     accounts: [], currentAccountId:null, rememberedAccountId:null,
@@ -830,7 +841,7 @@
       // Remove perfis Cloud que ficaram apenas no cache local depois de a conta
       // ter sido apagada no servidor. Contas salvas neste dispositivo continuam
       // em state.accounts, mas não devem virar sugestões de amizade.
-      const liveProfileIds=new Set([local.id,'user-lola']);
+      const liveProfileIds=new Set([local.id,'user-lola','user-lumen']);
       for(const p of (data.friends||[]))if(p?.id)liveProfileIds.add(p.id);
       for(const r of (data.requests||[]))if(r?.user?.id)liveProfileIds.add(r.user.id);
       for(const item of (data.dms||[]))if(item?.user?.id)liveProfileIds.add(item.user.id);
@@ -972,7 +983,7 @@
 
   function resolvedPresence(userId){
     if(!userId)return 'offline';
-    if(userId==='user-lola')return 'online';
+    if(isSystemMascot(userId))return 'online';
     if(userId===state.currentAccountId)return effectiveOwnPresence();
     const item=realtimePresence.get(String(userId));
     if(item&&Date.now()-item.at<70000)return item.status;
@@ -2555,10 +2566,10 @@
 
   function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p&&resolvedPresence(p.id)==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
   function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
-  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">SUGESTÕES</div><div class="friend-list">${[DEMO_LOLA,...Object.values(state.profiles||{})].filter((p,i,self)=>p&&p.id!==currentUser()?.id&&!isFriend(p.id)&&self.findIndex(x=>x?.id===p.id)===i).slice(0,4).map(friendRow).join('')||'<div class="presence-legend">Sem novas sugestões.</div>'}</div></div>`; }
+  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
-  function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=p.id==='user-lola'; const liveStatus=resolvedPresence(p.id); const statusText=system?'Assistente do sistema':statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); return `<div class="friend-row" data-user-row="${p.id}"><div class="home-avatar avatar-img" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
+  function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=isSystemMascot(p.id); const liveStatus=resolvedPresence(p.id); const statusText=system?systemMascotKind(p.id):statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); const systemActions=p.id==='user-lola'?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`; return `<div class="friend-row ${p.id==='user-lumen'?'lumen-mascot-row':''}" data-user-row="${p.id}"><div class="home-avatar avatar-img ${p.id==='user-lumen'?'lumen-mascot-avatar':''}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?systemActions:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
   function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} const refresh=$('refreshFriendRequests');if(refresh)refresh.onclick=async()=>{refresh.disabled=true;try{await hydrateFromCloudSocial({quiet:false});renderHome();}finally{refresh.disabled=false;}}; $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
   async function renderSearchResults(){
     const holder=$('friendSearchResults');if(!holder)return;
@@ -2586,8 +2597,8 @@
   async function sendFriendRequest(id){
     const target=getProfile(id);
     if(!target||id===state.currentAccountId)return;
-    if(id==='user-lola'){
-      showToast('Lola é uma assistente do sistema e não usa pedidos de amizade.');
+    if(isSystemMascot(id)){
+      showToast(`${target.username} é ${systemMascotKind(id).toLowerCase()} e não usa pedidos de amizade.`);
       return;
     }
     if(isFriend(id)){showToast('Vocês já são amigos.');return;}
@@ -2781,6 +2792,7 @@
     }
   }
   async function openDm(id,options={}){
+    if(id==='user-lumen'){showToast('Lumen é a mascote do Azurecord. O chat dela ainda não é uma segunda IA. ⚡');openProfileModal(id);return;}
     if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
     if(!getProfile(id))return;
     if(id!=='user-lola'&&isBlocked(id)){showToast('Desbloqueie este usuário antes de abrir uma DM.');openProfileModal(id);return;}
@@ -3009,6 +3021,67 @@
     delete box.dataset.mode;
     $$('.composer-quick').forEach(b=>b.classList.remove('active'));
   }
+  let tenorGifSearchTimer=null;
+  let tenorLastQuery='';
+  async function tenorGifRequest(query=''){
+    const clean=String(query||'').trim();
+    tenorLastQuery=clean;
+    return socialRequest(clean?'/api/tenor/search?q='+encodeURIComponent(clean):'/api/tenor/featured',{timeoutMs:12000});
+  }
+  function renderTenorGifGrid(items=[]){
+    const box=$('tenorGifResults');if(!box)return;
+    if(!items.length){box.innerHTML='<div class="tenor-empty">Nenhum GIF encontrado.</div>';return;}
+    box.innerHTML=items.map(item=>{
+      const id=esc(String(item.id||''));
+      const preview=safeUrl(item.previewUrl||item.url||'');
+      const url=safeUrl(item.url||item.previewUrl||'');
+      const title=esc(item.description||item.title||'GIF do Tenor');
+      const dims=Array.isArray(item.dims)?item.dims:[0,0];
+      return `<button type="button" class="tenor-gif-card" data-tenor-id="${id}" data-tenor-url="${url}" data-tenor-title="${title}" data-tenor-size="${Number(item.size||0)}" data-tenor-width="${Number(dims[0]||0)}" data-tenor-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button>`;
+    }).join('');
+    box.querySelectorAll('[data-tenor-id]').forEach(btn=>btn.onclick=()=>{
+      const url=String(btn.dataset.tenorUrl||'');if(!url)return;
+      const id=String(btn.dataset.tenorId||uid('tenor'));
+      const title=String(btn.dataset.tenorTitle||'GIF do Tenor');
+      const width=Number(btn.dataset.tenorWidth||0),height=Number(btn.dataset.tenorHeight||0);
+      pendingAttachments.push({
+        id:uid('file'),name:`tenor-${id}.gif`,size:Number(btn.dataset.tenorSize||0),type:'image/gif',url,
+        visual:{kind:'gif',width,height,source:'tenor',description:title},uploading:false,progress:100
+      });
+      renderAttachmentPreview();
+      closeComposerPopover();
+      void socialRequest('/api/tenor/register-share',{method:'POST',body:JSON.stringify({id,q:tenorLastQuery})}).catch(()=>{});
+      showToast('GIF do Tenor anexado. ✨');
+    });
+  }
+  async function loadTenorGifResults(query=''){
+    const box=$('tenorGifResults'),status=$('tenorGifStatus');if(!box)return;
+    box.innerHTML='<div class="tenor-loading">Carregando GIFs…</div>';
+    if(status)status.textContent=query?'Buscando no Tenor…':'GIFs em destaque';
+    try{
+      const data=await tenorGifRequest(query);
+      if(!$('tenorGifResults'))return;
+      renderTenorGifGrid(Array.isArray(data?.results)?data.results:[]);
+      if(status)status.textContent=query?`Resultados para “${query}”`:'GIFs em destaque';
+    }catch(err){
+      if(!$('tenorGifResults'))return;
+      box.innerHTML=`<div class="tenor-empty">${esc(err?.message||'Tenor indisponível agora.')}</div>`;
+      if(status)status.textContent='Upload manual continua disponível.';
+    }
+  }
+  function openTenorGifPicker(box){
+    box.dataset.mode='gif-tenor';
+    box.innerHTML=`<div class="tenor-picker"><div class="tenor-picker-head"><h4>GIFs</h4><span class="tenor-powered">Powered by Tenor</span></div><div class="tenor-search-row"><input id="tenorGifSearch" type="search" placeholder="Search Tenor" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="tenorGifStatus" class="composer-helper">GIFs em destaque</div><div id="tenorGifResults" class="tenor-gif-grid"></div></div>`;
+    box.hidden=false;
+    const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='image/gif,.gif';fileInput.hidden=true;
+    fileInput.onchange=async()=>{if(fileInput.files?.length)await handleFiles({target:fileInput});closeComposerPopover();};
+    box.appendChild(fileInput);
+    box.querySelector('#composerGifUpload').onclick=()=>fileInput.click();
+    const search=box.querySelector('#tenorGifSearch');
+    search.oninput=()=>{clearTimeout(tenorGifSearchTimer);const q=search.value;tenorGifSearchTimer=setTimeout(()=>void loadTenorGifResults(q),320);};
+    void loadTenorGifResults('');
+  }
+
   function openComposerPopover(type){
     const box=$('composerPopover');
     if(!box)return;
@@ -3021,7 +3094,7 @@
     const apps=['📊 Enquete','@ Menção','</> Código'];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
-    if(type==='gif'){box.dataset.mode='gif-media';box.innerHTML='<h4>GIF</h4><div class="gif-media-picker"><button type="button" class="gif-media-upload" id="composerGifUpload"><span>GIF</span><div><strong>Enviar GIF</strong><small>Escolha um arquivo .gif. Ele será exibido no chat como mídia, igual a uma foto.</small></div></button><p class="composer-helper">GIFs agora são enviados como mídia real e continuam animados dentro da conversa.</p></div>';box.hidden=false;const input=document.createElement('input');input.type='file';input.accept='image/gif,.gif';input.hidden=true;input.onchange=async()=>{if(input.files?.length)await handleFiles({target:input});closeComposerPopover();};box.appendChild(input);box.querySelector('#composerGifUpload').onclick=()=>input.click();return;}
+    if(type==='gif'){openTenorGifPicker(box);return;}
     if(type==='sticker'){title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
     if(type==='apps'){title='Apps rápidos';items=apps;helper='Atalhos para recursos que já existem no Azurecord.'}
     box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>`<button type="button" class="composer-chip ${item.length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(item)}">${esc(item)}</button>`).join('')}</div><p class="composer-helper">${helper}</p>`;
@@ -3877,10 +3950,10 @@
   function profilePeekHtml(p,opts={}){
     if(!p)return '';
     const self=p.id===state.currentAccountId;
-    const system=p.id==='user-lola';
+    const system=isSystemMascot(p.id);
     const compact=opts.peek===true;
     const blocked=!system&&isBlocked(p.id), ignored=!system&&isIgnored(p.id);
-    const friendship=system?'Assistente do sistema':(self?'Seu perfil':(blocked?'Bloqueado':(isFriend(p.id)?'Amigo':'Ainda não são amigos')));
+    const friendship=system?systemMascotKind(p.id):(self?'Seu perfil':(blocked?'Bloqueado':(isFriend(p.id)?'Amigo':'Ainda não são amigos')));
     const avatar=p.avatar?safeUrl(p.avatar):'';
     const banner=p.banner?safeUrl(p.banner):'';
     if(compact){
@@ -3912,8 +3985,8 @@
         <section class="profile-section-card"><div class="dm-peek-label">SOBRE MIM</div><p>${esc(p.bio||'Sem bio.')}</p></section>
         <section class="profile-section-card"><div class="dm-peek-label">PERSONALIDADE</div><p>${esc(p.personality||'Usuário do Azurecord.')}</p></section>
       </div>
-      <div class="profile-meta-grid"><div><span>Membro desde</span><strong>${esc(p.memberSince||'2026')}</strong></div><div><span>${system?'Tipo':'Amigos'}</span><strong>${system?'Assistente':String(p.friendCount??friendIdsForProfile(p.id))}</strong></div><div><span>Usuário</span><strong>${esc(p.handle||'@'+p.username.toLowerCase())}</strong></div></div>
-      ${system?`<div class="profile-actions profile-action-grid profile-action-grid-system"><button class="btn btn-primary" data-profile-dm="${p.id}">Mensagem direta</button></div>`:!self?`<div class="profile-actions profile-action-grid">
+      <div class="profile-meta-grid"><div><span>Membro desde</span><strong>${esc(p.memberSince||'2026')}</strong></div><div><span>${system?'Tipo':'Amigos'}</span><strong>${system?(p.id==='user-lola'?'Assistente':'Mascote'):String(p.friendCount??friendIdsForProfile(p.id))}</strong></div><div><span>Usuário</span><strong>${esc(p.handle||'@'+p.username.toLowerCase())}</strong></div></div>
+      ${system?(p.id==='user-lola'?`<div class="profile-actions profile-action-grid profile-action-grid-system"><button class="btn btn-primary" data-profile-dm="${p.id}">Mensagem direta</button></div>`:`<div class="mascot-profile-note">⚡ Lumen é mascote oficial do Azurecord. A IA continua sendo a Lola.</div>`):!self?`<div class="profile-actions profile-action-grid">
         <button class="btn btn-primary" data-profile-dm="${p.id}" ${blocked?'disabled':''}>Mensagem direta</button>
         <button class="btn btn-ghost" data-profile-friend="${p.id}" ${blocked?'disabled':''}>${isFriend(p.id)?'Remover amigo':'Adicionar amigo'}</button>
         <button class="btn ${blocked?'btn-ghost':'btn-danger'}" data-profile-block="${p.id}">${blocked?'Desbloquear':'Bloquear'}</button>
@@ -3932,7 +4005,7 @@
   }
   function removeFriend(id){const f=findFriend(id);if(f){state.friends=state.friends.filter(x=>x!==f);save();showToast('Amigo removido.');renderHome();renderDms();if(socialReady())socialRequest(`/api/friends/${encodeURIComponent(id)}`,{method:'DELETE'}).catch(()=>{});}}
   async function blockUser(id){
-    if(id==='user-lola'||id===state.currentAccountId)return;
+    if(isSystemMascot(id)||id===state.currentAccountId)return;
     if(!confirm(`Bloquear ${getProfile(id)?.username||'este usuário'}? A amizade será removida e, após desbloquear, será necessário enviar um novo pedido.`))return;
     try{
       if(userControlsCloudReady())await cloudRequest(`/api/users/${encodeURIComponent(id)}/block`,{method:'POST',body:'{}'});
@@ -3951,7 +4024,7 @@
     }catch(err){showToast(err.message||'Não foi possível desbloquear.');}
   }
   async function ignoreUser(id){
-    if(id==='user-lola'||id===state.currentAccountId||isBlocked(id))return;
+    if(isSystemMascot(id)||id===state.currentAccountId||isBlocked(id))return;
     try{
       if(userControlsCloudReady())await cloudRequest(`/api/users/${encodeURIComponent(id)}/ignore`,{method:'POST',body:'{}'});
       state.ignoredUsers=[...new Set([...(state.ignoredUsers||[]),id])];save();renderDms();renderMessages();showToast('Mensagens desse usuário agora ficam ocultas.');
