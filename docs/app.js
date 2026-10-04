@@ -2231,12 +2231,88 @@
     try{session.voiceActivityContext?.close?.();}catch{}
     session.voiceActivityContext=null;
   }
+  function lumenSignalState(session,active,name=''){
+    if(!session)return;
+    const targets=new Set([...session.participantIds,...session.peers.keys()]);
+    targets.delete(String(state.currentAccountId));
+    for(const id of targets)directCallSignal(id,{...serverVoiceSignalBase(session,'server-voice-lumen-state'),active:!!active,name:String(name||'').slice(0,160)});
+  }
+  async function stopLumenDj({silent=false}={}){
+    const session=serverVoiceSession;if(!session)return;
+    const micTrack=session.localStream?.getAudioTracks?.()[0]||null;
+    for(const peer of session.peers.values()){
+      const sender=peer.pc?.getSenders?.().find(s=>s.track?.kind==='audio');
+      if(sender)try{await sender.replaceTrack(micTrack);}catch{}
+    }
+    try{session.lumenAudio?.pause?.();}catch{}
+    try{session.lumenSource?.disconnect?.();}catch{}
+    try{session.lumenMicSource?.disconnect?.();}catch{}
+    try{session.lumenAudioContext?.close?.();}catch{}
+    lumenSignalState(session,false,'');
+    session.lumenAudio=null;session.lumenAudioContext=null;session.lumenSource=null;session.lumenMicSource=null;session.lumenMixStream=null;session.lumenMixTrack=null;session.lumenNowPlaying=null;
+    renderServerVoiceModal();
+    if(!silent)showToast('Lumen parou a música.');
+  }
+  async function startLumenTrack(track){
+    const session=serverVoiceSession;if(!session)throw new Error('Entre em um canal de voz primeiro.');
+    await stopLumenDj({silent:true});
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)throw new Error('Web Audio não está disponível neste dispositivo.');
+    const audio=new Audio();audio.crossOrigin='anonymous';audio.preload='auto';audio.src=String(track?.url||'');
+    const ctx=new AudioCtx();await ctx.resume?.();
+    const dest=ctx.createMediaStreamDestination();
+    const source=ctx.createMediaElementSource(audio);source.connect(dest);source.connect(ctx.destination);
+    const micTracks=session.localStream?.getAudioTracks?.()||[];
+    let micSource=null;if(micTracks.length){micSource=ctx.createMediaStreamSource(new MediaStream(micTracks));micSource.connect(dest);}
+    const mixTrack=dest.stream.getAudioTracks()[0];try{mixTrack.contentHint='music';}catch{}
+    session.lumenAudio=audio;session.lumenAudioContext=ctx;session.lumenSource=source;session.lumenMicSource=micSource;session.lumenMixStream=dest.stream;session.lumenMixTrack=mixTrack;session.lumenNowPlaying={...track,startedAt:Date.now()};
+    for(const peer of session.peers.values()){
+      const sender=peer.pc?.getSenders?.().find(s=>s.track?.kind==='audio');
+      if(sender)await sender.replaceTrack(mixTrack);
+    }
+    audio.onended=()=>{if(serverVoiceSession===session)void stopLumenDj({silent:true});};
+    audio.onerror=()=>{if(serverVoiceSession===session){showToast('Lumen não conseguiu reproduzir este áudio.');void stopLumenDj({silent:true});}};
+    await audio.play();
+    lumenSignalState(session,true,track?.name||'Música');
+    renderServerVoiceModal();
+    showToast('♫ Lumen: '+String(track?.name||'tocando agora'));
+  }
+  async function lumenPlayByName(query){
+    const server=getServer(view.serverId);if(!server)return false;
+    if(!serverHasLumen(server)){showToast('Adicione a Lumen ao servidor em Configurações → Integrações.');return false;}
+    const q=String(query||'').trim();if(!q){showToast('Digite o nome da música depois de /lumen play.');return false;}
+    if(!serverVoiceSession||serverVoiceSession.serverId!==server.id){
+      const voice=(server.channels||[]).find(ch=>ch.type==='voice');
+      if(!voice){showToast('Este servidor não tem canal de voz.');return false;}
+      await joinServerVoiceChannel(server.id,voice.id);
+    }
+    if(!serverVoiceSession||serverVoiceSession.serverId!==server.id)return false;
+    try{
+      const data=await socialRequest('/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/lumen/library?q='+encodeURIComponent(q));
+      const track=Array.isArray(data?.tracks)?data.tracks[0]:null;
+      if(!track){showToast('Lumen não achou esse áudio na biblioteca do servidor. Envie o arquivo primeiro.');return false;}
+      await startLumenTrack(track);return true;
+    }catch(err){showToast(err.message||'A Lumen não conseguiu procurar essa música.');return false;}
+  }
+  async function handleLumenCommand(text){
+    const raw=String(text||'').trim();
+    const play=raw.match(/^(?:\/lumen|@lumen|lumen[:,]?)\s+(?:play|toca|tocar)\s+(.+)$/i);
+    if(play)return await lumenPlayByName(play[1]);
+    if(!/^(?:\/lumen|@lumen|lumen[:,]?)/i.test(raw))return null;
+    const session=serverVoiceSession;
+    if(/\s+(?:stop|parar|para)$/i.test(raw)){await stopLumenDj();return true;}
+    if(/\s+(?:pause|pausa)$/i.test(raw)){if(session?.lumenAudio){session.lumenAudio.pause();lumenSignalState(session,true,(session.lumenNowPlaying?.name||'Música')+' • pausada');showToast('Lumen pausou a música.');}return true;}
+    if(/\s+(?:resume|continuar|voltar)$/i.test(raw)){if(session?.lumenAudio){await session.lumenAudio.play();lumenSignalState(session,true,session.lumenNowPlaying?.name||'Música');showToast('Lumen continuou a música.');}return true;}
+    showToast('Use /lumen play nome, /lumen pause, /lumen resume ou /lumen stop.');return true;
+  }
+
   function renderServerVoiceModal(){
     const overlay=ensureServerVoiceModal(),session=serverVoiceSession;
     if(!session){overlay.hidden=true;return;}
     const server=getServer(session.serverId),channel=getChannel(session.serverId,session.channelId);
     const ids=[...new Set([...session.participantIds].map(String))];
     if(!ids.includes(String(state.currentAccountId)))ids.unshift(String(state.currentAccountId));
+    const lumenActive=!!session.lumenNowPlaying||!!session.remoteLumen?.active;
+    if(lumenActive&&!ids.includes('user-lumen'))ids.push('user-lumen');
     $('serverVoiceHeading').textContent=(server?.name||'Servidor')+' | '+(channel?.name||'voz');
     $('serverVoiceTitle').textContent=channel?.name||'Canal de voz';
     $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
@@ -2248,13 +2324,15 @@
     $('serverVoiceShareBtn').textContent=(session.screenTrack||session.nativeScreenSharing)?'▣':'▢';
     $('serverVoiceGrid').innerHTML=ids.map(id=>{
       const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
+      const isLumen=id==='user-lumen';
       const isMe=id===String(state.currentAccountId);
       const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
       const letter=p.avatar?'':esc(String(p.username||'?')[0].toUpperCase());
-      const peer=session.peers.get(String(id));const videoStream=isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
+      const peer=session.peers.get(String(id));const videoStream=isLumen?null:(isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream));
       const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
-      const speaking=session.speakingIds?.has(String(id));
-      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
+      const speaking=isLumen?lumenActive:session.speakingIds?.has(String(id));
+      const nowPlaying=isLumen?String(session.lumenNowPlaying?.name||session.remoteLumen?.name||'DJ Lumen'):'';
+      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(nowPlaying?'<small class="server-voice-now-playing">♫ '+esc(nowPlaying)+'</small>':'')+'</article>';
     }).join('');
     for(const id of ids){
       const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
@@ -2283,7 +2361,8 @@
     const pc=new RTCPeerConnection(azureCallRtcConfig);
     const peer={id:peerId,pc,pendingIce:[],audio:null,makingOffer:false,videoStream:null,screenStream:null,screenPc:null,screenPendingIce:[]};
     session.peers.set(peerId,peer);session.participantIds.add(peerId);
-    for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
+    if(session.lumenMixTrack)pc.addTrack(session.lumenMixTrack,session.lumenMixStream||new MediaStream([session.lumenMixTrack]));
+    else for(const track of session.localStream?.getAudioTracks?.()||[])pc.addTrack(track,session.localStream);
     if(session.cameraTrack&&session.cameraTrack.enabled!==false)pc.addTrack(session.cameraTrack,session.cameraStream||new MediaStream([session.cameraTrack]));
     pc.onicecandidate=e=>{
       if(!e.candidate||serverVoiceSession!==session)return;
@@ -2470,6 +2549,7 @@
     const session=serverVoiceSession;if(!session)return true;
     const from=String(event.fromUserId||'');if(!from||from===String(state.currentAccountId))return true;
     if(String(signal.serverId)!==String(session.remoteServerId)||String(signal.channelId)!==String(session.remoteChannelId))return true;
+    if(kind==='server-voice-lumen-state'){session.remoteLumen=signal.active?{active:true,name:String(signal.name||'Música'),hostId:from}:null;renderServerVoiceModal();return true;}
     if(kind==='server-voice-join'){
       session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();
       directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-ack')});
@@ -2538,6 +2618,7 @@
   }
   function leaveServerVoiceChannel({notify=true}={}){
     const session=serverVoiceSession;if(!session)return;
+    if(session.lumenAudio||session.lumenMixTrack)void stopLumenDj({silent:true});
     if(notify){
       const targets=new Set([...session.participantIds,...session.peers.keys()]);
       targets.delete(String(state.currentAccountId));
@@ -3877,6 +3958,7 @@
     e.preventDefault();
     const input=$('messageInput'),text=input.value.trim();
     const mode=view.mode, dmId=view.dmUserId, serverId=view.serverId, channelId=view.channelId;
+    if(mode==='server'&&!pendingAttachments.length){const lumenHandled=await handleLumenCommand(text);if(lumenHandled!==null){input.value='';autoResizeComposer();return;}}
     if(mode==='dm'&&dmId==='user-lola'&&!pendingAttachments.length&&window.AzurecordLola.wantsNewConversation(text)){
       input.value='';await startNewLolaChat();return;
     }
