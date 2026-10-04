@@ -2330,6 +2330,8 @@
     const server=getServer(session.serverId),channel=getChannel(session.serverId,session.channelId);
     const ids=[...new Set([...session.participantIds].map(String))];
     if(!ids.includes(String(state.currentAccountId)))ids.unshift(String(state.currentAccountId));
+    const lumenState=session.lumenNowPlaying||(session.remoteLumen?.active?session.remoteLumen:null);
+    if(lumenState&&!ids.includes('user-lumen'))ids.push('user-lumen');
     $('serverVoiceHeading').textContent=(server?.name||'Servidor')+' | '+(channel?.name||'voz');
     $('serverVoiceTitle').textContent=channel?.name||'Canal de voz';
     $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
@@ -2341,17 +2343,34 @@
     $('serverVoiceShareBtn').textContent=(session.screenTrack||session.nativeScreenSharing)?'▣':'▢';
     $('serverVoiceGrid').innerHTML=ids.map(id=>{
       const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
+      const isLumen=id==='user-lumen';
       const isMe=id===String(state.currentAccountId);
       const avatarStyle=p.avatar?"background-image:url('"+safeUrl(p.avatar)+"')":'';
       const letter=p.avatar?'':esc(String(p.username||'?')[0].toUpperCase());
-      const peer=session.peers.get(String(id));const videoStream=isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
+      const peer=session.peers.get(String(id));const videoStream=isLumen?null:(isMe?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream));
       const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
-      const speaking=session.speakingIds?.has(String(id));
-      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span></article>';
+      const speaking=isLumen?!!lumenState:session.speakingIds?.has(String(id));
+      const lumenCaption=isLumen?String(lumenState?.name||'DJ Lumen'):'';
+      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(lumenCaption?'<small class="server-voice-now-playing">♫ '+esc(lumenCaption)+'</small>':'')+'</article>';
     }).join('');
     for(const id of ids){
       const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
       const el=document.getElementById('serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_'));if(el&&stream&&el.srcObject!==stream){el.srcObject=stream;el.play?.().catch(()=>{});}
+    }
+    const lumenPanel=$('lumenVoicePanel');
+    if(lumenPanel){
+      const enabled=serverHasLumen(server);lumenPanel.hidden=!enabled;
+      const avatar=$('lumenVoiceAvatar');if(avatar){avatar.style.backgroundImage="url('"+safeUrl(DEMO_LUMEN.avatar)+"')";avatar.textContent='';}
+      const nowEl=$('lumenVoiceNow');if(nowEl)nowEl.textContent=lumenState?'♫ '+String(lumenState.name||'Música'):'Peça uma música por nome ou cole um link.';
+      const embedBox=$('lumenVoiceEmbed');
+      const embedState=session.lumenOfficialEmbed||(session.remoteLumen?.mode==='embed'?session.remoteLumen:null);
+      const embedUrl=safeLumenEmbedUrl(embedState?.embedUrl||'');
+      if(embedBox){
+        if(embedUrl){
+          embedBox.hidden=false;
+          if(embedBox.dataset.src!==embedUrl){embedBox.dataset.src=embedUrl;embedBox.innerHTML='<iframe src="'+esc(embedUrl)+'" title="Lumen DJ" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe>';}
+        }else{embedBox.hidden=true;embedBox.dataset.src='';embedBox.innerHTML='';}
+      }
     }
     overlay.hidden=false;updateServerSpeakerHighlights(session);
   }
