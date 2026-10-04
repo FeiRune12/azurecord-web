@@ -3187,6 +3187,57 @@
     void loadKlipyGifResults('');
   }
 
+  async function fetchServerStickers(){
+    if(view.mode!=='server')return [];
+    const server=getServer(view.serverId);if(!server)return [];
+    const data=await socialRequest('/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/stickers');
+    return Array.isArray(data?.stickers)?data.stickers:[];
+  }
+  function renderServerStickerGrid(box,stickers=[]){
+    const grid=box.querySelector('#serverStickerGrid');if(!grid)return;
+    if(!stickers.length){grid.innerHTML='<div class="sticker-empty">Nenhum sticker ainda. Adicione o primeiro.</div>';return;}
+    const server=getServer(view.serverId);
+    grid.innerHTML=stickers.map(s=>{
+      const src=safeUrl(s.url||'');
+      const canDelete=canManageServer(server);
+      return '<div class="server-sticker-card"><button type="button" class="server-sticker-use" data-sticker-id="'+esc(s.id)+'" data-sticker-name="'+esc(s.name||'Sticker')+'" data-sticker-url="'+src+'" data-sticker-key="'+esc(s.key||'')+'" data-sticker-type="'+esc(s.type||'image/png')+'"><img src="'+src+'" alt="'+esc(s.name||'Sticker')+'" loading="lazy" decoding="async"><span>'+esc(s.name||'Sticker')+'</span></button>'+(canDelete?'<button type="button" class="server-sticker-delete" data-sticker-delete="'+esc(s.id)+'" aria-label="Remover sticker">×</button>':'')+'</div>';
+    }).join('');
+    grid.querySelectorAll('[data-sticker-id]').forEach(btn=>btn.onclick=()=>{
+      const url=String(btn.dataset.stickerUrl||'');if(!url)return;
+      pendingAttachments.push({id:uid('file'),name:'sticker-'+String(btn.dataset.stickerName||'sticker')+'.png',size:0,type:String(btn.dataset.stickerType||'image/png'),url,key:String(btn.dataset.stickerKey||''),kind:'sticker',uploading:false,progress:100});
+      renderAttachmentPreview();closeComposerPopover();showToast('Sticker anexado.');
+    });
+    grid.querySelectorAll('[data-sticker-delete]').forEach(btn=>btn.onclick=async e=>{
+      e.stopPropagation();
+      const server=getServer(view.serverId);if(!server)return;
+      try{
+        await socialRequest('/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/stickers/'+encodeURIComponent(btn.dataset.stickerDelete),{method:'DELETE'});
+        renderServerStickerGrid(box,await fetchServerStickers());
+        showToast('Sticker removido.');
+      }catch(err){showToast(err.message||'Não foi possível remover o sticker.');}
+    });
+  }
+  async function openServerStickerPicker(box){
+    const server=getServer(view.serverId);if(!server)return;
+    box.dataset.mode='server-stickers';
+    box.innerHTML='<div class="server-sticker-picker"><div class="server-sticker-head"><h4>Stickers</h4><button type="button" class="home-mini-btn" id="addServerSticker">+ Adicionar</button></div><div id="serverStickerGrid" class="server-sticker-grid"><div class="sticker-empty">Carregando…</div></div></div>';
+    box.hidden=false;
+    const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp,image/gif';input.hidden=true;box.appendChild(input);
+    box.querySelector('#addServerSticker').onclick=()=>input.click();
+    input.onchange=async()=>{
+      const file=input.files?.[0];if(!file)return;
+      const add=box.querySelector('#addServerSticker');if(add){add.disabled=true;add.textContent='Enviando…';}
+      try{
+        const up=await uploadAttachmentInChunks({id:uid('sticker'),name:file.name,size:file.size,type:file.type||'image/png',_file:file,visual:{kind:'sticker'}});
+        const cleanName=String(file.name||'Sticker').replace(/\.[^.]+$/,'').slice(0,60)||'Sticker';
+        await socialRequest('/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/stickers',{method:'POST',body:JSON.stringify({name:cleanName,url:up.url||'',key:up.key||'',type:up.type||file.type||'image/png'})});
+        renderServerStickerGrid(box,await fetchServerStickers());
+        showToast('Sticker adicionado ao servidor.');
+      }catch(err){showToast(err.message||'Não foi possível adicionar o sticker.');}
+      finally{if(add){add.disabled=false;add.textContent='+ Adicionar';}input.value='';}
+    };
+    try{renderServerStickerGrid(box,await fetchServerStickers());}catch(err){const grid=box.querySelector('#serverStickerGrid');if(grid)grid.innerHTML='<div class="sticker-empty">'+esc(err.message||'Falha ao carregar stickers.')+'</div>';}
+  }
   function openComposerPopover(type){
     const box=$('composerPopover');
     if(!box)return;
@@ -3200,7 +3251,7 @@
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
     if(type==='gif'){openKlipyGifPicker(box);return;}
-    if(type==='sticker'){title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
+    if(type==='sticker'){if(view.mode==='server'){void openServerStickerPicker(box);return;}title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
     if(type==='apps'){title='Apps rápidos';items=apps;helper='Atalhos para recursos que já existem no Azurecord.'}
     box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>`<button type="button" class="composer-chip ${item.length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(item)}">${esc(item)}</button>`).join('')}</div><p class="composer-helper">${helper}</p>`;
     box.hidden=false;
