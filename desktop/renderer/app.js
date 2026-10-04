@@ -215,8 +215,10 @@
         try{return await desktopCloudRequest(`${CLOUD_API_URL}${path}`,{...fetchOptions,headers});}
         catch(nativeErr){console.warn('[Azurecord Cloud] fallback desktop:',nativeErr?.message||nativeErr);}
       }
-      const error=new Error(timeout?'O Azurecord Cloud demorou demais para responder.':'Não foi possível alcançar o Azurecord Cloud. Verifique a internet e tente novamente.');
-      error.status=0;error.code=timeout?'cloud_timeout':'cloud_network_error';error.cause=err;
+      const offline=typeof navigator!=='undefined'&&navigator.onLine===false;
+      const error=new Error(offline?'Sem conexão com a internet.':'Reconectando ao Azurecord Cloud...');
+      error.status=0;error.code=offline?'offline':(timeout?'cloud_timeout':'cloud_network_error');error.cause=err;
+      if(!offline&&cloudToken)setTimeout(()=>scheduleCloudSessionRecovery(),0);
       throw error;
     }finally{if(timer)clearTimeout(timer);}
     let data = {};
@@ -340,10 +342,10 @@
     return cloudSessionMatchesCurrentAccount();
   }
   function pointsCloudReady(){
-    return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.azurePointsCloud && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
+    return !!(cloudSessionMatchesCurrentAccount() && cloudInfo?.capabilities?.azurePointsCloud!==false);
   }
   function userControlsCloudReady(){
-    return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.userControls && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
+    return !!(cloudSessionMatchesCurrentAccount() && cloudInfo?.capabilities?.userControls!==false);
   }
   function socialReady(){ return socialCloudReady(); }
   async function ensureCloudSessionReady({force=false}={}){
@@ -493,7 +495,7 @@
   }
 
   async function syncCloudProfile(profile,{quiet=false,profileComplete}={}){
-    if(!profile?.cloud || !cloudOnline || !cloudToken || cloudVerifiedAccountId!==profile.id)return false;
+    if(!profile?.cloud || !cloudToken || !cloudSessionMatchesCurrentAccount())return false;
     try{
       const data=await cloudRequest('/auth/profile',{
         method:'PATCH',
