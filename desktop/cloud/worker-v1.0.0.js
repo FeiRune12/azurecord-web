@@ -1884,6 +1884,57 @@ async function handleSocial(request, env, url, path) {
     if (!membership.server) return json({ error: "server_not_found", message: "Servidor não encontrado." }, 404);
     const manager = membership.server.owner_id === userId || membership.role === "Admin";
 
+    if (parts[3] === "lumen" && parts[4] === "library" && method === "GET") {
+      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
+      const features = parseJsonValue(membership.server.features_json, []);
+      if (!features.includes("lumen-dj")) {
+        return json({ error: "lumen_not_added", message: "Adicione a Lumen ao servidor antes de usar o DJ." }, 409);
+      }
+      const query = cleanText(url.searchParams.get("q") || "", 120);
+      const normalizedQuery = normalizeSearchText(query);
+      const rows = await env.DB.prepare(`
+        SELECT cm.id, cm.channel_id, cm.created_at, cm.files_json
+        FROM channel_messages cm
+        JOIN channels c ON c.id = cm.channel_id
+        WHERE c.server_id = ?
+          AND cm.deleted_at IS NULL
+          AND cm.files_json IS NOT NULL
+          AND cm.files_json <> '[]'
+        ORDER BY cm.created_at DESC
+        LIMIT 400
+      `).bind(serverId).all();
+
+      const origin = new URL(request.url).origin;
+      const tracks = [];
+      for (const row of rows.results || []) {
+        const files = parseJsonValue(row.files_json, []);
+        for (const file of Array.isArray(files) ? files : []) {
+          const name = String(file?.name || "Áudio");
+          const type = String(file?.type || "").toLowerCase();
+          const isAudio = type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(name);
+          if (!isAudio) continue;
+          const searchable = normalizeSearchText(name);
+          if (normalizedQuery && !searchable.includes(normalizedQuery) && !normalizedQuery.split(/\s+/).every(t => searchable.includes(t))) continue;
+          const key = String(file?.key || "");
+          const urlValue = String(file?.url || file?.dataUrl || "") || (key ? `${origin}/files/${encodeURIComponent(key)}` : "");
+          if (!urlValue) continue;
+          tracks.push({
+            id: String(row.id) + ":" + tracks.length,
+            name,
+            type: type || "audio/mpeg",
+            size: Math.max(0, Number(file?.size) || 0),
+            url: urlValue,
+            key,
+            channelId: row.channel_id,
+            createdAt: row.created_at,
+          });
+          if (tracks.length >= 30) break;
+        }
+        if (tracks.length >= 30) break;
+      }
+      return json({ ok: true, query, tracks });
+    }
+
     if (method === "PATCH" && parts.length === 3) {
       if (!manager) return json({ error: "forbidden", message: "Sem permissão para editar o servidor." }, 403);
       const body = await readJson(request);
@@ -2905,6 +2956,38 @@ async function serveAttachment(request, env, path) {
 
 const KLIPY_CLIENT_KEY = "azurecord";
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function klipyRelevanceScore(item, query) {
+  const q = normalizeSearchText(query);
+  if (!q) return 1;
+  const tags = Array.isArray(item?.tags) ? item.tags.join(" ") : "";
+  const hay = normalizeSearchText([
+    item?.title,
+    item?.content_description,
+    item?.itemurl,
+    item?.url,
+    item?.slug,
+    tags,
+  ].filter(Boolean).join(" "));
+  if (!hay) return 0;
+  if (hay.includes(q)) return 100;
+  const tokens = q.split(/\s+/).filter(token => token.length >= 2);
+  if (!tokens.length) return 0;
+  const matched = tokens.filter(token => hay.includes(token)).length;
+  if (tokens.length === 1) return matched === 1 ? 70 : 0;
+  if (matched === tokens.length) return 80;
+  if (matched >= Math.ceil(tokens.length * 0.75)) return 50;
+  return 0;
+}
+
 function normalizeKlipyResult(item) {
   const formats = item?.media_formats || {};
   const full = formats.gif || formats.mediumgif || formats.tinygif || null;
@@ -2944,7 +3027,7 @@ async function handleKlipy(request, env, url, path) {
     locale: "pt_BR",
     contentfilter: "high",
     media_filter: "gif,tinygif",
-    limit: "24",
+    limit: "50",
   });
 
   if (request.method === "GET" && (path === "/api/klipy/search" || path === "/api/klipy/featured")) {
@@ -2966,10 +3049,22 @@ async function handleKlipy(request, env, url, path) {
         console.error("KLIPY API ERROR", response.status, data?.error || data);
         return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
       }
-      const results = (Array.isArray(data?.results) ? data.results : [])
+      const rawResults = Array.isArray(data?.results) ? data.results : [];
+      const filtered = endpoint === "search" && query
+        ? rawResults.filter(item => klipyRelevanceScore(item, query) > 0)
+        : rawResults;
+      const results = filtered
+        .slice(0, 24)
         .map(normalizeKlipyResult)
         .filter(Boolean);
-      return json({ ok: true, provider: "klipy", query, next: String(data?.next || ""), results });
+      return json({
+        ok: true,
+        provider: "klipy",
+        query,
+        strictRelevance: endpoint === "search" && !!query,
+        next: String(data?.next || ""),
+        results,
+      });
     } catch (error) {
       const timeout = error?.name === "AbortError";
       console.error("KLIPY FETCH ERROR", String(error?.message || error));
@@ -3053,6 +3148,7 @@ export default {
             serverSettingsCloud: true,
             webClient: true,
             klipyGifs: Boolean(env.KLIPY_API_KEY),
+            lumenDj: true,
         friendSearchV2: true,
         reliableMessaging: true,
         reliableMessagingV2: true,
