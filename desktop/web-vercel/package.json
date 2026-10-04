@@ -6,5 +6,5 @@
   "scripts": {
     "build": "node build.mjs"
   },
-  "azurecordBuild": "6.0.4-final1"
+  "azurecordBuild": "6.0.4-final2"
 }
