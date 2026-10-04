@@ -73,7 +73,7 @@
     memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
   };
 
-  const LUMEN_AVATAR_URL = new URL('./assets/lumen-avatar.jpg', window.location.href).href;
+  const LUMEN_AVATAR_URL = new URL('./assets/lumen-avatar.jpg', document.currentScript?.src || window.location.href).href;
   const DEMO_LUMEN = {
     id:'user-lumen', username:'Lumen', email:'lumen@azurecord.local', handle:'@lumen',
     bio:'A Muse de Azure Striker Gunvolt e DJ oficial do Azurecord.',
@@ -3961,7 +3961,15 @@
     e.preventDefault();
     const input=$('messageInput'),text=input.value.trim();
     const mode=view.mode, dmId=view.dmUserId, serverId=view.serverId, channelId=view.channelId;
-    if(mode==='server'&&!pendingAttachments.length){const lumenHandled=await handleLumenCommand(text);if(lumenHandled!==null){input.value='';autoResizeComposer();return;}}
+    if(mode==='server'&&!pendingAttachments.length&&/^\/lumen\b/i.test(text)){
+      try{
+        const lumenHandled=await handleLumenCommand(text);
+        if(lumenHandled!==null){input.value='';autoResizeComposer();return;}
+      }catch(err){
+        console.warn('[Azurecord] Lumen command:',err?.message||err);
+        showToast('A Lumen falhou, mas o chat continua funcionando.');
+      }
+    }
     if(mode==='dm'&&dmId==='user-lola'&&!pendingAttachments.length&&window.AzurecordLola.wantsNewConversation(text)){
       input.value='';await startNewLolaChat();return;
     }
