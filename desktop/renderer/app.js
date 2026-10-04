@@ -60,6 +60,7 @@
 
   const LOLA_AVATAR_URL = 'https://gunvolt.com/en/X/system/img/system02_03Pic02.jpg';
   const LOLA_BANNER_URL = 'https://gunvolt.com/GRC/en/special/img/grc_wallpaper_00_1920x1080en.jpg';
+  const LUMEN_AVATAR_URL = new URL('./assets/lumen-avatar.jpg', document.currentScript?.src || window.location.href).href;
 
   const DEMO_LOLA = {
     id:'user-lola', username:'Lola', email:'lola@azurecord.local', handle:'@lola',
@@ -71,10 +72,10 @@
 
   const DEMO_LUMEN = {
     id:'user-lumen', username:'Lumen', email:'lumen@azurecord.local', handle:'@lumen',
-    bio:'A Muse de Azure Striker Gunvolt e mascote musical do Azurecord.',
-    accent:'#8b5cff', status:'online', avatar:'', banner:'',
+    bio:'A Muse de Azure Striker Gunvolt e DJ oficial do Azurecord.',
+    accent:'#8b5cff', status:'online', avatar:LUMEN_AVATAR_URL, banner:'',
     personality:'Brilhante, energética e musical. Representa o lado mais elétrico e performático do Azurecord.',
-    memberSince:'4 de out. de 2026', role:'Mascote', badge:'♫'
+    memberSince:'4 de out. de 2026', role:'DJ', badge:'♫'
   };
   const SYSTEM_MASCOT_IDS = new Set(['user-lola','user-lumen']);
   function isSystemMascot(id){return SYSTEM_MASCOT_IDS.has(String(id||''));}
@@ -3022,6 +3023,37 @@
     delete box.dataset.mode;
     $$('.composer-quick').forEach(b=>b.classList.remove('active'));
   }
+  const GIF_FAVORITES_KEY='azurecord_gif_favorites_v1';
+  function gifFavoriteAccountKey(){return String(state.currentAccountId||'guest');}
+  function readGifFavorites(){
+    try{
+      const all=JSON.parse(localStorage.getItem(GIF_FAVORITES_KEY)||'{}');
+      const list=Array.isArray(all[gifFavoriteAccountKey()])?all[gifFavoriteAccountKey()]:[];
+      return list.slice(0,120);
+    }catch{return [];}
+  }
+  function writeGifFavorites(list){
+    try{
+      const all=JSON.parse(localStorage.getItem(GIF_FAVORITES_KEY)||'{}');
+      all[gifFavoriteAccountKey()]=Array.isArray(list)?list.slice(0,120):[];
+      localStorage.setItem(GIF_FAVORITES_KEY,JSON.stringify(all));
+    }catch{}
+  }
+  function gifFavoriteKey(item={}){return String(item.id||item.url||item.previewUrl||'');}
+  function isGifFavorite(item={}){const key=gifFavoriteKey(item);return !!key&&readGifFavorites().some(x=>gifFavoriteKey(x)===key);}
+  function toggleGifFavorite(item={}){
+    const key=gifFavoriteKey(item);if(!key)return false;
+    const list=readGifFavorites();const index=list.findIndex(x=>gifFavoriteKey(x)===key);
+    if(index>=0){list.splice(index,1);writeGifFavorites(list);return false;}
+    list.unshift({
+      id:String(item.id||''),title:String(item.title||item.description||'GIF da KLIPY'),
+      description:String(item.description||item.title||'GIF da KLIPY'),
+      url:String(item.url||''),previewUrl:String(item.previewUrl||item.url||''),
+      dims:Array.isArray(item.dims)?item.dims.slice(0,2):[0,0],size:Number(item.size||0)
+    });
+    writeGifFavorites(list);return true;
+  }
+
   let klipyGifSearchTimer=null;
   let klipyLastQuery='';
   async function klipyGifRequest(query=''){
@@ -3033,12 +3065,15 @@
     const box=$('klipyGifResults');if(!box)return;
     if(!items.length){box.innerHTML='<div class="klipy-empty">Nenhum GIF encontrado.</div>';return;}
     box.innerHTML=items.map(item=>{
-      const id=esc(String(item.id||''));
+      const rawId=String(item.id||'');
+      const id=esc(rawId);
       const preview=safeUrl(item.previewUrl||item.url||'');
       const url=safeUrl(item.url||item.previewUrl||'');
-      const title=esc(item.description||item.title||'GIF da KLIPY');
+      const rawTitle=String(item.description||item.title||'GIF da KLIPY');
+      const title=esc(rawTitle);
       const dims=Array.isArray(item.dims)?item.dims:[0,0];
-      return `<button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button>`;
+      const fav=isGifFavorite(item);
+      return `<div class="klipy-gif-card-wrap"><button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button><button type="button" class="klipy-favorite-btn ${fav?'active':''}" data-klipy-favorite="${id}" data-favorite-url="${url}" data-favorite-preview="${preview}" data-favorite-title="${title}" data-favorite-size="${Number(item.size||0)}" data-favorite-width="${Number(dims[0]||0)}" data-favorite-height="${Number(dims[1]||0)}" aria-label="${fav?'Remover dos favoritos':'Favoritar GIF'}">${fav?'★':'☆'}</button></div>`;
     }).join('');
     box.querySelectorAll('[data-klipy-id]').forEach(btn=>btn.onclick=()=>{
       const url=String(btn.dataset.klipyUrl||'');if(!url)return;
@@ -3053,6 +3088,17 @@
       closeComposerPopover();
       void socialRequest('/api/klipy/register-share',{method:'POST',body:JSON.stringify({id,q:klipyLastQuery})}).catch(()=>{});
       showToast('GIF da KLIPY anexado. ✨');
+    });
+    box.querySelectorAll('[data-klipy-favorite]').forEach(btn=>btn.onclick=e=>{
+      e.stopPropagation();
+      const item={
+        id:String(btn.dataset.klipyFavorite||''),url:String(btn.dataset.favoriteUrl||''),
+        previewUrl:String(btn.dataset.favoritePreview||''),title:String(btn.dataset.favoriteTitle||'GIF da KLIPY'),
+        description:String(btn.dataset.favoriteTitle||'GIF da KLIPY'),size:Number(btn.dataset.favoriteSize||0),
+        dims:[Number(btn.dataset.favoriteWidth||0),Number(btn.dataset.favoriteHeight||0)]
+      };
+      const active=toggleGifFavorite(item);btn.classList.toggle('active',active);btn.textContent=active?'★':'☆';
+      btn.setAttribute('aria-label',active?'Remover dos favoritos':'Favoritar GIF');
     });
   }
   async function loadKlipyGifResults(query=''){
@@ -3072,12 +3118,13 @@
   }
   function openKlipyGifPicker(box){
     box.dataset.mode='gif-klipy';
-    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><span class="klipy-powered">Powered by KLIPY</span></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
+    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><div class="choice-row"><button type="button" class="home-mini-btn ghost" id="klipyFavoritesBtn">★ Favoritos</button><span class="klipy-powered">Powered by KLIPY</span></div></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
     box.hidden=false;
     const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='image/gif,.gif';fileInput.hidden=true;
     fileInput.onchange=async()=>{if(fileInput.files?.length)await handleFiles({target:fileInput});closeComposerPopover();};
     box.appendChild(fileInput);
     box.querySelector('#composerGifUpload').onclick=()=>fileInput.click();
+    box.querySelector('#klipyFavoritesBtn').onclick=()=>{klipyLastQuery='';const favs=readGifFavorites();renderKlipyGifGrid(favs);const s=$('klipyGifStatus');if(s)s.textContent=favs.length?`Favoritos • ${favs.length}`:'Você ainda não favoritou GIFs.';};
     const search=box.querySelector('#klipyGifSearch');
     search.oninput=()=>{clearTimeout(klipyGifSearchTimer);const q=search.value;klipyGifSearchTimer=setTimeout(()=>void loadKlipyGifResults(q),320);};
     void loadKlipyGifResults('');
