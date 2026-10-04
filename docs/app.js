@@ -28,6 +28,7 @@
       if (parsed.protocol === 'https:' && (
         parsed.hostname === 'gunvolt.com' ||
         parsed.hostname.endsWith('.gunvolt.com') ||
+        parsed.hostname === 'static.klipy.com' ||
         parsed.hostname === cloudHost ||
         parsed.origin === window.location.origin
       )) return parsed.href;
