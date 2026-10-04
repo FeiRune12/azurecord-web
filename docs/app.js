@@ -3729,7 +3729,9 @@
       const gif=type==='image/gif'||/\.gif$/i.test(name);
       const image=type.startsWith('image/')||gif;
       const video=type.startsWith('video/')||/\.(mp4|webm|mov)$/i.test(name);
+      const sticker=String(f.kind||'')==='sticker'||/^sticker-/i.test(name);
       if(image&&source){
+        if(sticker)return `<figure class="message-attachment sticker-attachment"><img src="${source}" alt="${esc(name||'Sticker')}" loading="lazy" decoding="async"></figure>`;
         return `<figure class="message-attachment image-attachment${gif?' gif-attachment':''}"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(name||'Imagem')}" loading="lazy" decoding="async"></a><figcaption><span>${esc(name||'Imagem')}</span><small>${gif?'GIF • ':''}${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       if(video&&source){
