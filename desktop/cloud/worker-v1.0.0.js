@@ -1884,57 +1884,6 @@ async function handleSocial(request, env, url, path) {
     if (!membership.server) return json({ error: "server_not_found", message: "Servidor não encontrado." }, 404);
     const manager = membership.server.owner_id === userId || membership.role === "Admin";
 
-    if (parts[3] === "lumen" && parts[4] === "library" && method === "GET") {
-      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
-      const features = parseJsonValue(membership.server.features_json, []);
-      if (!features.includes("lumen-dj")) {
-        return json({ error: "lumen_not_added", message: "Adicione a Lumen ao servidor antes de usar o DJ." }, 409);
-      }
-      const query = cleanText(url.searchParams.get("q") || "", 120);
-      const normalizedQuery = normalizeSearchText(query);
-      const rows = await env.DB.prepare(`
-        SELECT cm.id, cm.channel_id, cm.created_at, cm.files_json
-        FROM channel_messages cm
-        JOIN channels c ON c.id = cm.channel_id
-        WHERE c.server_id = ?
-          AND cm.deleted_at IS NULL
-          AND cm.files_json IS NOT NULL
-          AND cm.files_json <> '[]'
-        ORDER BY cm.created_at DESC
-        LIMIT 400
-      `).bind(serverId).all();
-
-      const origin = new URL(request.url).origin;
-      const tracks = [];
-      for (const row of rows.results || []) {
-        const files = parseJsonValue(row.files_json, []);
-        for (const file of Array.isArray(files) ? files : []) {
-          const name = String(file?.name || "Áudio");
-          const type = String(file?.type || "").toLowerCase();
-          const isAudio = type.startsWith("audio/") || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(name);
-          if (!isAudio) continue;
-          const searchable = normalizeSearchText(name);
-          if (normalizedQuery && !searchable.includes(normalizedQuery) && !normalizedQuery.split(/\s+/).every(t => searchable.includes(t))) continue;
-          const key = String(file?.key || "");
-          const urlValue = String(file?.url || file?.dataUrl || "") || (key ? `${origin}/files/${encodeURIComponent(key)}` : "");
-          if (!urlValue) continue;
-          tracks.push({
-            id: String(row.id) + ":" + tracks.length,
-            name,
-            type: type || "audio/mpeg",
-            size: Math.max(0, Number(file?.size) || 0),
-            url: urlValue,
-            key,
-            channelId: row.channel_id,
-            createdAt: row.created_at,
-          });
-          if (tracks.length >= 30) break;
-        }
-        if (tracks.length >= 30) break;
-      }
-      return json({ ok: true, query, tracks });
-    }
-
     if (method === "PATCH" && parts.length === 3) {
       if (!manager) return json({ error: "forbidden", message: "Sem permissão para editar o servidor." }, 403);
       const body = await readJson(request);
@@ -2956,38 +2905,6 @@ async function serveAttachment(request, env, path) {
 
 const KLIPY_CLIENT_KEY = "azurecord";
 
-function normalizeSearchText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function klipyRelevanceScore(item, query) {
-  const q = normalizeSearchText(query);
-  if (!q) return 1;
-  const tags = Array.isArray(item?.tags) ? item.tags.join(" ") : "";
-  const hay = normalizeSearchText([
-    item?.title,
-    item?.content_description,
-    item?.itemurl,
-    item?.url,
-    item?.slug,
-    tags,
-  ].filter(Boolean).join(" "));
-  if (!hay) return 0;
-  if (hay.includes(q)) return 100;
-  const tokens = q.split(/\s+/).filter(token => token.length >= 2);
-  if (!tokens.length) return 0;
-  const matched = tokens.filter(token => hay.includes(token)).length;
-  if (tokens.length === 1) return matched === 1 ? 70 : 0;
-  if (matched === tokens.length) return 80;
-  if (matched >= Math.ceil(tokens.length * 0.75)) return 50;
-  return 0;
-}
-
 function normalizeKlipyResult(item) {
   const formats = item?.media_formats || {};
   const full = formats.gif || formats.mediumgif || formats.tinygif || null;
@@ -3021,87 +2938,41 @@ async function handleKlipy(request, env, url, path) {
     }, 503);
   }
 
-  const baseParams = {
+  const common = new URLSearchParams({
     key: apiKey,
     country: "BR",
     locale: "pt_BR",
     contentfilter: "high",
     media_filter: "gif,tinygif",
-  };
+    limit: "24",
+  });
 
   if (request.method === "GET" && (path === "/api/klipy/search" || path === "/api/klipy/featured")) {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     const endpoint = path.endsWith("/search") && query ? "search" : "featured";
-    const normalizedQuery = normalizeSearchText(query);
-    const gunvoltSearch = endpoint === "search" && normalizedQuery.includes("gunvolt");
-
-    const searchQueries = gunvoltSearch
-      ? [...new Set([
-          query,
-          "azure striker gunvolt",
-          "gunvolt lumen",
-          "gunvolt joule",
-          "gunvolt copen",
-        ].map(x => String(x || "").trim()).filter(Boolean))]
-      : [query];
+    if (endpoint === "search") common.set("q", query);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const fetchPage = async (searchQuery, limit) => {
-        const params = new URLSearchParams({
-          ...baseParams,
-          limit: String(limit),
-        });
-        if (endpoint === "search") params.set("q", searchQuery);
-        const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
-          method: "GET",
-          signal: controller.signal,
-          headers: { "Accept": "application/json" },
-        });
-        let data = {};
-        try { data = await response.json(); } catch {}
-        if (!response.ok) {
-          const error = new Error("KLIPY upstream");
-          error.status = response.status;
-          error.payload = data;
-          throw error;
-        }
-        return data;
-      };
-
-      const pages = endpoint === "featured"
-        ? [await fetchPage("", 24)]
-        : await Promise.all(searchQueries.map(q => fetchPage(q, gunvoltSearch ? 8 : 24)));
-
-      const seen = new Set();
-      const merged = [];
-      for (const page of pages) {
-        const raw = Array.isArray(page?.results) ? page.results : [];
-        for (const item of raw) {
-          const normalized = normalizeKlipyResult(item);
-          if (!normalized) continue;
-          const key = normalized.id || normalized.url || normalized.previewUrl;
-          if (!key || seen.has(key)) continue;
-          seen.add(key);
-          merged.push(normalized);
-          if (merged.length >= (gunvoltSearch ? 32 : 24)) break;
-        }
-        if (merged.length >= (gunvoltSearch ? 32 : 24)) break;
-      }
-
-      return json({
-        ok: true,
-        provider: "klipy",
-        query,
-        expandedSearch: gunvoltSearch,
-        searchVariants: gunvoltSearch ? searchQueries : [],
-        next: String(pages[0]?.next || ""),
-        results: merged,
+      const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${common.toString()}`, {
+        method: "GET",
+        signal: controller.signal,
+        headers: { "Accept": "application/json" },
       });
+      let data = {};
+      try { data = await response.json(); } catch {}
+      if (!response.ok) {
+        console.error("KLIPY API ERROR", response.status, data?.error || data);
+        return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
+      }
+      const results = (Array.isArray(data?.results) ? data.results : [])
+        .map(normalizeKlipyResult)
+        .filter(Boolean);
+      return json({ ok: true, provider: "klipy", query, next: String(data?.next || ""), results });
     } catch (error) {
       const timeout = error?.name === "AbortError";
-      console.error("KLIPY FETCH ERROR", String(error?.message || error), error?.status || "");
+      console.error("KLIPY FETCH ERROR", String(error?.message || error));
       return json({
         ok: false,
         error: timeout ? "KLIPY_TIMEOUT" : "KLIPY_NETWORK_ERROR",
@@ -3182,7 +3053,6 @@ export default {
             serverSettingsCloud: true,
             webClient: true,
             klipyGifs: Boolean(env.KLIPY_API_KEY),
-            lumenDj: true,
         friendSearchV2: true,
         reliableMessaging: true,
         reliableMessagingV2: true,
