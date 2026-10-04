@@ -2,5 +2,26 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "git": {
     "deploymentEnabled": true
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/azurecord-cloud/:path*",
+      "destination": "https://azurecord-api.giovannisilvaalves604.workers.dev/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/azurecord-cloud/:path*",
+      "headers": [
+        {
+          "key": "x-vercel-enable-rewrite-caching",
+          "value": "0"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ]
 }
