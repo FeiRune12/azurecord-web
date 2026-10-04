@@ -2903,9 +2903,9 @@ async function serveAttachment(request, env, path) {
 }
 
 
-const TENOR_CLIENT_KEY = "azurecord";
+const KLIPY_CLIENT_KEY = "azurecord";
 
-function normalizeTenorResult(item) {
+function normalizeKlipyResult(item) {
   const formats = item?.media_formats || {};
   const full = formats.gif || formats.mediumgif || formats.tinygif || null;
   const preview = formats.tinygif || formats.nanogif || formats.gif || null;
@@ -2923,24 +2923,23 @@ function normalizeTenorResult(item) {
   };
 }
 
-async function handleTenor(request, env, url, path) {
-  if (!path.startsWith("/api/tenor/")) return null;
+async function handleKlipy(request, env, url, path) {
+  if (!path.startsWith("/api/klipy/")) return null;
 
   const authResult = await requireSocialAuth(request, env);
   if (authResult.response) return authResult.response;
 
-  const apiKey = String(env.TENOR_API_KEY || "").trim();
+  const apiKey = String(env.KLIPY_API_KEY || "").trim();
   if (!apiKey) {
     return json({
       ok: false,
-      error: "TENOR_NOT_CONFIGURED",
-      message: "O painel Tenor ainda não foi configurado no Azurecord.",
+      error: "KLIPY_NOT_CONFIGURED",
+      message: "O painel KLIPY ainda não foi configurado no Azurecord.",
     }, 503);
   }
 
   const common = new URLSearchParams({
     key: apiKey,
-    client_key: TENOR_CLIENT_KEY,
     country: "BR",
     locale: "pt_BR",
     contentfilter: "high",
@@ -2948,7 +2947,7 @@ async function handleTenor(request, env, url, path) {
     limit: "24",
   });
 
-  if (request.method === "GET" && (path === "/api/tenor/search" || path === "/api/tenor/featured")) {
+  if (request.method === "GET" && (path === "/api/klipy/search" || path === "/api/klipy/featured")) {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     const endpoint = path.endsWith("/search") && query ? "search" : "featured";
     if (endpoint === "search") common.set("q", query);
@@ -2956,7 +2955,7 @@ async function handleTenor(request, env, url, path) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(`https://tenor.googleapis.com/v2/${endpoint}?${common.toString()}`, {
+      const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${common.toString()}`, {
         method: "GET",
         signal: controller.signal,
         headers: { "Accept": "application/json" },
@@ -2965,34 +2964,33 @@ async function handleTenor(request, env, url, path) {
       try { data = await response.json(); } catch {}
       if (!response.ok) {
         console.error("TENOR API ERROR", response.status, data?.error || data);
-        return json({ ok: false, error: "TENOR_UPSTREAM_ERROR", message: "O Tenor não conseguiu responder agora." }, 502);
+        return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
       }
       const results = (Array.isArray(data?.results) ? data.results : [])
-        .map(normalizeTenorResult)
+        .map(normalizeKlipyResult)
         .filter(Boolean);
-      return json({ ok: true, provider: "tenor", query, next: String(data?.next || ""), results });
+      return json({ ok: true, provider: "klipy", query, next: String(data?.next || ""), results });
     } catch (error) {
       const timeout = error?.name === "AbortError";
-      console.error("TENOR FETCH ERROR", String(error?.message || error));
+      console.error("KLIPY FETCH ERROR", String(error?.message || error));
       return json({
         ok: false,
-        error: timeout ? "TENOR_TIMEOUT" : "TENOR_NETWORK_ERROR",
-        message: timeout ? "O Tenor demorou demais para responder." : "Não foi possível alcançar o Tenor agora.",
+        error: timeout ? "KLIPY_TIMEOUT" : "KLIPY_NETWORK_ERROR",
+        message: timeout ? "A KLIPY demorou demais para responder." : "Não foi possível alcançar a KLIPY agora.",
       }, 502);
     } finally {
       clearTimeout(timer);
     }
   }
 
-  if (request.method === "POST" && path === "/api/tenor/register-share") {
+  if (request.method === "POST" && path === "/api/klipy/register-share") {
     const body = await readJson(request);
     const id = String(body?.id || "").trim().slice(0, 120);
     const query = String(body?.q || "").trim().slice(0, 100);
-    if (!id) return json({ ok: false, error: "missing_tenor_id" }, 400);
+    if (!id) return json({ ok: false, error: "missing_klipy_id" }, 400);
 
     const share = new URLSearchParams({
       key: apiKey,
-      client_key: TENOR_CLIENT_KEY,
       id,
       country: "BR",
       locale: "pt_BR",
@@ -3000,13 +2998,13 @@ async function handleTenor(request, env, url, path) {
     if (query) share.set("q", query);
 
     try {
-      const response = await fetch(`https://tenor.googleapis.com/v2/registershare?${share.toString()}`, {
+      const response = await fetch(`https://api.klipy.com/v2/registershare?${share.toString()}`, {
         method: "GET",
         headers: { "Accept": "application/json" },
       });
-      return json({ ok: response.ok, provider: "tenor" }, response.ok ? 200 : 502);
+      return json({ ok: response.ok, provider: "klipy" }, response.ok ? 200 : 502);
     } catch {
-      return json({ ok: false, error: "TENOR_SHARE_FAILED" }, 502);
+      return json({ ok: false, error: "KLIPY_SHARE_FAILED" }, 502);
     }
   }
 
@@ -3054,7 +3052,7 @@ export default {
             settingsCloud: true,
             serverSettingsCloud: true,
             webClient: true,
-            tenorGifs: Boolean(env.TENOR_API_KEY),
+            klipyGifs: Boolean(env.KLIPY_API_KEY),
         friendSearchV2: true,
         reliableMessaging: true,
         reliableMessagingV2: true,
@@ -3101,8 +3099,8 @@ export default {
         const lolaResponse = await handleLola(request, env, url, path);
         if (lolaResponse) return lolaResponse;
 
-        const tenorResponse = await handleTenor(request, env, url, path);
-        if (tenorResponse) return tenorResponse;
+        const klipyResponse = await handleKlipy(request, env, url, path);
+        if (klipyResponse) return klipyResponse;
 
         const pointsResponse = await handleAzurePoints(request, env, path);
         if (pointsResponse) return pointsResponse;
