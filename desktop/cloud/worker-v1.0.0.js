@@ -2291,7 +2291,7 @@ async function createSession(env, userId) {
   const token = randomToken(32);
   const tokenHash = await sha256Base64Url(token);
   const createdAt = nowIso();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   await env.DB.prepare(`
     INSERT INTO sessions (
@@ -2336,9 +2336,10 @@ async function getAuthenticatedUser(request, env) {
 
   if (!session) return null;
 
+  const renewedExpiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
   await env.DB.prepare(`
-    UPDATE sessions SET last_used_at = ? WHERE id = ?
-  `).bind(stamp, session.session_id).run();
+    UPDATE sessions SET last_used_at = ?, expires_at = ? WHERE id = ?
+  `).bind(stamp, renewedExpiresAt, session.session_id).run();
 
   const user = await readUserById(env, session.user_id);
   if (!user || user.accountStatus !== "active") return null;
