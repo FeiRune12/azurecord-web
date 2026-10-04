@@ -145,6 +145,9 @@
   let cloudRealtimeSocket = null;
   let cloudRealtimeSocketReady = false;
   let cloudRealtimeReconnectTimer = null;
+  let cloudSessionRecoveryPromise = null;
+  let cloudSessionRecoveryTimer = null;
+  let cloudSessionRecoveryAttempts = 0;
   let cloudRealtimeHeartbeatTimer = null;
   let cloudRealtimeWatchdogTimer = null;
   let cloudRealtimeLastPongAt = 0;
@@ -321,15 +324,19 @@
     }
   }
 
+  function cloudSessionMatchesCurrentAccount(){
+    const current=String(state.currentAccountId||'');
+    if(!cloudToken||!current)return false;
+    return String(cloudVerifiedAccountId||'')===current || String(state.cloudAccountId||'')===current;
+  }
   function socialCloudReady(){
-    // Social Cloud usa a sessão validada como fonte de verdade.
-    // Assim a busca/pedidos não caem no backend local só porque /health ainda está carregando.
-    return !!(cloudToken && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
+    // Se o token pertence à conta cloud já conhecida localmente, consideramos
+    // a sessão utilizável enquanto a revalidação roda em paralelo. Isso evita
+    // falsos "Cloud indisponível" durante boot, wake-up e reconexões.
+    return cloudSessionMatchesCurrentAccount();
   }
   function lolaCloudReady(){
-    // A sessão autenticada é a fonte de verdade. /health é só telemetria e
-    // pode ficar temporariamente atrasado durante deploys ou reconexões.
-    return !!(cloudToken && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
+    return cloudSessionMatchesCurrentAccount();
   }
   function pointsCloudReady(){
     return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.azurePointsCloud && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
@@ -338,14 +345,91 @@
     return !!(cloudOnline && cloudToken && cloudInfo?.capabilities?.userControls && cloudVerifiedAccountId && cloudVerifiedAccountId===state.currentAccountId);
   }
   function socialReady(){ return socialCloudReady(); }
+  async function ensureCloudSessionReady({force=false}={}){
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return false;
+    if(!force&&cloudVerifiedAccountId&&cloudVerifiedAccountId===state.currentAccountId&&cloudToken)return true;
+    if(cloudSessionRecoveryPromise)return cloudSessionRecoveryPromise;
+    cloudSessionRecoveryPromise=(async()=>{
+      if(!cloudToken){
+        try{cloudToken=await window.azurecordDesktop?.getSecureSession?.()||null;}catch{cloudToken=null;}
+      }
+      if(!cloudToken)return false;
+      try{
+        const me=await cloudRequest('/auth/me',{timeoutMs:12000});
+        const account=applyCloudUser(me?.user);
+        if(!account?.id)throw Object.assign(new Error('Sessão Cloud inválida.'),{status:401,code:'cloud_session_invalid'});
+        if(state.currentAccountId&&state.cloudAccountId&&String(state.currentAccountId)!==String(account.id)){
+          throw Object.assign(new Error('A sessão Cloud pertence a outra conta.'),{status:401,code:'cloud_session_mismatch'});
+        }
+        cloudVerifiedAccountId=account.id;
+        state.cloudAccountId=account.id;
+        if(!state.currentAccountId)state.currentAccountId=account.id;
+        cloudOnline=true;
+        cloudSessionRecoveryAttempts=0;
+        clearTimeout(cloudSessionRecoveryTimer);cloudSessionRecoveryTimer=null;
+        saveNow();
+        if(account._needsCloudProfileSync)syncCloudProfile(account,{quiet:true,profileComplete:true}).catch(()=>{});
+        bootstrapCloudSession({quiet:true}).catch(()=>{});
+        if(!cloudRealtimeConnected())startCloudRealtimeSocket(true);
+        return true;
+      }catch(err){
+        if(Number(err?.status||0)===401){
+          cloudToken=null;cloudVerifiedAccountId=null;
+          try{await window.azurecordDesktop?.deleteSecureSession?.();}catch{}
+          saveNow();
+        }else{
+          cloudOnline=false;
+          console.warn('[Azurecord] Reconexão Cloud:',err?.message||err);
+        }
+        return false;
+      }finally{
+        cloudSessionRecoveryPromise=null;
+      }
+    })();
+    return cloudSessionRecoveryPromise;
+  }
+  function scheduleCloudSessionRecovery(){
+    clearTimeout(cloudSessionRecoveryTimer);cloudSessionRecoveryTimer=null;
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)return;
+    const delay=Math.min(15000,1200*Math.pow(1.7,Math.min(cloudSessionRecoveryAttempts++,5)));
+    cloudSessionRecoveryTimer=setTimeout(async()=>{
+      const ok=await ensureCloudSessionReady({force:true});
+      if(ok){
+        cloudSessionRecoveryAttempts=0;
+        void flushPendingOutbox();
+        if(socialCloudReady()){
+          startCloudRealtimeSocket(true);
+          wakeCloudRealtimeSync({snapshot:true});
+        }
+      }else if(cloudToken){
+        scheduleCloudSessionRecovery();
+      }
+    },delay);
+  }
   async function socialRequest(path, options={}){
     if(!socialCloudReady()){
-      throw Object.assign(
-        new Error('Entre na sua conta Cloud do Azurecord para usar recursos sociais.'),
-        {status:401,code:'cloud_login_required'}
-      );
+      if(typeof navigator!=='undefined'&&navigator.onLine===false){
+        throw Object.assign(new Error('Sem conexão com a internet.'),{status:0,code:'offline'});
+      }
+      const recovered=await ensureCloudSessionReady();
+      if(!recovered){
+        scheduleCloudSessionRecovery();
+        throw Object.assign(
+          new Error('Sincronizando sua sessão Cloud. Tente novamente em instantes.'),
+          {status:0,code:'cloud_reconnecting'}
+        );
+      }
     }
-    return cloudRequest(path,options);
+    try{
+      return await cloudRequest(path,options);
+    }catch(err){
+      if(Number(err?.status||0)===401&&typeof navigator!=='undefined'&&navigator.onLine!==false){
+        const recovered=await ensureCloudSessionReady({force:true});
+        if(recovered)return cloudRequest(path,options);
+      }
+      if(retryableCloudMessageError(err)&&typeof navigator!=='undefined'&&navigator.onLine!==false)scheduleCloudSessionRecovery();
+      throw err;
+    }
   }
 
   function cloudUserToProfile(u){
@@ -1653,7 +1737,7 @@
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
     $('voiceBtn').onclick=()=>startDmCall('voice'); $('videoBtn').onclick=()=>startDmCall('video'); $('screenBtn').onclick=()=>activeCall?toggleCallScreen():startDmCall('screen'); $('searchBtn').onclick=openChannelSearch;
     $('callAcceptBtn').onclick=acceptIncomingCall; $('callDeclineBtn').onclick=declineIncomingCall; $('callMicBtn').onclick=toggleCallMic; $('callCameraBtn').onclick=toggleCallCamera; $('callShareBtn').onclick=toggleCallScreen; $('callHangupBtn').onclick=()=>endActiveCall({notify:true}); $('callShareFocusExit').onclick=()=>closeRemoteSharedScreen({exitFullscreen:true}); $('remoteCallVideo').onclick=()=>{if(activeCall?.remoteScreenSharing)void openRemoteSharedScreen();}; $('serverMenu').onclick=openServerMenu; $('serverInviteBtn').onclick=openInvite; $('roleManageBtn').onclick=openRoleManager; $('addTextChannel').onclick=()=>openCreateChannel('text'); $('addVoiceChannel').onclick=()=>openCreateChannel('voice');
-    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});if(serverVoiceSession)leaveServerVoiceChannel({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;if(socialCloudReady()){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
+    document.addEventListener('click',closeContextOnOutside); document.addEventListener('click',closeProfilePeekOnOutside); window.addEventListener('resize',hideContext); window.addEventListener('keydown',globalKeys); window.addEventListener('beforeunload',()=>{if(activeCall)endActiveCall({notify:true});if(serverVoiceSession)leaveServerVoiceChannel({notify:true});}); window.addEventListener('focus',()=>{if(socialCloudReady()){startCloudRealtimeSocket();publishPresence();wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}else if(cloudToken&&typeof navigator!=='undefined'&&navigator.onLine!==false){void ensureCloudSessionReady({force:true});}}); document.addEventListener('visibilitychange',()=>{if(socialCloudReady()){if(document.visibilityState==='visible')startCloudRealtimeSocket();publishPresence();if(document.visibilityState==='visible')wakeCloudRealtimeSync({snapshot:!cloudRealtimeConnected()});}else if(document.visibilityState==='visible'&&cloudToken&&typeof navigator!=='undefined'&&navigator.onLine!==false){void ensureCloudSessionReady({force:true});}}); document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&activeCall?.remoteShareFocused){activeCall.remoteShareFocused=false;updateCallUi();}}); window.addEventListener('online',()=>{cloudOnline=true;cloudRealtimeFailures=0;void ensureCloudSessionReady({force:true}).then(ok=>{if(ok){startCloudRealtimeSocket(true);wakeCloudRealtimeSync({snapshot:true});void flushPendingOutbox();}else scheduleCloudSessionRecovery();});showToast('Conexão restaurada. Sincronizando mensagens...');}); window.addEventListener('offline',()=>{cloudRealtimeFailures=Math.max(1,cloudRealtimeFailures);cloudRealtimeSocketReady=false;showToast('Sem internet. Mensagens novas podem falhar até a conexão voltar.');});
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
@@ -3489,7 +3573,13 @@
       return failed;
     }
     if(id==='user-lola' ? !lolaCloudReady() : !socialReady()){
-      return fail('Azurecord Cloud indisponível.');
+      const recovered=await ensureCloudSessionReady();
+      if(!recovered){
+        m.pending=true;m.failed=false;m.retryable=true;delete m.lastError;saveNow();
+        if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+        scheduleCloudSessionRecovery();
+        return false;
+      }
     }
     if(id==='user-lola' && m.lolaSessionId && m.lolaSessionId!==(state.lolaSessionInfo?.[state.currentAccountId]?.id||m.lolaSessionId))return false;
 
@@ -3560,7 +3650,15 @@
       return false;
     };
     if(typeof navigator!=='undefined'&&navigator.onLine===false)return fail('Sem conexão com a internet.');
-    if(!socialReady())return fail('Azurecord Cloud indisponível.');
+    if(!socialReady()){
+      const recovered=await ensureCloudSessionReady();
+      if(!recovered){
+        m.pending=true;m.failed=false;m.retryable=true;delete m.lastError;saveNow();
+        if(inView())renderMessages();
+        scheduleCloudSessionRecovery();
+        return false;
+      }
+    }
 
     m.sending=true;m.pending=true;m.failed=false;delete m.lastError;saveNow();
     if(inView())renderMessages();
