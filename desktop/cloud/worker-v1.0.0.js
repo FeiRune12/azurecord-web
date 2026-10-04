@@ -2903,6 +2903,57 @@ async function serveAttachment(request, env, path) {
 }
 
 
+function parseSupportedPreviewUrl(raw) {
+  try {
+    const u = new URL(String(raw || '').trim());
+    const host = u.hostname.toLowerCase();
+    if (host === 'youtu.be') {
+      const id = u.pathname.split('/').filter(Boolean)[0] || '';
+      if (!id) return null;
+      return { provider:'YouTube', canonical:'https://www.youtube.com/watch?v='+encodeURIComponent(id), embedUrl:'https://www.youtube.com/embed/'+encodeURIComponent(id), id };
+    }
+    if (host === 'www.youtube.com' || host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com') {
+      const id = u.searchParams.get('v') || (u.pathname.startsWith('/shorts/') ? (u.pathname.split('/')[2] || '') : '');
+      if (!id) return null;
+      const provider = host === 'music.youtube.com' ? 'YouTube Music' : 'YouTube';
+      return { provider, canonical:'https://www.youtube.com/watch?v='+encodeURIComponent(id), embedUrl:'https://www.youtube.com/embed/'+encodeURIComponent(id), id };
+    }
+    if (host === 'open.spotify.com') {
+      const parts=u.pathname.split('/').filter(Boolean);
+      if(parts.length<2)return null;
+      const type=parts[0], id=parts[1];
+      if(!['track','album','playlist','episode','show','artist'].includes(type))return null;
+      return { provider:'Spotify', canonical:'https://open.spotify.com/'+type+'/'+id, embedUrl:'https://open.spotify.com/embed/'+type+'/'+id, id, type };
+    }
+    if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) return { provider:'SoundCloud', canonical:u.toString(), embedUrl:'', id:'' };
+  } catch {}
+  return null;
+}
+
+async function fetchPreviewMeta(info) {
+  let endpoint = '';
+  if (info.provider === 'YouTube' || info.provider === 'YouTube Music') endpoint = 'https://www.youtube.com/oembed?format=json&url='+encodeURIComponent(info.canonical);
+  else if (info.provider === 'Spotify') endpoint = 'https://open.spotify.com/oembed?url='+encodeURIComponent(info.canonical);
+  else if (info.provider === 'SoundCloud') endpoint = 'https://soundcloud.com/oembed?format=json&url='+encodeURIComponent(info.canonical);
+  if (!endpoint) return {};
+  try {
+    const r=await fetch(endpoint,{headers:{'Accept':'application/json','User-Agent':'Azurecord/6.0.4'}});
+    if(!r.ok)return {};
+    return await r.json();
+  } catch { return {}; }
+}
+
+async function handleLinkPreview(request, env, url, path) {
+  if (path !== '/api/link-preview' || request.method !== 'GET') return null;
+  const raw=String(url.searchParams.get('url')||'').slice(0,1800);
+  const info=parseSupportedPreviewUrl(raw);
+  if(!info)return json({ok:false,error:'unsupported_preview_url',message:'Este link não tem preview suportado.'},400);
+  const meta=await fetchPreviewMeta(info);
+  let thumbnail=String(meta.thumbnail_url||'');
+  if(!thumbnail && (info.provider==='YouTube'||info.provider==='YouTube Music') && info.id) thumbnail='https://i.ytimg.com/vi/'+encodeURIComponent(info.id)+'/hqdefault.jpg';
+  return json({ok:true,provider:info.provider,url:info.canonical,embedUrl:info.embedUrl||'',title:String(meta.title||info.canonical).slice(0,300),author:String(meta.author_name||meta.provider_name||'').slice(0,180),thumbnail:thumbnail.slice(0,1800),width:Number(meta.width||0),height:Number(meta.height||0)});
+}
+
 const KLIPY_CLIENT_KEY = "azurecord";
 
 function normalizeKlipyResult(item) {
@@ -3098,6 +3149,9 @@ export default {
 
         const lolaResponse = await handleLola(request, env, url, path);
         if (lolaResponse) return lolaResponse;
+
+        const previewResponse = await handleLinkPreview(request, env, url, path);
+        if (previewResponse) return previewResponse;
 
         const klipyResponse = await handleKlipy(request, env, url, path);
         if (klipyResponse) return klipyResponse;
