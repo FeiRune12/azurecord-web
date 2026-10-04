@@ -69,12 +69,14 @@
     memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
   };
 
+  const LUMEN_AVATAR_SVG='<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#31d8ff"/><stop offset=".55" stop-color="#6f61ff"/><stop offset="1" stop-color="#c155ff"/></linearGradient></defs><rect width="512" height="512" rx="110" fill="url(#g)"/><circle cx="256" cy="205" r="105" fill="#f4f5ff"/><path d="M152 215c6-104 55-151 104-151s98 47 104 151c-35-35-70-52-109-52-37 0-69 17-99 52Z" fill="#152a65"/><path d="M166 447c13-104 63-158 90-158s77 54 90 158Z" fill="#1d2c68"/><path d="M196 335c30 24 90 24 120 0l25 112H171Z" fill="#6547db"/><ellipse cx="222" cy="213" rx="11" ry="15" fill="#536cff"/><ellipse cx="290" cy="213" rx="11" ry="15" fill="#536cff"/><path d="M226 255c18 16 42 16 60 0" fill="none" stroke="#7b4dd0" stroke-width="8" stroke-linecap="round"/><circle cx="396" cy="111" r="58" fill="#111a45"/><path d="M382 86v71c0 15-12 26-28 26-14 0-25-9-25-21s12-22 28-22c5 0 9 1 13 2V70l58-14v71c0 15-12 26-28 26-14 0-25-9-25-21s12-22 28-22c5 0 9 1 13 2V84Z" fill="#fff"/></svg>';
+  const LUMEN_AVATAR_URL='data:image/svg+xml;base64,'+btoa(LUMEN_AVATAR_SVG);
   const DEMO_LUMEN = {
     id:'user-lumen', username:'Lumen', email:'lumen@azurecord.local', handle:'@lumen',
-    bio:'A Muse de Azure Striker Gunvolt e mascote musical do Azurecord.',
-    accent:'#8b5cff', status:'online', avatar:'', banner:'',
+    bio:'A Muse de Azure Striker Gunvolt e DJ oficial do Azurecord.',
+    accent:'#8b5cff', status:'online', avatar:LUMEN_AVATAR_URL, banner:'',
     personality:'Brilhante, energética e musical. Representa o lado mais elétrico e performático do Azurecord.',
-    memberSince:'4 de out. de 2026', role:'Mascote', badge:'♫'
+    memberSince:'4 de out. de 2026', role:'DJ', badge:'♫'
   };
   const SYSTEM_MASCOT_IDS = new Set(['user-lola','user-lumen']);
   function isSystemMascot(id){return SYSTEM_MASCOT_IDS.has(String(id||''));}
@@ -2032,6 +2034,7 @@
     return ensureServerChannels(s);
   }
   function getChannel(serverId,id){ return getServer(serverId)?.channels.find(c=>c.id===id); }
+  function serverHasLumen(server){const s=typeof server==='string'?getServer(server):server;return !!s&&Array.isArray(s.features)&&s.features.includes('lumen-dj');}
   let renderFrame = null;
   function requestRenderShell(){
     if(renderFrame) return;
@@ -3904,7 +3907,8 @@
     const server=getServer(view.serverId);
     if(server&&!server._membersLoading&&(!server._membersFetchedAt||Date.now()-server._membersFetchedAt>3500))void refreshServerMembers(server.id,{quiet:true});
     const members=Array.isArray(server?.members)?server.members.filter(Boolean):[];
-    for(const member of members)hydrateRemoteUser(member);
+    if(serverHasLumen(server)&&!members.some(m=>m?.id==='user-lumen'))members.push({...DEMO_LUMEN,role:'DJ',serverRole:'DJ',systemBot:true});
+    for(const member of members)if(member?.id!=='user-lumen')hydrateRemoteUser(member);
     const onlineCount=members.filter(member=>resolvedPresence(member.id)!=='offline').length;
     const head='<div class="member-panel-head"><strong>MEMBROS • '+members.length+'</strong><span class="presence-legend">'+onlineCount+' online</span></div>';
     const rows=members.map(member=>{
