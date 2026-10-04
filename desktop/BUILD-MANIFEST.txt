@@ -1,24 +1,20 @@
-Azurecord V52 Beta 8.3 Web + Settings
-Version: 0.52.0-beta.8.3
-Worker: 0.8.0
-
-Validated:
-- npm test: 50/50 passed
-- npm run check: passed
-- web-vercel npm run build: passed
-- Worker 0.8 integration test: settings, sessions, server profile, invites
-- ZIP integrity: run after packaging
+Azurecord 6.0.0 — Lumen + KLIPY GIF Panel
+Version: 6.0.0
+Worker: 1.0.0
 
 Main additions:
-- App settings workspace
-- Server settings workspace
-- Cloud user settings
-- Cloud session management
-- Cloud server profile settings
-- Cloud invite/member/role management
-- Web client ready for Vercel
-- Same Cloud auth, Social Cloud, DMs, servers, Lola Workers AI, AzurePoints, Block/Ignore
+- Lumen as Azurecord system mascot
+- KLIPY-powered GIF browser
+- GIF search + featured results + share registration
+- Manual GIF upload fallback
+- Web/Desktop/Android synchronized release
+- Azurecord Cloud proxy and persistent sessions
+- R2 media attachments and inline video player
 
 Bindings:
 DB -> D1 azurecord-prod
 AI -> Workers AI
+ATTACHMENTS -> R2
+KLIPY_API_KEY -> secret_text (required to activate KLIPY search)
+TURN_KEY_ID -> secret_text
+TURN_KEY_API_TOKEN -> secret_text
