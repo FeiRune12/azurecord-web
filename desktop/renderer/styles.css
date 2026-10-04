@@ -2004,15 +2004,17 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 }
 .inline-video-error button:hover{background:#26364a}
 
-/* Azurecord 6.0.0: Lumen e KLIPY */
+/* Azurecord 6.0.1: Lumen e KLIPY */
 .lumen-mascot-row{
   border-color:rgba(139,92,255,.28)!important;
   background:linear-gradient(90deg,rgba(139,92,255,.08),transparent 58%);
 }
 .lumen-mascot-avatar{
-  background:radial-gradient(circle at 35% 28%,#f2e9ff 0 10%,#b98cff 11% 28%,#6c3cff 29% 66%,#24124d 67% 100%)!important;
+  background-color:#24124d!important;
   color:#fff!important;
   box-shadow:0 0 0 2px rgba(139,92,255,.22),0 0 24px rgba(139,92,255,.18);
+  background-size:cover!important;
+  background-position:center!important;
 }
 .mascot-profile-note{
   margin-top:12px;padding:10px 12px;border:1px solid rgba(139,92,255,.28);border-radius:10px;
@@ -2049,3 +2051,10 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   .klipy-search-row{align-items:stretch}
 }
 
+
+/* Azurecord 6.0.1: Lumen DJ */
+.lumen-integration-card{border-color:rgba(139,92,255,.3)!important;background:linear-gradient(135deg,rgba(139,92,255,.09),rgba(49,216,255,.04))!important}
+.server-voice-tile.is-lumen{border-color:rgba(139,92,255,.52)!important;box-shadow:0 0 0 2px rgba(139,92,255,.12),0 16px 42px rgba(42,20,94,.26)!important}
+.server-voice-tile.is-lumen .server-voice-avatar{background-size:cover!important;background-position:center!important}
+.server-voice-now-playing{display:block;margin-top:5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#bfaeff;font-size:9px;font-weight:800}
+.server-voice-tile.is-lumen.is-speaking{box-shadow:0 0 0 3px rgba(139,92,255,.72),0 16px 44px rgba(72,35,150,.35)!important}
