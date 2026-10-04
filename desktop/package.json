@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "6.0.1",
+  "version": "6.0.2",
   "private": true,
-  "description": "Azurecord 6.0.1: câmera e transmissão em calls de servidor, pings com contador e mensagens idempotentes.",
+  "description": "Azurecord 6.0.2: Lumen DJ com avatar oficial do projeto e busca KLIPY expandida para Gunvolt.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
