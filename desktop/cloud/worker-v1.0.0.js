@@ -3115,26 +3115,52 @@ async function handleKlipy(request, env, url, path) {
   if (request.method === "GET" && (path === "/api/klipy/search" || path === "/api/klipy/featured")) {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     const endpoint = path.endsWith("/search") && query ? "search" : "featured";
-    if (endpoint === "search") common.set("q", query);
+    const gunvoltMode = endpoint === "search" && /gunvolt|azure striker/i.test(query);
+    const queries = gunvoltMode ? [query, "azure striker gunvolt", "lumen gunvolt"] : [query];
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${common.toString()}`, {
-        method: "GET",
-        signal: controller.signal,
-        headers: { "Accept": "application/json" },
-      });
-      let data = {};
-      try { data = await response.json(); } catch {}
-      if (!response.ok) {
-        console.error("KLIPY API ERROR", response.status, data?.error || data);
-        return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
+      const batches = [];
+      for (const q of queries) {
+        const params = new URLSearchParams(common);
+        if (endpoint === "search") params.set("q", q);
+        params.set("limit", gunvoltMode ? "30" : "24");
+        params.set("random", "false");
+        const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
+          method: "GET",
+          signal: controller.signal,
+          headers: { "Accept": "application/json" },
+        });
+        let data = {};
+        try { data = await response.json(); } catch {}
+        if (!response.ok) {
+          console.error("KLIPY API ERROR", response.status, data?.error || data);
+          if (!batches.length) return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
+          continue;
+        }
+        batches.push(Array.isArray(data?.results) ? data.results : []);
       }
-      const results = (Array.isArray(data?.results) ? data.results : [])
-        .map(normalizeKlipyResult)
-        .filter(Boolean);
-      return json({ ok: true, provider: "klipy", query, next: String(data?.next || ""), results });
+
+      let raw = [];
+      if (gunvoltMode) {
+        const seen = new Set();
+        const franchise = /gunvolt|azure striker|lumen|joule|copen|adept/i;
+        for (const batch of batches) {
+          const strong = batch.filter(item => franchise.test([item?.title,item?.content_description,item?.itemurl,item?.url,Array.isArray(item?.tags)?item.tags.join(" "):""].filter(Boolean).join(" ")));
+          const chosen = strong.length >= 3 ? strong.slice(0,12) : batch.slice(0,6);
+          for (const item of chosen) {
+            const key = String(item?.id || item?.url || item?.itemurl || "");
+            if (!key || seen.has(key)) continue;
+            seen.add(key); raw.push(item);
+            if (raw.length >= 24) break;
+          }
+          if (raw.length >= 24) break;
+        }
+      } else raw = batches[0] || [];
+
+      const results = raw.map(normalizeKlipyResult).filter(Boolean).slice(0,24);
+      return json({ ok: true, provider: "klipy", query, expanded: gunvoltMode, results });
     } catch (error) {
       const timeout = error?.name === "AbortError";
       console.error("KLIPY FETCH ERROR", String(error?.message || error));
