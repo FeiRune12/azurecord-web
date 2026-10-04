@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.3');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '5.0.4');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -2758,23 +2758,38 @@
     box.querySelectorAll('[data-retry-dm]').forEach(btn=>btn.onclick=async()=>{const m=getMessages().find(x=>x.id===btn.dataset.retryDm);if(m&&view.mode==='dm')await sendDmToBackend(m,view.dmUserId);});
     box.querySelectorAll('[data-poll-message]').forEach(btn=>btn.onclick=()=>votePoll(btn.dataset.pollMessage,Number(btn.dataset.pollOption)));
     box.querySelectorAll('.video-attachment video').forEach(video=>{
-      const card=video.closest('.video-attachment'),stage=video.closest('.inline-video-stage'),btn=card?.querySelector('[data-inline-video-play]'),error=card?.querySelector('.inline-video-error');
+      const card=video.closest('.video-attachment'),stage=video.closest('[data-inline-video-stage]'),btn=card?.querySelector('[data-inline-video-play]'),retry=card?.querySelector('[data-inline-video-retry]'),error=card?.querySelector('.inline-video-error');
       const syncRatio=()=>{
         const w=Number(video.videoWidth||0),h=Number(video.videoHeight||0);if(!stage||!w||!h)return;
         const ratio=Math.max(.45,Math.min(2.4,w/h));stage.style.setProperty('--video-aspect',String(ratio));
         stage.classList.toggle('portrait',ratio<.85);
       };
-      video.addEventListener('loadedmetadata',syncRatio,{once:true});
-      video.addEventListener('loadeddata',()=>{syncRatio();if(error)error.hidden=true;},{once:true});
-      video.addEventListener('play',()=>{if(btn)btn.hidden=true;});
+      const resetError=()=>{if(error)error.hidden=true;if(btn)btn.hidden=false;};
+      const prepare=()=>{
+        const src=String(video.dataset.src||'');if(!src)return false;
+        if(video.dataset.loadedSrc===src)return true;
+        video.pause();video.removeAttribute('src');while(video.firstChild)video.removeChild(video.firstChild);
+        const source=document.createElement('source');source.src=src;source.type=String(video.dataset.videoType||'video/mp4');video.appendChild(source);
+        video.dataset.loadedSrc=src;video.controls=true;video.load();return true;
+      };
+      const play=async()=>{
+        resetError();if(btn)btn.hidden=true;
+        try{
+          if(!prepare())throw new Error('Fonte de vídeo ausente.');
+          await video.play();
+        }catch(err){
+          console.warn('[Azurecord] vídeo inline:',err?.message||err);
+          if(error)error.hidden=false;if(btn)btn.hidden=true;
+        }
+      };
+      video.addEventListener('loadedmetadata',()=>{syncRatio();if(error)error.hidden=true;});
+      video.addEventListener('loadeddata',()=>{syncRatio();if(error)error.hidden=true;});
+      video.addEventListener('play',()=>{if(btn)btn.hidden=true;if(error)error.hidden=true;});
+      video.addEventListener('pause',()=>{if(video.currentTime===0&&btn)btn.hidden=false;});
       video.addEventListener('ended',()=>{if(btn)btn.hidden=false;});
       video.addEventListener('error',()=>{if(error)error.hidden=false;if(btn)btn.hidden=true;});
-    });
-    box.querySelectorAll('[data-inline-video-play]').forEach(btn=>btn.onclick=async e=>{
-      e.preventDefault();e.stopPropagation();
-      const card=btn.closest('.video-attachment'),video=card?.querySelector('video');if(!video)return;
-      btn.hidden=true;
-      try{await video.play();}catch{btn.hidden=false;}
+      if(btn)btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await play();};
+      if(retry)retry.onclick=async e=>{e.preventDefault();e.stopPropagation();video.dataset.loadedSrc='';await play();};
     });
   }
   function attachmentListForMessage(m){
@@ -3351,7 +3366,7 @@
       }
       if(video){
         const videoType=type.startsWith('video/')?type:(/\.webm$/i.test(name)?'video/webm':(/\.mov$/i.test(name)?'video/quicktime':'video/mp4'));
-        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage"><video src="${source}" type="${esc(videoType)}" preload="metadata" playsinline controls controlslist="nodownload" disablepictureinpicture></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button><div class="inline-video-error" hidden><strong>Não foi possível reproduzir este vídeo.</strong><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage" data-inline-video-stage><video preload="none" playsinline data-inline-video data-src="${source}" data-video-type="${esc(videoType)}"></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button><div class="inline-video-error" hidden><strong>Não foi possível carregar este vídeo.</strong><button type="button" class="inline-video-retry" data-inline-video-retry>Tentar novamente</button><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
       return source?`<a class="attachment-link" href="${source}" target="_blank" rel="noopener">${card}</a>`:card;
