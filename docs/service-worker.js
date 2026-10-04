@@ -1,4 +1,4 @@
-const CACHE_NAME = 'azurecord-5-0-6-video-hotfix2-shell';
+const CACHE_NAME = 'azurecord-5-0-7-shell';
 const APP_SHELL = [
   './',
   './index.html',
