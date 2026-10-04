@@ -926,6 +926,7 @@ function cleanFiles(value) {
       dataUrl: String(file?.dataUrl || "").slice(0, 750000),
       url: /^https:\/\//i.test(url) ? url : "",
       key: String(file?.key || "").slice(0, 500),
+      kind: String(file?.kind || "").slice(0, 40),
     };
   });
 }
