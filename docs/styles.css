@@ -1898,3 +1898,89 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .gif-media-upload small{color:var(--muted);font-size:9px;line-height:1.35}
 .gif-attachment img{max-height:420px}
 .gif-attachment figcaption small{white-space:nowrap}
+
+
+/* Azurecord 5.0.4: player inline simplificado e resistente */
+.video-attachment{
+  width:min(680px,78vw)!important;
+  max-width:min(680px,78vw)!important;
+  overflow:hidden!important;
+  border:1px solid var(--line)!important;
+  border-radius:14px!important;
+  background:var(--panel-2)!important;
+}
+.inline-video-stage{
+  --video-aspect:1.7777778;
+  position:relative!important;
+  display:grid!important;
+  place-items:center!important;
+  width:100%!important;
+  min-height:220px!important;
+  aspect-ratio:var(--video-aspect)!important;
+  max-height:min(600px,70vh)!important;
+  overflow:hidden!important;
+  background:#05070a!important;
+}
+.inline-video-stage video{
+  display:block!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:100%!important;
+  max-height:100%!important;
+  object-fit:contain!important;
+  background:#05070a!important;
+}
+.inline-video-stage video:not([data-loaded-src]){
+  opacity:.001;
+}
+.inline-video-play{
+  position:absolute!important;
+  inset:0!important;
+  margin:auto!important;
+  width:68px!important;
+  height:68px!important;
+  z-index:4!important;
+  border:1px solid rgba(255,255,255,.16)!important;
+  border-radius:50%!important;
+  background:rgba(20,24,31,.88)!important;
+  color:#fff!important;
+  display:grid!important;
+  place-items:center!important;
+  cursor:pointer!important;
+  box-shadow:0 12px 34px rgba(0,0,0,.48)!important;
+}
+.inline-video-play:hover{background:var(--accent)!important;transform:scale(1.05)}
+.inline-video-play[hidden]{display:none!important}
+.inline-video-error{
+  position:absolute!important;
+  inset:0!important;
+  z-index:6!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:9px!important;
+  padding:20px!important;
+  background:rgba(5,7,10,.96)!important;
+  color:#fff!important;
+  text-align:center!important;
+}
+.inline-video-error[hidden]{display:none!important}
+.inline-video-retry{
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:9px;
+  padding:8px 12px;
+  background:var(--accent);
+  color:#fff;
+  font:inherit;
+  font-size:10px;
+  font-weight:850;
+  cursor:pointer;
+}
+.inline-video-error a{color:#8fc5ff!important;font-size:10px!important;font-weight:800!important}
+.inline-video-stage.portrait{width:min(390px,100%)!important;margin-inline:auto!important}
+@media(max-width:700px){
+  .video-attachment{width:min(92vw,680px)!important;max-width:min(92vw,680px)!important}
+  .inline-video-stage{min-height:180px!important;max-height:64vh!important}
+  .inline-video-play{width:58px!important;height:58px!important}
+}
