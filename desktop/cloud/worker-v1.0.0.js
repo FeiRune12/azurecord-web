@@ -3021,53 +3021,87 @@ async function handleKlipy(request, env, url, path) {
     }, 503);
   }
 
-  const common = new URLSearchParams({
+  const baseParams = {
     key: apiKey,
     country: "BR",
     locale: "pt_BR",
     contentfilter: "high",
     media_filter: "gif,tinygif",
-    limit: "50",
-  });
+  };
 
   if (request.method === "GET" && (path === "/api/klipy/search" || path === "/api/klipy/featured")) {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     const endpoint = path.endsWith("/search") && query ? "search" : "featured";
-    if (endpoint === "search") common.set("q", query);
+    const normalizedQuery = normalizeSearchText(query);
+    const gunvoltSearch = endpoint === "search" && normalizedQuery.includes("gunvolt");
+
+    const searchQueries = gunvoltSearch
+      ? [...new Set([
+          query,
+          "azure striker gunvolt",
+          "gunvolt lumen",
+          "gunvolt joule",
+          "gunvolt copen",
+        ].map(x => String(x || "").trim()).filter(Boolean))]
+      : [query];
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${common.toString()}`, {
-        method: "GET",
-        signal: controller.signal,
-        headers: { "Accept": "application/json" },
-      });
-      let data = {};
-      try { data = await response.json(); } catch {}
-      if (!response.ok) {
-        console.error("KLIPY API ERROR", response.status, data?.error || data);
-        return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
+      const fetchPage = async (searchQuery, limit) => {
+        const params = new URLSearchParams({
+          ...baseParams,
+          limit: String(limit),
+        });
+        if (endpoint === "search") params.set("q", searchQuery);
+        const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
+          method: "GET",
+          signal: controller.signal,
+          headers: { "Accept": "application/json" },
+        });
+        let data = {};
+        try { data = await response.json(); } catch {}
+        if (!response.ok) {
+          const error = new Error("KLIPY upstream");
+          error.status = response.status;
+          error.payload = data;
+          throw error;
+        }
+        return data;
+      };
+
+      const pages = endpoint === "featured"
+        ? [await fetchPage("", 24)]
+        : await Promise.all(searchQueries.map(q => fetchPage(q, gunvoltSearch ? 8 : 24)));
+
+      const seen = new Set();
+      const merged = [];
+      for (const page of pages) {
+        const raw = Array.isArray(page?.results) ? page.results : [];
+        for (const item of raw) {
+          const normalized = normalizeKlipyResult(item);
+          if (!normalized) continue;
+          const key = normalized.id || normalized.url || normalized.previewUrl;
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          merged.push(normalized);
+          if (merged.length >= (gunvoltSearch ? 32 : 24)) break;
+        }
+        if (merged.length >= (gunvoltSearch ? 32 : 24)) break;
       }
-      const rawResults = Array.isArray(data?.results) ? data.results : [];
-      const filtered = endpoint === "search" && query
-        ? rawResults.filter(item => klipyRelevanceScore(item, query) > 0)
-        : rawResults;
-      const results = filtered
-        .slice(0, 24)
-        .map(normalizeKlipyResult)
-        .filter(Boolean);
+
       return json({
         ok: true,
         provider: "klipy",
         query,
-        strictRelevance: endpoint === "search" && !!query,
-        next: String(data?.next || ""),
-        results,
+        expandedSearch: gunvoltSearch,
+        searchVariants: gunvoltSearch ? searchQueries : [],
+        next: String(pages[0]?.next || ""),
+        results: merged,
       });
     } catch (error) {
       const timeout = error?.name === "AbortError";
-      console.error("KLIPY FETCH ERROR", String(error?.message || error));
+      console.error("KLIPY FETCH ERROR", String(error?.message || error), error?.status || "");
       return json({
         ok: false,
         error: timeout ? "KLIPY_TIMEOUT" : "KLIPY_NETWORK_ERROR",
