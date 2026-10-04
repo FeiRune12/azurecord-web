@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "private": true,
-  "description": "Azurecord 6.0.0: câmera e transmissão em calls de servidor, pings com contador e mensagens idempotentes.",
+  "description": "Azurecord 6.0.1: câmera e transmissão em calls de servidor, pings com contador e mensagens idempotentes.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
