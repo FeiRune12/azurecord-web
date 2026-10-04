@@ -3021,65 +3021,65 @@
     delete box.dataset.mode;
     $$('.composer-quick').forEach(b=>b.classList.remove('active'));
   }
-  let tenorGifSearchTimer=null;
-  let tenorLastQuery='';
-  async function tenorGifRequest(query=''){
+  let klipyGifSearchTimer=null;
+  let klipyLastQuery='';
+  async function klipyGifRequest(query=''){
     const clean=String(query||'').trim();
-    tenorLastQuery=clean;
-    return socialRequest(clean?'/api/tenor/search?q='+encodeURIComponent(clean):'/api/tenor/featured',{timeoutMs:12000});
+    klipyLastQuery=clean;
+    return socialRequest(clean?'/api/klipy/search?q='+encodeURIComponent(clean):'/api/klipy/featured',{timeoutMs:12000});
   }
-  function renderTenorGifGrid(items=[]){
-    const box=$('tenorGifResults');if(!box)return;
-    if(!items.length){box.innerHTML='<div class="tenor-empty">Nenhum GIF encontrado.</div>';return;}
+  function renderKlipyGifGrid(items=[]){
+    const box=$('klipyGifResults');if(!box)return;
+    if(!items.length){box.innerHTML='<div class="klipy-empty">Nenhum GIF encontrado.</div>';return;}
     box.innerHTML=items.map(item=>{
       const id=esc(String(item.id||''));
       const preview=safeUrl(item.previewUrl||item.url||'');
       const url=safeUrl(item.url||item.previewUrl||'');
-      const title=esc(item.description||item.title||'GIF do Tenor');
+      const title=esc(item.description||item.title||'GIF da KLIPY');
       const dims=Array.isArray(item.dims)?item.dims:[0,0];
-      return `<button type="button" class="tenor-gif-card" data-tenor-id="${id}" data-tenor-url="${url}" data-tenor-title="${title}" data-tenor-size="${Number(item.size||0)}" data-tenor-width="${Number(dims[0]||0)}" data-tenor-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button>`;
+      return `<button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button>`;
     }).join('');
-    box.querySelectorAll('[data-tenor-id]').forEach(btn=>btn.onclick=()=>{
+    box.querySelectorAll('[data-klipy-id]').forEach(btn=>btn.onclick=()=>{
       const url=String(btn.dataset.tenorUrl||'');if(!url)return;
-      const id=String(btn.dataset.tenorId||uid('tenor'));
-      const title=String(btn.dataset.tenorTitle||'GIF do Tenor');
+      const id=String(btn.dataset.tenorId||uid('klipy'));
+      const title=String(btn.dataset.tenorTitle||'GIF da KLIPY');
       const width=Number(btn.dataset.tenorWidth||0),height=Number(btn.dataset.tenorHeight||0);
       pendingAttachments.push({
-        id:uid('file'),name:`tenor-${id}.gif`,size:Number(btn.dataset.tenorSize||0),type:'image/gif',url,
-        visual:{kind:'gif',width,height,source:'tenor',description:title},uploading:false,progress:100
+        id:uid('file'),name:`klipy-${id}.gif`,size:Number(btn.dataset.tenorSize||0),type:'image/gif',url,
+        visual:{kind:'gif',width,height,source:'klipy',description:title},uploading:false,progress:100
       });
       renderAttachmentPreview();
       closeComposerPopover();
-      void socialRequest('/api/tenor/register-share',{method:'POST',body:JSON.stringify({id,q:tenorLastQuery})}).catch(()=>{});
-      showToast('GIF do Tenor anexado. ✨');
+      void socialRequest('/api/klipy/register-share',{method:'POST',body:JSON.stringify({id,q:klipyLastQuery})}).catch(()=>{});
+      showToast('GIF da KLIPY anexado. ✨');
     });
   }
-  async function loadTenorGifResults(query=''){
-    const box=$('tenorGifResults'),status=$('tenorGifStatus');if(!box)return;
-    box.innerHTML='<div class="tenor-loading">Carregando GIFs…</div>';
-    if(status)status.textContent=query?'Buscando no Tenor…':'GIFs em destaque';
+  async function loadKlipyGifResults(query=''){
+    const box=$('klipyGifResults'),status=$('klipyGifStatus');if(!box)return;
+    box.innerHTML='<div class="klipy-loading">Carregando GIFs…</div>';
+    if(status)status.textContent=query?'Buscando na KLIPY…':'GIFs em destaque';
     try{
-      const data=await tenorGifRequest(query);
-      if(!$('tenorGifResults'))return;
-      renderTenorGifGrid(Array.isArray(data?.results)?data.results:[]);
+      const data=await klipyGifRequest(query);
+      if(!$('klipyGifResults'))return;
+      renderKlipyGifGrid(Array.isArray(data?.results)?data.results:[]);
       if(status)status.textContent=query?`Resultados para “${query}”`:'GIFs em destaque';
     }catch(err){
-      if(!$('tenorGifResults'))return;
-      box.innerHTML=`<div class="tenor-empty">${esc(err?.message||'Tenor indisponível agora.')}</div>`;
+      if(!$('klipyGifResults'))return;
+      box.innerHTML=`<div class="klipy-empty">${esc(err?.message||'KLIPY indisponível agora.')}</div>`;
       if(status)status.textContent='Upload manual continua disponível.';
     }
   }
-  function openTenorGifPicker(box){
+  function openKlipyGifPicker(box){
     box.dataset.mode='gif-tenor';
-    box.innerHTML=`<div class="tenor-picker"><div class="tenor-picker-head"><h4>GIFs</h4><span class="tenor-powered">Powered by Tenor</span></div><div class="tenor-search-row"><input id="tenorGifSearch" type="search" placeholder="Search Tenor" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="tenorGifStatus" class="composer-helper">GIFs em destaque</div><div id="tenorGifResults" class="tenor-gif-grid"></div></div>`;
+    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><span class="klipy-powered">Powered by KLIPY</span></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
     box.hidden=false;
     const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='image/gif,.gif';fileInput.hidden=true;
     fileInput.onchange=async()=>{if(fileInput.files?.length)await handleFiles({target:fileInput});closeComposerPopover();};
     box.appendChild(fileInput);
     box.querySelector('#composerGifUpload').onclick=()=>fileInput.click();
-    const search=box.querySelector('#tenorGifSearch');
-    search.oninput=()=>{clearTimeout(tenorGifSearchTimer);const q=search.value;tenorGifSearchTimer=setTimeout(()=>void loadTenorGifResults(q),320);};
-    void loadTenorGifResults('');
+    const search=box.querySelector('#klipyGifSearch');
+    search.oninput=()=>{clearTimeout(klipyGifSearchTimer);const q=search.value;klipyGifSearchTimer=setTimeout(()=>void loadKlipyGifResults(q),320);};
+    void loadKlipyGifResults('');
   }
 
   function openComposerPopover(type){
@@ -3094,7 +3094,7 @@
     const apps=['📊 Enquete','@ Menção','</> Código'];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
-    if(type==='gif'){openTenorGifPicker(box);return;}
+    if(type==='gif'){openKlipyGifPicker(box);return;}
     if(type==='sticker'){title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
     if(type==='apps'){title='Apps rápidos';items=apps;helper='Atalhos para recursos que já existem no Azurecord.'}
     box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>`<button type="button" class="composer-chip ${item.length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(item)}">${esc(item)}</button>`).join('')}</div><p class="composer-helper">${helper}</p>`;
