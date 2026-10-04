@@ -3051,7 +3051,7 @@ async function fetchPreviewMeta(info) {
   else if (info.provider === 'SoundCloud') endpoint = 'https://soundcloud.com/oembed?format=json&url='+encodeURIComponent(info.canonical);
   if (!endpoint) return {};
   try {
-    const r=await fetch(endpoint,{headers:{'Accept':'application/json','User-Agent':'Azurecord/6.0.4'}});
+    const r=await fetch(endpoint,{headers:{'Accept':'application/json','User-Agent':'Azurecord/6.0.5'}});
     if(!r.ok)return {};
     return await r.json();
   } catch { return {}; }
@@ -3116,17 +3116,20 @@ async function handleKlipy(request, env, url, path) {
     const query = String(url.searchParams.get("q") || "").trim().slice(0, 100);
     const endpoint = path.endsWith("/search") && query ? "search" : "featured";
     const gunvoltMode = endpoint === "search" && /gunvolt|azure striker/i.test(query);
-    const queries = gunvoltMode ? [query, "azure striker gunvolt", "lumen gunvolt"] : [query];
+    const queries = gunvoltMode
+      ? [...new Set([query, "azure striker gunvolt", "gunvolt lumen joule", "gunvolt copen"])]
+      : [query];
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 12000);
     try {
       const batches = [];
-      for (const q of queries) {
+      async function fetchKlipyBatch(q, pos = "") {
         const params = new URLSearchParams(common);
         if (endpoint === "search") params.set("q", q);
-        params.set("limit", gunvoltMode ? "30" : "24");
+        params.set("limit", gunvoltMode ? "50" : "24");
         params.set("random", "false");
+        if (pos) params.set("pos", pos);
         const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
           method: "GET",
           signal: controller.signal,
@@ -3134,33 +3137,51 @@ async function handleKlipy(request, env, url, path) {
         });
         let data = {};
         try { data = await response.json(); } catch {}
-        if (!response.ok) {
-          console.error("KLIPY API ERROR", response.status, data?.error || data);
+        if (!response.ok) throw Object.assign(new Error("KLIPY_UPSTREAM_ERROR"), { status: response.status, data });
+        return { q, results: Array.isArray(data?.results) ? data.results : [], next: String(data?.next || "") };
+      }
+
+      for (const q of queries) {
+        try {
+          const first = await fetchKlipyBatch(q);
+          batches.push(first);
+          if (gunvoltMode && q === query && first.next) {
+            try { batches.push(await fetchKlipyBatch(q, first.next)); } catch {}
+          }
+        } catch (err) {
+          console.error("KLIPY API ERROR", err?.status || 0, err?.data || err?.message || err);
           if (!batches.length) return json({ ok: false, error: "KLIPY_UPSTREAM_ERROR", message: "A KLIPY não conseguiu responder agora." }, 502);
-          continue;
         }
-        batches.push(Array.isArray(data?.results) ? data.results : []);
       }
 
       let raw = [];
       if (gunvoltMode) {
         const seen = new Set();
-        const franchise = /gunvolt|azure striker|lumen|joule|copen|adept/i;
-        for (const batch of batches) {
-          const strong = batch.filter(item => franchise.test([item?.title,item?.content_description,item?.itemurl,item?.url,Array.isArray(item?.tags)?item.tags.join(" "):""].filter(Boolean).join(" ")));
-          const chosen = strong.length >= 3 ? strong.slice(0,12) : batch.slice(0,6);
-          for (const item of chosen) {
+        const scored = [];
+        const strong = /gunvolt|azure striker|luminous avenger|joule|copen|adept|gv2|gv3/i;
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex];
+          for (let index = 0; index < batch.results.length; index++) {
+            const item = batch.results[index];
             const key = String(item?.id || item?.url || item?.itemurl || "");
             if (!key || seen.has(key)) continue;
-            seen.add(key); raw.push(item);
-            if (raw.length >= 24) break;
+            const meta = [item?.title,item?.content_description,item?.itemurl,item?.url,Array.isArray(item?.tags)?item.tags.join(" "):""].filter(Boolean).join(" ");
+            const isStrong = strong.test(meta);
+            const sourceHasLumen = /lumen/i.test(batch.q) && /lumen/i.test(meta);
+            const sourceHasCopen = /copen/i.test(batch.q) && /copen/i.test(meta);
+            const sourceHasJoule = /joule/i.test(batch.q) && /joule/i.test(meta);
+            const trustedTop = index < (batchIndex < 2 ? 5 : 3);
+            if (!isStrong && !sourceHasLumen && !sourceHasCopen && !sourceHasJoule && !trustedTop) continue;
+            seen.add(key);
+            scored.push({ item, score: (isStrong ? 100 : 55) - index - batchIndex * 2 });
           }
-          if (raw.length >= 24) break;
         }
-      } else raw = batches[0] || [];
+        scored.sort((a,b)=>b.score-a.score);
+        raw = scored.slice(0,24).map(entry=>entry.item);
+      } else raw = batches[0]?.results || [];
 
       const results = raw.map(normalizeKlipyResult).filter(Boolean).slice(0,24);
-      return json({ ok: true, provider: "klipy", query, expanded: gunvoltMode, results });
+      return json({ ok: true, provider: "klipy", query, expanded: gunvoltMode, strictFranchise: gunvoltMode, results });
     } catch (error) {
       const timeout = error?.name === "AbortError";
       console.error("KLIPY FETCH ERROR", String(error?.message || error));
