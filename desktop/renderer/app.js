@@ -155,39 +155,9 @@
   let backendEventSource = null;
   let pendingAttachments = [];
   let pendingAttachmentReads = 0;
-  const inlineVideoBlobCache = new Map();
-  function rememberInlineVideoBlob(source,blobUrl){
-    const old=inlineVideoBlobCache.get(source);
-    if(old?.url&&old.url!==blobUrl)try{URL.revokeObjectURL(old.url);}catch{}
-    inlineVideoBlobCache.delete(source);
-    inlineVideoBlobCache.set(source,{url:blobUrl,at:Date.now()});
-    while(inlineVideoBlobCache.size>6){
-      const first=inlineVideoBlobCache.keys().next().value;
-      const item=inlineVideoBlobCache.get(first);
-      inlineVideoBlobCache.delete(first);
-      try{if(item?.url)URL.revokeObjectURL(item.url);}catch{}
-    }
-    return blobUrl;
-  }
-  async function loadInlineVideoBlob(source,videoType='video/mp4',{force=false}={}){
-    const src=String(source||'');if(!src)throw new Error('Fonte de vídeo ausente.');
-    if(!force){
-      const cached=inlineVideoBlobCache.get(src);
-      if(cached?.url){
-        inlineVideoBlobCache.delete(src);inlineVideoBlobCache.set(src,{...cached,at:Date.now()});
-        return cached.url;
-      }
-    }else{
-      const cached=inlineVideoBlobCache.get(src);
-      if(cached?.url)try{URL.revokeObjectURL(cached.url);}catch{}
-      inlineVideoBlobCache.delete(src);
-    }
-    const response=await fetch(src,{method:'GET',mode:'cors',credentials:'omit',cache:force?'reload':'force-cache'});
-    if(!response.ok)throw new Error('HTTP '+response.status);
-    let blob=await response.blob();
-    if(!String(blob.type||'').startsWith('video/')&&videoType)blob=new Blob([blob],{type:videoType});
-    return rememberInlineVideoBlob(src,URL.createObjectURL(blob));
-  }
+  // Vídeos inline usam a URL original para o navegador fazer streaming.
+  // Evita duplicar o arquivo inteiro em memória via fetch() + Blob, o que podia
+  // derrubar o renderer em vídeos maiores.
   const realtimePresence = new Map();
   const realtimeTyping = new Map();
   let typingLastSentAt = 0;
@@ -2809,26 +2779,26 @@
       };
       const resetError=()=>{if(error)error.hidden=true;if(errorText)errorText.textContent='Não foi possível carregar este vídeo.';};
       const prepareAndPlay=async({force=false}={})=>{
-        const source=String(video.dataset.src||''),videoType=String(video.dataset.videoType||'video/mp4');
+        const source=String(video.dataset.src||'');
         resetError();setLoading(true);
         try{
-          const blobUrl=await loadInlineVideoBlob(source,videoType,{force});
-          if(video.src!==blobUrl){
+          if(!source)throw new Error('Fonte de vídeo ausente.');
+          if(force||video.dataset.loadedSrc!==source||!video.getAttribute('src')){
             video.pause();
-            video.src=blobUrl;
+            video.removeAttribute('src');
+            video.load();
+            video.src=source;
             video.dataset.loadedSrc=source;
             video.controls=true;
             video.preload='metadata';
             video.load();
-          }else{
-            video.dataset.loadedSrc=source;
           }
           await video.play();
           if(btn)btn.hidden=true;
         }catch(err){
           const message=String(err?.message||'Falha ao carregar o vídeo.');
           console.warn('[Azurecord] vídeo inline:',message);
-          if(errorText)errorText.textContent=message.startsWith('HTTP ')?'O servidor de mídia respondeu '+message+'.':'Não foi possível carregar este vídeo.';
+          if(errorText)errorText.textContent='Não foi possível carregar este vídeo.';
           if(error)error.hidden=false;if(btn)btn.hidden=true;
         }finally{setLoading(false);}
       };
