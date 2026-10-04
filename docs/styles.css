@@ -2020,3 +2020,48 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 .message-attachment.gif-attachment img{display:block;width:100%!important;height:auto!important;max-height:420px!important;object-fit:contain!important}
 @media(max-width:700px){.attachment-upload-status{margin:4px 8px 8px}.message-attachment.video-attachment,.message-attachment.gif-attachment{width:100%!important;max-width:100%!important;min-width:0!important}.message-attachment.video-attachment .inline-video-stage{min-height:0!important;aspect-ratio:16/9!important}}
 
+/* Azurecord 5.0.9: Lumen e Tenor */
+.lumen-mascot-row{
+  border-color:rgba(139,92,255,.28)!important;
+  background:linear-gradient(90deg,rgba(139,92,255,.08),transparent 58%);
+}
+.lumen-mascot-avatar{
+  background:radial-gradient(circle at 35% 28%,#f2e9ff 0 10%,#b98cff 11% 28%,#6c3cff 29% 66%,#24124d 67% 100%)!important;
+  color:#fff!important;
+  box-shadow:0 0 0 2px rgba(139,92,255,.22),0 0 24px rgba(139,92,255,.18);
+}
+.mascot-profile-note{
+  margin-top:12px;padding:10px 12px;border:1px solid rgba(139,92,255,.28);border-radius:10px;
+  background:rgba(139,92,255,.08);font-size:10px;color:var(--muted)
+}
+.tenor-picker{display:grid;gap:10px;min-width:min(560px,82vw)}
+.tenor-picker-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tenor-picker-head h4{margin:0}
+.tenor-powered{font-size:9px;font-weight:900;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.tenor-search-row{display:flex;gap:8px;align-items:center}
+.tenor-search-row input{
+  flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--text);
+  padding:9px 10px;font:inherit;font-size:10px;outline:none
+}
+.tenor-search-row input:focus{border-color:rgba(0,102,255,.55);box-shadow:0 0 0 2px var(--accent-soft)}
+.tenor-gif-grid{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:390px;overflow:auto;
+  padding-right:2px
+}
+.tenor-gif-card{
+  position:relative;display:block;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  background:#070a0f;cursor:pointer;min-height:92px
+}
+.tenor-gif-card:hover{border-color:rgba(0,102,255,.62);transform:translateY(-1px)}
+.tenor-gif-card img{display:block;width:100%;height:120px;object-fit:cover}
+.tenor-loading,.tenor-empty{
+  grid-column:1/-1;padding:22px 14px;text-align:center;border:1px dashed var(--line);border-radius:10px;
+  color:var(--muted);font-size:10px
+}
+@media(max-width:700px){
+  .tenor-picker{min-width:0;width:min(94vw,520px)}
+  .tenor-gif-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-height:48vh}
+  .tenor-gif-card img{height:112px}
+  .tenor-search-row{align-items:stretch}
+}
+
