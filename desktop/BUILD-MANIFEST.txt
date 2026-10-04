@@ -1,20 +1,20 @@
-Azurecord 6.0.0 — Lumen + KLIPY GIF Panel
-Version: 6.0.0
+Azurecord 6.0.1 - Lumen DJ + KLIPY Relevance
+Version: 6.0.1
 Worker: 1.0.0
 
 Main additions:
-- Lumen as Azurecord system mascot
-- KLIPY-powered GIF browser
-- GIF search + featured results + share registration
-- Manual GIF upload fallback
-- Web/Desktop/Android synchronized release
-- Azurecord Cloud proxy and persistent sessions
-- R2 media attachments and inline video player
+- Lumen com avatar próprio e papel de DJ
+- Lumen adicionável/removível por servidor
+- Biblioteca musical pesquisável por nome
+- Reprodução de áudio do servidor em canal de voz via WebRTC
+- Comandos /lumen play, pause, resume e stop
+- Busca KLIPY com filtro estrito de relevância
+- Web/Desktop/Android sincronizados
 
 Bindings:
 DB -> D1 azurecord-prod
 AI -> Workers AI
 ATTACHMENTS -> R2
-KLIPY_API_KEY -> secret_text (required to activate KLIPY search)
+KLIPY_API_KEY -> secret_text
 TURN_KEY_ID -> secret_text
 TURN_KEY_API_TOKEN -> secret_text
