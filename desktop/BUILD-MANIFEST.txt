@@ -1,14 +1,16 @@
-Azurecord 6.0.1 - Lumen DJ + KLIPY Relevance
-Version: 6.0.1
+Azurecord 6.0.2 - Lumen DJ + Gunvolt GIF Search
+Version: 6.0.2
 Worker: 1.0.0
 
 Main additions:
-- Lumen com avatar próprio e papel de DJ
+- Foto da Lumen fornecida pelo usuário incorporada ao projeto
 - Lumen adicionável/removível por servidor
-- Biblioteca musical pesquisável por nome
-- Reprodução de áudio do servidor em canal de voz via WebRTC
+- Lumen aparece como membro DJ quando instalada
+- Biblioteca musical pesquisável por nome nos áudios enviados ao servidor
+- Reprodução de áudio no canal de voz via WebRTC
 - Comandos /lumen play, pause, resume e stop
-- Busca KLIPY com filtro estrito de relevância
+- Busca KLIPY expandida para Gunvolt com consultas complementares e deduplicação
+- Filtro de conteúdo KLIPY mantido em high
 - Web/Desktop/Android sincronizados
 
 Bindings:
