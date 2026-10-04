@@ -1930,7 +1930,7 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   object-fit:contain!important;
   background:#05070a!important;
 }
-.inline-video-stage video:not([data-loaded-src]){
+.inline-video-stage video:not([src]){
   opacity:.001;
 }
 .inline-video-play{
