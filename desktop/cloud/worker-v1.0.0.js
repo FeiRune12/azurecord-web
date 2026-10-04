@@ -886,6 +886,19 @@ async function ensureSocialSchema(env) {
     )
   `).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_call_share_peer ON call_share_state(peer_user_id, updated_at)`).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS server_stickers (
+      id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      key TEXT,
+      mime_type TEXT NOT NULL DEFAULT 'image/png',
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_server_stickers_server_created ON server_stickers(server_id, created_at)`).run();
   await addColumnIfMissing(env, "channels", "topic", "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(env, "servers", "icon", "TEXT");
   await addColumnIfMissing(env, "servers", "banner_url", "TEXT");
@@ -1883,6 +1896,58 @@ async function handleSocial(request, env, url, path) {
     const membership = await serverMembership(env, serverId, userId);
     if (!membership.server) return json({ error: "server_not_found", message: "Servidor não encontrado." }, 404);
     const manager = membership.server.owner_id === userId || membership.role === "Admin";
+
+    if (parts[3] === "stickers") {
+      if (!membership.member) return json({ error: "forbidden", message: "Você não participa deste servidor." }, 403);
+
+      if (method === "GET" && parts.length === 4) {
+        const rows = await env.DB.prepare(`
+          SELECT id, server_id, name, url, key, mime_type, created_by, created_at
+          FROM server_stickers
+          WHERE server_id = ?
+          ORDER BY created_at DESC
+          LIMIT 100
+        `).bind(serverId).all();
+        return json({ ok: true, stickers: (rows.results || []).map(row => ({
+          id: row.id,
+          serverId: row.server_id,
+          name: row.name,
+          url: row.url,
+          key: row.key || "",
+          type: row.mime_type || "image/png",
+          createdBy: row.created_by,
+          createdAt: row.created_at,
+        })) });
+      }
+
+      if (method === "POST" && parts.length === 4) {
+        const body = await readJson(request) || {};
+        const name = cleanText(body.name || "Sticker", 60) || "Sticker";
+        const rawUrl = String(body.url || "").slice(0, 1600);
+        const urlValue = /^https:\/\//i.test(rawUrl) ? rawUrl : "";
+        const key = String(body.key || "").slice(0, 500);
+        const mimeType = String(body.type || "image/png").slice(0, 120);
+        if (!urlValue || !mimeType.startsWith("image/")) return json({ error: "invalid_sticker", message: "Envie uma imagem válida para criar o sticker." }, 400);
+        const id = crypto.randomUUID();
+        const stamp = nowIso();
+        await env.DB.prepare(`
+          INSERT INTO server_stickers (id, server_id, name, url, key, mime_type, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(id, serverId, name, urlValue, key || null, mimeType, userId, stamp).run();
+        return json({ ok: true, sticker: { id, serverId, name, url: urlValue, key, type: mimeType, createdBy: userId, createdAt: stamp } }, 201);
+      }
+
+      if (parts[4] && method === "DELETE") {
+        if (!manager) return json({ error: "forbidden", message: "Apenas Admin pode remover stickers do servidor." }, 403);
+        const sticker = await env.DB.prepare(`SELECT * FROM server_stickers WHERE id = ? AND server_id = ? LIMIT 1`).bind(parts[4], serverId).first();
+        if (!sticker) return json({ error: "sticker_not_found", message: "Sticker não encontrado." }, 404);
+        await env.DB.prepare(`DELETE FROM server_stickers WHERE id = ? AND server_id = ?`).bind(parts[4], serverId).run();
+        if (env.ATTACHMENTS && sticker.key) {
+          try { await env.ATTACHMENTS.delete(String(sticker.key)); } catch {}
+        }
+        return json({ ok: true, removed: true, id: parts[4] });
+      }
+    }
 
     if (method === "PATCH" && parts.length === 3) {
       if (!manager) return json({ error: "forbidden", message: "Sem permissão para editar o servidor." }, 403);
