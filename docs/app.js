@@ -2583,7 +2583,7 @@
     const session=serverVoiceSession;if(!session)return true;
     const from=String(event.fromUserId||'');if(!from||from===String(state.currentAccountId))return true;
     if(String(signal.serverId)!==String(session.remoteServerId)||String(signal.channelId)!==String(session.remoteChannelId))return true;
-    if(kind==='server-voice-lumen-state'){session.remoteLumen=signal.active?{active:true,mode:String(signal.mode||''),provider:String(signal.provider||''),name:String(signal.name||'Música'),url:String(signal.url||''),embedUrl:safeLumenEmbedUrl(signal.embedUrl||'')}:null;renderServerVoiceModal();return true;}
+    if(kind==='server-voice-lumen-state'){session.remoteLumen=signal.active?{active:true,hostId:from,mode:String(signal.mode||''),provider:String(signal.provider||''),name:String(signal.name||'Música'),url:String(signal.url||''),embedUrl:safeLumenEmbedUrl(signal.embedUrl||'')}:null;renderServerVoiceModal();return true;}
     if(kind==='server-voice-join'){
       session.participantIds.add(from);renderServerChannels();renderServerVoiceModal();
       directCallSignal(from,{...serverVoiceSignalBase(session,'server-voice-ack')});
@@ -2615,7 +2615,7 @@
       else peer.pendingIce.push(signal.candidate);
       return true;
     }
-    if(kind==='server-voice-leave'){closeServerVoicePeer(from);return true;}
+    if(kind==='server-voice-leave'){if(session.remoteLumen?.hostId===from)session.remoteLumen=null;closeServerVoicePeer(from);return true;}
     return true;
   }
   async function joinServerVoiceChannel(serverId,channelId){
