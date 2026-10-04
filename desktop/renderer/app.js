@@ -2047,6 +2047,7 @@
     return ensureServerChannels(s);
   }
   function getChannel(serverId,id){ return getServer(serverId)?.channels.find(c=>c.id===id); }
+  function serverHasLumen(server){const s=typeof server==='string'?getServer(server):server;return !!s&&Array.isArray(s.features)&&s.features.includes('lumen-dj');}
   let renderFrame = null;
   function requestRenderShell(){
     if(renderFrame) return;
@@ -4057,7 +4058,8 @@
     const server=getServer(view.serverId);
     if(server&&!server._membersLoading&&(!server._membersFetchedAt||Date.now()-server._membersFetchedAt>3500))void refreshServerMembers(server.id,{quiet:true});
     const members=Array.isArray(server?.members)?server.members.filter(Boolean):[];
-    for(const member of members)hydrateRemoteUser(member);
+    if(serverHasLumen(server)&&!members.some(m=>m?.id==='user-lumen'))members.push({...DEMO_LUMEN,role:'DJ',serverRole:'DJ',systemBot:true});
+    for(const member of members)if(member?.id!=='user-lumen')hydrateRemoteUser(member);
     const onlineCount=members.filter(member=>resolvedPresence(member.id)!=='offline').length;
     const head='<div class="member-panel-head"><strong>MEMBROS • '+members.length+'</strong><span class="presence-legend">'+onlineCount+' online</span></div>';
     const rows=members.map(member=>{
@@ -4584,7 +4586,7 @@
     if(tab==='invites')return `<div class="settings-section"><div class="settings-title-row"><div><h3>Convites</h3><p class="muted">Compartilhe códigos para outras pessoas entrarem.</p></div>${manager?'<button class="btn btn-primary" id="createServerInviteV83">Criar convite</button>':''}</div><div id="serverSettingsInvites"><span class="muted">Carregando convites...</span></div></div>`;
     if(tab==='access')return `<div class="settings-section"><h3>Acesso</h3><div class="settings-feature-card"><strong>Entrada por convite</strong><p>O Azurecord usa convites Cloud. Permissões por canal e regras avançadas entram junto da camada completa de cargos.</p></div></div>`;
     if(tab==='moderation')return `<div class="settings-section"><h3>Moderação</h3><div class="settings-feature-card"><strong>Bloqueio e controle de usuários já estão ativos</strong><p>Ferramentas específicas do servidor, como timeout, AutoMod e banimento, estão preparadas como próxima expansão.</p></div></div>`;
-    if(tab==='integrations')return `<div class="settings-section"><h3>Integrações</h3><div class="settings-feature-card"><strong>Lola e AzurePoints</strong><p>Apps nativos do Azurecord já usam o backend Cloud. Integrações de terceiros entram depois.</p></div></div>`;
+    if(tab==='integrations')return `<div class="settings-section"><h3>Integrações</h3><div class="settings-feature-card lumen-integration-card"><div class="settings-user-line"><div class="mini-avatar avatar-img" style="background-image:url('${safeUrl(DEMO_LUMEN.avatar)}')"></div><div><strong>Lumen DJ</strong><span>@lumen • mascote musical</span></div></div><p>Adicione a Lumen ao servidor para tocar áudios enviados no Azurecord e abrir players oficiais de música no canal de voz.</p><div class="settings-actions"><button class="btn ${serverHasLumen(s)?'btn-danger':'btn-primary'}" id="toggleLumenServer" ${manager?'':'disabled'}>${serverHasLumen(s)?'Remover Lumen':'Adicionar Lumen'}</button></div></div></div>`;
     if(tab==='audit')return `<div class="settings-section"><h3>Registro de auditoria</h3><div class="settings-feature-card"><strong>Em preparação</strong><p>O Worker ainda não grava um log administrativo completo. A interface já reserva esse espaço.</p></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Excluir servidor</h3><p>Essa ação apaga o servidor Cloud e não pode ser desfeita.</p><label>Digite o nome do servidor<input id="deleteServerPhrase" placeholder="${esc(s.name)}"></label><div class="settings-actions"><button class="btn btn-danger" id="deleteServerV83" ${s.owner===state.currentAccountId?'':'disabled'}>Excluir servidor</button></div></div>`;
   }
@@ -4613,6 +4615,7 @@
     if(tab==='channels'){ $('serverAddText')?.addEventListener('click',()=>{closeModal();openCreateChannel('text');});$('serverAddVoice')?.addEventListener('click',()=>{closeModal();openCreateChannel('voice');});$$('[data-settings-delete-channel]').forEach(b=>b.onclick=async()=>{const id=b.dataset.settingsDeleteChannel;const c=getChannel(s.id,id);if(!c)return;if(c.type==='text'){await channelContextAction('delete',id);}else{if(!confirm(`Excluir o canal de voz ${c.name}?`))return;s.channels=s.channels.filter(x=>x.id!==id);save();persistServersNow();renderShell();if(socialCloudReady()&&s.backendId&&c.backendId){try{await cloudRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});}catch(err){showToast(err.message||'Falha ao excluir canal.');}}}setTimeout(()=>openServerSettings('channels'),80);});}
     if(tab==='members'||tab==='roles')loadServerSettingsMembers(s,tab==='roles');
     if(tab==='invites'){loadServerSettingsInvites(s);$('createServerInviteV83')?.addEventListener('click',async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`,{method:'POST',body:'{}'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.create'});loadServerSettingsInvites(s);showToast('Convite criado.');}catch(err){showToast(err.message||'Falha ao criar convite.');}});}
+    if(tab==='integrations'){$('toggleLumenServer')?.addEventListener('click',async()=>{if(!manager)return;const features=new Set(Array.isArray(s.features)?s.features:[]);const adding=!features.has('lumen-dj');if(adding)features.add('lumen-dj');else features.delete('lumen-dj');try{const patch={features:[...features]};if(socialCloudReady()){const data=await socialRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data?.server||patch);}else Object.assign(s,patch);save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'lumen.toggle'});renderMemberPanel();openServerSettings('integrations');showToast(adding?'Lumen entrou no servidor. ♫':'Lumen saiu do servidor.');}catch(err){showToast(err.message||'Não foi possível atualizar a Lumen.');}});}
     $('deleteServerV83')?.addEventListener('click',async()=>{if($('deleteServerPhrase').value.trim()!==s.name){showToast('Digite o nome exato do servidor.');return;}try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'DELETE'});sendCloudRealtime({type:'account.commit',reason:'server.delete'});state.servers=state.servers.filter(x=>x.id!==s.id);save();persistServersNow();closeModal();openHome('friends');showToast('Servidor excluído.');}catch(err){showToast(err.message||'Falha ao excluir servidor.');}});
   }
   async function loadServerSettingsMembers(s,rolesMode=false){
