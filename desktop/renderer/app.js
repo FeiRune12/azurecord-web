@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.4');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.5');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -67,7 +67,14 @@
 
   const LOLA_AVATAR_URL = 'https://gunvolt.com/en/X/system/img/system02_03Pic02.jpg';
   const LOLA_BANNER_URL = 'https://gunvolt.com/GRC/en/special/img/grc_wallpaper_00_1920x1080en.jpg';
-  const LUMEN_AVATAR_URL = new URL('./assets/lumen-avatar.jpg', document.currentScript?.src || window.location.href).href;
+  const LUMEN_AVATAR_URL = (() => {
+    try{
+      const scriptSrc=document.currentScript?.src||[...document.scripts].map(s=>s.src).find(src=>/\/app\.js(?:\?|$)/i.test(src))||window.location.href;
+      const url=new URL('./assets/lumen-avatar.jpg',scriptSrc);
+      url.searchParams.set('v','6.0.5');
+      return url.href;
+    }catch{return './assets/lumen-avatar.jpg?v=6.0.5';}
+  })();
 
   const DEMO_LOLA = {
     id:'user-lola', username:'Lola', email:'lola@azurecord.local', handle:'@lola',
