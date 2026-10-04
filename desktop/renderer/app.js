@@ -210,6 +210,7 @@
       response=await fetch(`${CLOUD_API_URL}${path}`, {...fetchOptions, headers, signal:externalSignal||controller?.signal});
     }catch(err){
       const timeout=err?.name==='AbortError';
+      cloudOnline=false;
       if(!timeout&&window.azurecordDesktop?.cloudFetch){
         try{return await desktopCloudRequest(`${CLOUD_API_URL}${path}`,{...fetchOptions,headers});}
         catch(nativeErr){console.warn('[Azurecord Cloud] fallback desktop:',nativeErr?.message||nativeErr);}
@@ -3068,7 +3069,14 @@
   async function uploadAttachmentInChunks(item){
     const file=item?._file;
     if(!file)return {id:item.id,name:item.name,size:item.size,type:item.type,url:item.url||'',key:item.key||'',visual:item.visual||null};
-    if(!socialCloudReady())throw new Error('Entre na sua conta Cloud para enviar arquivos.');
+    if(!socialCloudReady()){
+      if(typeof navigator!=='undefined'&&navigator.onLine===false)throw Object.assign(new Error('Sem conexão com a internet.'),{code:'offline'});
+      const recovered=await ensureCloudSessionReady();
+      if(!recovered){
+        scheduleCloudSessionRecovery();
+        throw Object.assign(new Error('Sincronizando sua sessão Cloud.'),{code:'cloud_reconnecting'});
+      }
+    }
 
     const init=await cloudRequest('/api/uploads/init',{method:'POST',body:JSON.stringify({
       name:file.name,type:file.type||(/\.gif$/i.test(file.name)?'image/gif':'application/octet-stream'),size:file.size
@@ -3610,7 +3618,13 @@
         }
       }
       const reason=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha de conexão');
-      const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout';
+      const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout'||err.code==='cloud_reconnecting';
+      if(retryable&&typeof navigator!=='undefined'&&navigator.onLine!==false){
+        m.pending=true;m.failed=false;m.retryable=true;delete m.lastError;saveNow();
+        if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+        scheduleCloudSessionRecovery();
+        return false;
+      }
       fail(reason,{retryable});
       showToast(`DM não enviada: ${reason}`);
       return false;
@@ -3675,7 +3689,13 @@
       wakeCloudRealtimeSync();
       return true;
     }catch(err){
-      const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout';
+      const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout'||err.code==='cloud_reconnecting';
+      if(retryable&&typeof navigator!=='undefined'&&navigator.onLine!==false){
+        m.pending=true;m.failed=false;m.retryable=true;delete m.lastError;saveNow();
+        if(inView())renderMessages();
+        scheduleCloudSessionRecovery();
+        return false;
+      }
       return fail(err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha no envio'),{retryable});
     }finally{m.sending=false;}
     })();
