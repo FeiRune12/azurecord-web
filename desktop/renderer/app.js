@@ -3066,6 +3066,48 @@
     if(m?.file) return [m.file];
     return [];
   }
+  function attachmentDisplayName(value='Arquivo'){
+    let name=String(value||'Arquivo').trim()||'Arquivo';
+    try{if(/%[0-9a-f]{2}/i.test(name))name=decodeURIComponent(name);}catch{}
+    const extensions=['gif','mp4','webm','mov','png','jpg','jpeg','webp','avif'];
+    for(const ext of extensions){
+      const suffix='.'+ext;
+      const doubled=(suffix+suffix).toLowerCase();
+      while(name.toLowerCase().endsWith(doubled))name=name.slice(0,-suffix.length);
+    }
+    return name;
+  }
+  function inferAttachmentType(file={}){
+    const name=attachmentDisplayName(file&&file.name||'');
+    let type=String(file&&file.type||'').trim().toLowerCase();
+    if(type&&type!=='application/octet-stream'&&type!=='binary/octet-stream')return type;
+    if(/\.gif$/i.test(name))return 'image/gif';
+    if(/\.png$/i.test(name))return 'image/png';
+    if(/\.jpe?g$/i.test(name))return 'image/jpeg';
+    if(/\.webp$/i.test(name))return 'image/webp';
+    if(/\.avif$/i.test(name))return 'image/avif';
+    if(/\.mp4$/i.test(name))return 'video/mp4';
+    if(/\.webm$/i.test(name))return 'video/webm';
+    if(/\.mov$/i.test(name))return 'video/quicktime';
+    if(/\.mp3$/i.test(name))return 'audio/mpeg';
+    if(/\.wav$/i.test(name))return 'audio/wav';
+    return type||'application/octet-stream';
+  }
+  function attachmentSource(file={}){
+    const base=String(CLOUD_API_URL||'').replace(/\/$/,'');
+    const key=String(file&&file.key||'').trim();
+    if(key&&base)return safeUrl(base+'/files/'+encodeURIComponent(key));
+    const raw=String(file&&file.url||file&&file.dataUrl||'').trim();
+    if(!raw)return '';
+    if(raw.startsWith('/files/')&&base)return safeUrl(base+raw);
+    try{
+      const parsed=new URL(raw,location.href);
+      if(/(^|\.)vercel\.app$/i.test(location.hostname)&&parsed.origin===location.origin&&parsed.pathname.startsWith('/files/')&&base){
+        return safeUrl(base+parsed.pathname+parsed.search);
+      }
+    }catch{}
+    return safeUrl(raw);
+  }
   function formatFileSize(bytes){
     const n=Number(bytes)||0;
     if(n<1024)return `${n} B`;
@@ -3424,6 +3466,7 @@
     const files=[...(e.target?.files||[])];
     if(!files.length)return;
     pendingAttachmentReads+=files.length;
+    renderAttachmentUploadStatus();
     for(const file of files){
       try{
         const image=String(file.type||'').startsWith('image/')||/\.gif$/i.test(String(file.name||''));
@@ -3441,6 +3484,7 @@
         showToast(`Não foi possível preparar ${file.name}.`);
       }finally{
         pendingAttachmentReads=Math.max(0,pendingAttachmentReads-1);
+        renderAttachmentUploadStatus();
       }
     }
     e.target.value='';
@@ -3789,35 +3833,61 @@
   }
   function renderAttachmentCards(files=[]){
     return files.map(f=>{
-      const type=String(f.type||'');
-      const name=String(f.name||'Arquivo');
-      const source=safeUrl(f.url||f.dataUrl||'');
-      const gif=(type==='image/gif'||/\.gif$/i.test(name))&&source;
-      const image=(type.startsWith('image/')||gif)&&source;
-      const video=(type.startsWith('video/')||/\.(mp4|webm|mov)$/i.test(name))&&source;
+      const type=inferAttachmentType(f);
+      const name=attachmentDisplayName(f&&f.name||'Arquivo');
+      const source=attachmentSource(f);
+      const gif=type==='image/gif'||/\.gif$/i.test(name);
+      const image=type.startsWith('image/')||gif;
+      const video=type.startsWith('video/')||/\.(mp4|webm|mov)$/i.test(name);
       const sticker=String(f.kind||'')==='sticker'||/^sticker-/i.test(name);
-      if(image){
+      if(image&&source){
         if(sticker)return `<figure class="message-attachment sticker-attachment"><img src="${source}" alt="${esc(name||'Sticker')}" loading="lazy" decoding="async"></figure>`;
         return `<figure class="message-attachment image-attachment${gif?' gif-attachment':''}"><a href="${source}" target="_blank" rel="noopener"><img src="${source}" alt="${esc(name||'Imagem')}" loading="lazy" decoding="async"></a><figcaption><span>${esc(name||'Imagem')}</span><small>${gif?'GIF • ':''}${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
-      if(video){
+      if(video&&source){
         const videoType=type.startsWith('video/')?type:(/\.webm$/i.test(name)?'video/webm':(/\.mov$/i.test(name)?'video/quicktime':'video/mp4'));
         return `<figure class="message-attachment video-attachment"><div class="inline-video-stage" data-inline-video-stage><video preload="none" playsinline data-inline-video data-src="${source}" data-video-type="${esc(videoType)}"></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button><div class="inline-video-error" hidden><strong>Não foi possível carregar este vídeo.</strong><button type="button" class="inline-video-retry" data-inline-video-retry>Tentar novamente</button><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
-      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${fileIcon(type)}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
+      const icon=image?'IMG':fileIcon(type);
+      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${icon}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
       return source?`<a class="attachment-link" href="${source}" target="_blank" rel="noopener">${card}</a>`:card;
     }).join('');
   }
+  function renderAttachmentUploadStatus(){
+    const box=$('attachmentUploadStatus');if(!box)return;
+    const active=pendingAttachments.filter(item=>item&&item.uploading);
+    if(!active.length&&pendingAttachmentReads<=0){
+      box.hidden=true;
+      const bar=$('attachmentUploadBar');if(bar)bar.style.width='0%';
+      return;
+    }
+    box.hidden=false;
+    const preparing=!active.length&&pendingAttachmentReads>0;
+    const title=$('attachmentUploadTitle'),text=$('attachmentUploadText'),bar=$('attachmentUploadBar');
+    if(preparing){
+      if(title)title.textContent=pendingAttachmentReads===1?'Preparando anexo...':`Preparando ${pendingAttachmentReads} anexos...`;
+      if(text)text.textContent='Lendo os arquivos antes do envio';
+      if(bar)bar.style.width='18%';
+      return;
+    }
+    const progress=Math.max(0,Math.min(100,Math.round(active.reduce((sum,item)=>sum+Number(item.progress||0),0)/active.length)));
+    if(title)title.textContent=active.length===1?`Enviando ${attachmentDisplayName(active[0].name)}`:`Enviando ${active.length} anexos`;
+    if(text)text.textContent=`${progress}% • Azurecord Cloud`;
+    if(bar)bar.style.width=`${progress}%`;
+  }
   function renderAttachmentPreview(){
+    renderAttachmentUploadStatus();
     const box=$('attachmentPreview'); if(!box)return;
     if(!pendingAttachments.length){box.hidden=true;box.innerHTML='';return;}
     box.hidden=false;
     box.innerHTML=`<div class="attachment-preview-head"><span>Anexos (${pendingAttachments.length})</span><button type="button" class="attachment-clear" id="clearPendingAttachments">Limpar</button></div><div class="attachment-preview-grid">${pendingAttachments.map((f,i)=>{
-      const preview=safeUrl(f._previewUrl||f.url||f.dataUrl||'');
-      const image=(String(f.type||'').startsWith('image/')||/\.gif$/i.test(String(f.name||'')))&&preview;
-      const visual=f.visual?.width&&f.visual?.height?`${f.visual.width}×${f.visual.height}`:'';
+      const preview=safeUrl(f._previewUrl||attachmentSource(f)||'');
+      const type=inferAttachmentType(f);
+      const name=attachmentDisplayName(f.name);
+      const image=type.startsWith('image/')&&preview;
+      const visual=f.visual&&f.visual.width&&f.visual.height?`${f.visual.width}×${f.visual.height}`:'';
       const progress=f.uploading?` • enviando ${Number(f.progress||0)}%`:'';
-      return `<div class="pending-attachment">${image?`<img src="${preview}" alt="${esc(f.name)}">`:`<div class="pending-file-icon">${fileIcon(f.type)}</div>`}<div class="pending-attachment-name" title="${esc(f.name)}">${esc(f.name)}</div><div class="pending-attachment-meta">${visual?`${visual} • `:''}${formatFileSize(f.size)}${progress}</div><button type="button" class="pending-remove" data-remove-attachment="${i}" aria-label="Remover ${esc(f.name)}" ${f.uploading?'disabled':''}>×</button></div>`;
+      return `<div class="pending-attachment">${image?`<img src="${preview}" alt="${esc(name)}">`:`<div class="pending-file-icon">${fileIcon(type)}</div>`}<div class="pending-attachment-name" title="${esc(name)}">${esc(name)}</div><div class="pending-attachment-meta">${visual?`${visual} • `:''}${formatFileSize(f.size)}${progress}</div><button type="button" class="pending-remove" data-remove-attachment="${i}" aria-label="Remover ${esc(name)}" ${f.uploading?'disabled':''}>×</button></div>`;
     }).join('')}</div>`;
     $('clearPendingAttachments').onclick=()=>{pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();};
   }
@@ -3910,23 +3980,13 @@
     if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`;
     return s;
   }
-        if(retryable&&typeof navigator!=='undefined'&&navigator.onLine!==false){
-  m.pending=true;
-  m.failed=true;
-  m.retryable=true;
-  m.lastError=reason;
-
-  saveNow();
-
-  if(view.mode==='dm'&&view.dmUserId===id){
-    renderMessages();
-  }
-
-  scheduleCloudSessionRecovery();
-
-  showToast('DM demorou demais para enviar. Tentaremos novamente.');
-  return false;
-}
+  async function sendDmToBackend(m,id){
+    if(!m || m.sending || m.serverId || !id)return !!m?.serverId;
+    const fail=(reason,{retryable=true}={})=>{
+      m.pending=true;m.failed=true;m.retryable=retryable;m.lastError=reason||'Falha de conexão';saveNow();
+      if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
+      return false;
+    };
     if(typeof navigator!=='undefined'&&navigator.onLine===false){
       const failed=fail('Sem conexão com a internet.');
       showToast('DM não enviada: sem conexão com a internet.');
@@ -3952,7 +4012,7 @@
       const response=await cloudPostMessageWithRetry(
         `/api/dms/${encodeURIComponent(id)}/messages`,
         payload,
-        {timeoutMs:7000,retries:1}
+        {timeoutMs:15000,retries:1}
       );
       if(!response?.message?.id)throw new Error('O servidor não confirmou a mensagem.');
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;m.retryable=false;delete m.lastError;delete m._lolaSessionRetried;saveNow();
