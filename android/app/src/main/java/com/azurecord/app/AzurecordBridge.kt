@@ -45,6 +45,21 @@ class AzurecordBridge(private val activity: MainActivity) {
     }
 
     @JavascriptInterface
+    fun getSecureSession(): String? = activity.getSecureCloudSession()
+
+    @JavascriptInterface
+    fun setSecureSession(token: String): Boolean = activity.setSecureCloudSession(token)
+
+    @JavascriptInterface
+    fun deleteSecureSession(): Boolean = activity.deleteSecureCloudSession()
+
+    @JavascriptInterface
+    fun getReadyUpdateVersion(): String = activity.getReadyUpdateVersion()
+
+    @JavascriptInterface
+    fun installReadyUpdate(): Boolean = activity.installReadyUpdateByChoice()
+
+    @JavascriptInterface
     fun getAppVersion(): String = BuildConfig.VERSION_NAME
 
     @JavascriptInterface
