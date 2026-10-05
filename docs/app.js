@@ -1846,6 +1846,8 @@
     setUiButton('emojiBtn','smile');
     setUiButton('appsBtn','grid');
     const send=document.querySelector('.send-btn');if(send)send.innerHTML=uiIcon('message',18);
+    setUiButton('callAcceptBtn','check');
+    setUiButton('callDeclineBtn','phoneOff');
     setUiButton('callMicBtn','mic');
     setUiButton('callCameraBtn','video');
     setUiButton('callShareBtn','screen');
@@ -4948,7 +4950,7 @@
     const width=250;menu.style.left=Math.min(window.innerWidth-width-10,Math.max(10,rect.right-width))+'px';
     menu.style.top=Math.min(window.innerHeight-menu.offsetHeight-10,rect.bottom+6)+'px';
   }
-  function serverMenuCheckbox(checked){return '<span class="server-menu-check">'+(checked?'✓':'')+'</span>';}
+  function serverMenuCheckbox(checked){return '<span class="server-menu-check">'+(checked?uiIcon('check',14):'')+'</span>';}
   function openServerNotificationSettings(s){
     closeServerQuickMenu();const prefs=serverPreferenceState(s);
     showModal('Config. de notificação','<p class="muted">Escolha quando o Azurecord deve chamar sua atenção neste servidor.</p><div class="server-option-list">'+
@@ -4989,7 +4991,7 @@
     menu.innerHTML=
       '<button data-server-action="read">Marcar como lida</button><div class="server-menu-sep"></div>'+
       '<button data-server-action="invite">Convidar para o servidor</button><div class="server-menu-sep"></div>'+
-      '<button data-server-action="mute"><span>Silenciar servidor</span><span>'+(prefs.muted?'✓':'›')+'</span></button>'+
+      '<button data-server-action="mute"><span>Silenciar servidor</span><span>'+(prefs.muted?uiIcon('check',14):'›')+'</span></button>'+
       '<button data-server-action="notify"><span>Config. de notificação</span><small>'+(prefs.notificationMode==='all'?'Todas as mensagens':prefs.notificationMode==='none'?'Nada':'Apenas @menções')+'</small><span>›</span></button>'+
       '<button data-server-action="hide-muted"><span>Ocultar canais silenciados</span>'+serverMenuCheckbox(!!prefs.hideMuted)+'</button>'+
       '<button data-server-action="show-all"><span>Mostrar todos os canais</span>'+serverMenuCheckbox(!!prefs.showAll)+'</button><div class="server-menu-sep"></div>'+
