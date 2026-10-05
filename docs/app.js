@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.5');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.8');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -71,9 +71,9 @@
     try{
       const scriptSrc=document.currentScript?.src||[...document.scripts].map(s=>s.src).find(src=>/\/app\.js(?:\?|$)/i.test(src))||window.location.href;
       const url=new URL('./assets/lumen-avatar.jpg',scriptSrc);
-      url.searchParams.set('v','6.0.5');
+      url.searchParams.set('v','6.0.8');
       return url.href;
-    }catch{return './assets/lumen-avatar.jpg?v=6.0.5';}
+    }catch{return './assets/lumen-avatar.jpg?v=6.0.8';}
   })();
 
   const DEMO_LOLA = {
@@ -81,7 +81,7 @@
     bio:'Designer, criativa e sempre pronta para conversar sobre arte, ideias e projetos.',
     accent:'#35b6ff', status:'online', avatar:LOLA_AVATAR_URL, banner:LOLA_BANNER_URL,
     personality:'Criativa, calorosa, curiosa e detalhista. Adora design, jogos e transformar ideias em coisas visuais.',
-    memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
+    memberSince:'27 de set. de 2026', role:'Membro', badge:'Assistente'
   };
 
   const DEMO_LUMEN = {
@@ -89,7 +89,7 @@
     bio:'A Muse de Azure Striker Gunvolt e DJ oficial do Azurecord.',
     accent:'#8b5cff', status:'online', avatar:LUMEN_AVATAR_URL, banner:'',
     personality:'Brilhante, energética e musical. Representa o lado mais elétrico e performático do Azurecord.',
-    memberSince:'4 de out. de 2026', role:'DJ', badge:'♫'
+    memberSince:'4 de out. de 2026', role:'DJ', badge:'DJ'
   };
   const SYSTEM_MASCOT_IDS = new Set(['user-lola','user-lumen']);
   function isSystemMascot(id){return SYSTEM_MASCOT_IDS.has(String(id||''));}
@@ -114,7 +114,37 @@
       gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
       warning:'<path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17h.01"/>',
       back:'<path d="m14 6-6 6 6 6"/>',
-      plus:'<path d="M12 5v14M5 12h14"/>'
+      plus:'<path d="M12 5v14M5 12h14"/>',
+      mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
+      link:'<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/>',
+      tag:'<path d="M20 13 13 20l-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.3"/>',
+      users:'<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M14 15a4.5 4.5 0 0 1 6.5 4"/>',
+      search:'<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/>',
+      volume:'<path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>',
+      mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>',
+      micOff:'<path d="m3 3 18 18"/><path d="M9 5v6a3 3 0 0 0 4.8 2.4M15 9V6a3 3 0 0 0-5.2-2"/><path d="M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.7 3"/>',
+      video:'<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>',
+      videoOff:'<path d="m3 3 18 18"/><path d="M10 6H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h11V12M16 10l5-3v10l-2.5-1.5"/>',
+      screen:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+      phoneOff:'<path d="m3 3 18 18"/><path d="M6.5 4 10 8l-2 3c.8 1.5 1.5 2.5 2.6 3.5M13.5 17c.2.1.3.2.5.3l3-2 4 3.5c-1.2 2-3 3-5 2.5-1.2-.3-2.4-.8-3.5-1.4"/>',
+      menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+      trash:'<path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/>',
+      code:'<path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/>',
+      grid:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+      smile:'<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9h.01M15 9h.01"/>',
+      sticker:'<path d="M5 3h14v10l-6 8H5z"/><path d="M13 21v-8h6"/>',
+      star:'<path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.7l6.2-.9z"/>',
+      poll:'<path d="M5 19V9M12 19V5M19 19v-7"/>',
+      puzzle:'<path d="M4 8h5V4a2 2 0 1 1 4 0v4h7v5h-4a2 2 0 1 0 0 4h4v3H4v-5h3a2 2 0 1 0 0-4H4z"/>',
+      audit:'<path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 11h6M9 15h6"/>',
+      wallet:'<path d="M4 6h15v13H4z"/><path d="M4 9h15M15 13h4v4h-4a2 2 0 0 1 0-4z"/>',
+      shop:'<path d="M4 9h16l-1-5H5z"/><path d="M6 9v11h12V9M9 20v-6h6v6"/>',
+      list:'<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+      inbox:'<path d="M4 4h16v16H4z"/><path d="M4 14h5l2 3h2l2-3h5"/>',
+      music:'<path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
+      fileAudio:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.5"/><circle cx="13" cy="16" r="1.5"/>',
+      muteBell:'<path d="m3 3 18 18"/><path d="M6 9a6 6 0 0 1 9.5-4.9M18 10v4l2 3H9M10 21h4"/>',
+      download:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>'
     };
     const body=paths[name]||paths.user;
     return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -1454,7 +1484,7 @@
       merged.avatar=LUMEN_AVATAR_URL;
       merged.banner=stored?.banner||demo?.banner||'';
       merged.role='DJ';
-      merged.badge='♫';
+      merged.badge='DJ';
       return merged;
     }
     if (demo && stored) return {...demo, ...stored, avatar: stored.avatar || demo.avatar, banner: stored.banner || demo.banner};
