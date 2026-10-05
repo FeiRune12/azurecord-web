@@ -2004,6 +2004,22 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 }
 .inline-video-error button:hover{background:#26364a}
 
+/* Azurecord 5.0.8: mídia e upload de anexos normalizados */
+.attachment-upload-status{margin:0 12px 8px;padding:10px 12px;display:grid;gap:8px;border:1px solid rgba(0,102,255,.28);border-radius:12px;background:linear-gradient(180deg,rgba(0,102,255,.08),rgba(0,102,255,.035))}
+.attachment-upload-status[hidden]{display:none!important}
+.attachment-upload-copy{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.attachment-upload-copy strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--text)}
+.attachment-upload-copy span{flex:0 0 auto;font-size:9px;color:var(--muted)}
+.attachment-upload-track{height:5px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.08)}
+.attachment-upload-track span{display:block;width:0;height:100%;border-radius:inherit;background:var(--accent);transition:width .16s ease}
+.message-attachment.video-attachment{width:min(560px,100%)!important;max-width:min(560px,100%)!important;min-width:min(280px,100%)!important;overflow:hidden!important;border:1px solid var(--line)!important;border-radius:13px!important;background:var(--panel-2)!important}
+.message-attachment.video-attachment .inline-video-stage{width:100%!important;min-height:0!important;height:auto!important;aspect-ratio:16/9!important;max-height:none!important;background:#05070a!important}
+.message-attachment.video-attachment .inline-video-stage video{width:100%!important;height:100%!important;object-fit:contain!important;background:#05070a!important}
+.message-attachment.video-attachment figcaption{min-height:34px;padding:8px 10px!important}
+.message-attachment.gif-attachment{width:min(460px,100%);max-width:min(460px,100%)!important}
+.message-attachment.gif-attachment img{display:block;width:100%!important;height:auto!important;max-height:420px!important;object-fit:contain!important}
+@media(max-width:700px){.attachment-upload-status{margin:4px 8px 8px}.message-attachment.video-attachment,.message-attachment.gif-attachment{width:100%!important;max-width:100%!important;min-width:0!important}.message-attachment.video-attachment .inline-video-stage{min-height:0!important;aspect-ratio:16/9!important}}
+
 /* Azurecord 6.0.1: Lumen e KLIPY */
 .lumen-mascot-row{
   border-color:rgba(139,92,255,.28)!important;
@@ -2243,6 +2259,8 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
     height:112px;
   }
 }
+
+
 /* Azurecord 6.0.1: Lumen DJ */
 .lumen-integration-card{border-color:rgba(139,92,255,.3)!important;background:linear-gradient(135deg,rgba(139,92,255,.09),rgba(49,216,255,.04))!important}
 .server-voice-tile.is-lumen{border-color:rgba(139,92,255,.52)!important;box-shadow:0 0 0 2px rgba(139,92,255,.12),0 16px 42px rgba(42,20,94,.26)!important}
