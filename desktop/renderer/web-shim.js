@@ -4,7 +4,7 @@
   window.azurecordDesktop = {
     platform: null,
     version: 'web',
-    appVersion: '6.0.2',
+    appVersion: '6.0.8',
     async getBackendInfo() {
       return { available: false, baseUrl: null, host: null, port: 0 };
     },
@@ -18,13 +18,31 @@
       } catch { return false; }
     },
     async getSecureSession() {
+      try {
+        const nativeValue = window.AzurecordNative?.getSecureSession?.();
+        if (nativeValue) return String(nativeValue);
+      } catch {}
       try { return localStorage.getItem(SESSION_KEY); } catch { return null; }
     },
     async setSecureSession(token) {
-      try { localStorage.setItem(SESSION_KEY, String(token || '')); return true; } catch { return false; }
+      const value = String(token || '');
+      try {
+        if (window.AzurecordNative?.setSecureSession?.(value)) {
+          try { localStorage.setItem(SESSION_KEY, value); } catch {}
+          return true;
+        }
+      } catch {}
+      try { localStorage.setItem(SESSION_KEY, value); return true; } catch { return false; }
     },
     async deleteSecureSession() {
+      try { window.AzurecordNative?.deleteSecureSession?.(); } catch {}
       try { localStorage.removeItem(SESSION_KEY); return true; } catch { return false; }
+    },
+    async getReadyUpdateVersion() {
+      try { return String(window.AzurecordNative?.getReadyUpdateVersion?.() || ''); } catch { return ''; }
+    },
+    async installReadyUpdate() {
+      try { return !!window.AzurecordNative?.installReadyUpdate?.(); } catch { return false; }
     }
   };
 })();
