@@ -124,6 +124,7 @@
       arrowUp:'<path d="m7 10 5-5 5 5"/><path d="M12 5v14"/>',
       arrowDown:'<path d="m7 14 5 5 5-5"/><path d="M12 5v14"/>',
       back:'<path d="m14 6-6 6 6 6"/>',
+      logout:'<path d="M10 5H5v14h5"/><path d="M13 8l4 4-4 4"/><path d="M17 12H9"/>',
       plus:'<path d="M12 5v14M5 12h14"/>',
       mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
       link:'<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/>',
@@ -1839,6 +1840,7 @@
     const dmTitle=$('dmToggle')?.querySelector('span:first-child');
     if(dmTitle)dmTitle.innerHTML=uiIcon('mail',15)+' <span>MENSAGENS DIRETAS</span>';
     setUiButton('passwordToggle','eye');
+    setUiButton('logoutBtn','logout');
     setUiButton('serverInviteBtn','link','Convidar');
     setUiButton('roleManageBtn','tag','Cargos');
     setUiButton('globalSearchBtn','search','Buscar');
