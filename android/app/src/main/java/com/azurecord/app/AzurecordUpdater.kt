@@ -291,7 +291,7 @@ object AzurecordUpdater {
         val notification = Notification.Builder(context, UPDATE_CHANNEL)
             .setSmallIcon(R.drawable.ic_azurecord)
             .setContentTitle("Azurecord " + version + " está pronto")
-            .setContentText("Baixado. A atualização será aplicada quando você sair do app.")
+            .setContentText("Baixado. Abra o Azurecord e escolha Atualizar agora ou Depois.")
             .setContentIntent(pending)
             .setAutoCancel(false)
             .setOnlyAlertOnce(true)
