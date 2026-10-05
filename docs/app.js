@@ -144,7 +144,15 @@
       music:'<path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
       fileAudio:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.5"/><circle cx="13" cy="16" r="1.5"/>',
       muteBell:'<path d="m3 3 18 18"/><path d="M6 9a6 6 0 0 1 9.5-4.9M18 10v4l2 3H9M10 21h4"/>',
-      download:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>'
+      download:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>',
+      pin:'<path d="m9 4 6 6M7 8l5-5 5 5-2 2 4 4-5 5-4-4-2 2-1-7z"/><path d="m7 17-4 4"/>',
+      edit:'<path d="M4 20h4l11-11-4-4L4 16z"/><path d="m13 7 4 4"/>',
+      id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M5.5 16a3 3 0 0 1 5 0M13 10h5M13 14h5"/>',
+      game:'<path d="M7 9h10a5 5 0 0 1 4.5 7.2l-1 2a2 2 0 0 1-3.3.5L15 16H9l-2.2 2.7a2 2 0 0 1-3.3-.5l-1-2A5 5 0 0 1 7 9z"/><path d="M7 12v4M5 14h4M16.5 13h.01M18.5 15h.01"/>',
+      tool:'<path d="M14 6a4 4 0 0 0-5 5L3 17l4 4 6-6a4 4 0 0 0 5-5l-3 3-2-2z"/>',
+      check:'<path d="m5 12 4 4L19 6"/>',
+      reply:'<path d="m9 7-5 5 5 5"/><path d="M4 12h9a6 6 0 0 1 6 6"/>',
+      forward:'<path d="m15 7 5 5-5 5"/><path d="M20 12h-9a6 6 0 0 0-6 6"/>'
     };
     const body=paths[name]||paths.user;
     return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
