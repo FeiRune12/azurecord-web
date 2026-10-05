@@ -21,8 +21,8 @@
     platform: isNativeAndroid ? 'android' : null,
     version: isNativeAndroid ? 'native-android' : 'web',
     appVersion: (() => {
-      try { return isNativeAndroid && typeof native.getAppVersion === 'function' ? native.getAppVersion() : '6.0.8'; }
-      catch { return '6.0.8'; }
+      try { return isNativeAndroid && typeof native.getAppVersion === 'function' ? native.getAppVersion() : '6.0.9'; }
+      catch { return '6.0.9'; }
     })(),
 
     async getBackendInfo() {
