@@ -1371,7 +1371,7 @@ async function listUserControlProfiles(env, userId, kind) {
 }
 
 async function handleSocial(request, env, url, path) {
-  await ensureSchema(env);
+  await ensureSocialSchema(env);
   const authResult = await requireSocialAuth(request, env);
   if (authResult.response) return authResult.response;
   const userId = authResult.auth.user.id;
