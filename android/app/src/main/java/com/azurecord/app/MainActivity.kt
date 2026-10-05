@@ -54,7 +54,6 @@ class MainActivity : Activity() {
     private var pendingWebResources: Array<String> = emptyArray()
     private var pendingCallPermissions: Array<String> = emptyArray()
     private var pendingFileChooser: ValueCallback<Array<Uri>>? = null
-    private var launchUpdatePolls = 0
     private var startupPermissionsRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,11 +70,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Azurecord atualizado para $version.", Toast.LENGTH_LONG).show()
         }
 
-        val installingReadyUpdate = AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
-        if (!installingReadyUpdate) {
-            requestStartupMediaPermissionsOnce()
-            scheduleLaunchUpdateInstall()
-        }
+        requestStartupMediaPermissionsOnce()
 
         AzurecordNativeEvents.sink = { json ->
             runOnUiThread {
@@ -93,22 +88,7 @@ class MainActivity : Activity() {
             if (restored == null) webView.loadUrl(WEB_URL)
         }
 
-        if (intent?.action == AzurecordUpdater.ACTION_INSTALL_READY) {
-            webView.post { AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false) }
-        }
-    }
-
-    private fun scheduleLaunchUpdateInstall() {
-        if (launchUpdatePolls >= 30) return
-        launchUpdatePolls += 1
-        webView.postDelayed({
-            if (isFinishing || isDestroyed || nativeCallActive) {
-                if (!isFinishing && !isDestroyed) scheduleLaunchUpdateInstall()
-                return@postDelayed
-            }
-            val started = AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
-            if (!started) scheduleLaunchUpdateInstall()
-        }, 1000L)
+        // Atualizações baixadas aguardam confirmação explícita do usuário na interface.
     }
 
     private fun requestStartupMediaPermissionsOnce() {
@@ -145,18 +125,16 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.action == AzurecordUpdater.ACTION_INSTALL_READY) {
-            AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
-        } else {
-            scheduleLaunchUpdateInstall()
-        }
+        // Tocar na notificação apenas abre o Azurecord. A instalação só ocorre
+        // depois que o usuário escolhe "Atualizar agora" dentro do app.
     }
 
     override fun onResume() {
         super.onResume()
         if (::webView.isInitialized) webView.onResume()
+        // Se o usuário já confirmou a atualização e precisou liberar a permissão
+        // de instalação, retomamos somente esse fluxo explicitamente iniciado.
         AzurecordUpdater.resumePendingInstall(this)
-        if (!nativeCallActive) scheduleLaunchUpdateInstall()
     }
 
     override fun onPause() {
@@ -368,6 +346,35 @@ class MainActivity : Activity() {
             pendingCallPermissions = missing.distinct().toTypedArray()
             requestPermissions(pendingCallPermissions, REQ_CALL_PERMISSIONS)
         }
+    }
+
+    fun getSecureCloudSession(): String? =
+        getSharedPreferences("azurecord_native_session", Context.MODE_PRIVATE)
+            .getString("cloud_token", null)
+
+    fun setSecureCloudSession(token: String): Boolean {
+        val value = token.trim()
+        if (value.isBlank()) return false
+        return getSharedPreferences("azurecord_native_session", Context.MODE_PRIVATE)
+            .edit()
+            .putString("cloud_token", value)
+            .commit()
+    }
+
+    fun deleteSecureCloudSession(): Boolean =
+        getSharedPreferences("azurecord_native_session", Context.MODE_PRIVATE)
+            .edit()
+            .remove("cloud_token")
+            .commit()
+
+    fun getReadyUpdateVersion(): String =
+        AzurecordUpdater.readyVersion(this).orEmpty()
+
+    fun installReadyUpdateByChoice(): Boolean {
+        runOnUiThread {
+            AzurecordUpdater.installReadyUpdate(this, finishAfterRequest = false)
+        }
+        return true
     }
 
     fun setNativeCallActive(active: Boolean) {
