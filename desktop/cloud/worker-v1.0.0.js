@@ -3130,11 +3130,27 @@ async function handleKlipy(request, env, url, path) {
         params.set("limit", gunvoltMode ? "50" : "24");
         params.set("random", "false");
         if (pos) params.set("pos", pos);
-        const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
-          method: "GET",
-          signal: controller.signal,
-          headers: { "Accept": "application/json" },
-        });
+let response;
+
+response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
+  method: "GET",
+  signal: controller.signal,
+  headers: { "Accept": "application/json" },
+});
+
+const retryable = [429, 502, 503, 504].includes(response.status);
+
+if (retryable) {
+  console.log("A KLIPY falhou temporariamente.");
+
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params.toString()}`, {
+    method: "GET",
+    signal: controller.signal,
+    headers: { "Accept": "application/json" },
+  });
+}
         let data = {};
         try { data = await response.json(); } catch {}
         if (!response.ok) throw Object.assign(new Error("KLIPY_UPSTREAM_ERROR"), { status: response.status, data });
