@@ -264,7 +264,7 @@
     return err?.name==='AbortError'||!status||status===408||status>=500;
   }
 
-  async function cloudPostMessageWithRetry(path,payload,{timeoutMs=15000,retries=1}={}){
+  async function cloudPostMessageWithRetry(path,payload,{timeoutMs:7000,retries:1}={}){
     let lastError=null;
     for(let attempt=0;attempt<=retries;attempt++){
       const controller=new AbortController();
@@ -4032,11 +4032,22 @@
       const reason=err?.name==='AbortError'?'Tempo limite de envio.':(err.message||'Falha de conexão');
       const retryable=retryableCloudMessageError(err)||err.code==='cloud_network_error'||err.code==='cloud_timeout'||err.code==='cloud_reconnecting';
       if(retryable&&typeof navigator!=='undefined'&&navigator.onLine!==false){
-        m.pending=true;m.failed=false;m.retryable=true;delete m.lastError;saveNow();
-        if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
-        scheduleCloudSessionRecovery();
-        return false;
-      }
+  m.pending=true;
+  m.failed=true;
+  m.retryable=true;
+  m.lastError=reason;
+
+  saveNow();
+
+  if(view.mode==='dm'&&view.dmUserId===id){
+    renderMessages();
+  }
+
+  scheduleCloudSessionRecovery();
+
+  showToast('DM demorou demais para enviar. Tentaremos novamente.');
+  return false;
+}
       fail(reason,{retryable});
       showToast(`DM não enviada: ${reason}`);
       return false;

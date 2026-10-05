@@ -3910,13 +3910,23 @@
     if(/^\*.*\*$/.test(text.trim()))s=`<span class="action-text">${s}</span>`;
     return s;
   }
-  async function sendDmToBackend(m,id){
-    if(!m || m.sending || m.serverId || !id)return !!m?.serverId;
-    const fail=(reason,{retryable=true}={})=>{
-      m.pending=true;m.failed=true;m.retryable=retryable;m.lastError=reason||'Falha de conexão';saveNow();
-      if(view.mode==='dm'&&view.dmUserId===id)renderMessages();
-      return false;
-    };
+        if(retryable&&typeof navigator!=='undefined'&&navigator.onLine!==false){
+  m.pending=true;
+  m.failed=true;
+  m.retryable=true;
+  m.lastError=reason;
+
+  saveNow();
+
+  if(view.mode==='dm'&&view.dmUserId===id){
+    renderMessages();
+  }
+
+  scheduleCloudSessionRecovery();
+
+  showToast('DM demorou demais para enviar. Tentaremos novamente.');
+  return false;
+}
     if(typeof navigator!=='undefined'&&navigator.onLine===false){
       const failed=fail('Sem conexão com a internet.');
       showToast('DM não enviada: sem conexão com a internet.');
@@ -3942,7 +3952,7 @@
       const response=await cloudPostMessageWithRetry(
         `/api/dms/${encodeURIComponent(id)}/messages`,
         payload,
-        {timeoutMs:15000,retries:1}
+        {timeoutMs:7000,retries:1}
       );
       if(!response?.message?.id)throw new Error('O servidor não confirmou a mensagem.');
       m.serverId=response.message.id;m.clientId=m.id;m.pending=false;m.failed=false;m.retryable=false;delete m.lastError;delete m._lolaSessionRetried;saveNow();
