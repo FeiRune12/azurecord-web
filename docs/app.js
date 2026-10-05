@@ -3472,13 +3472,13 @@
     $$('.composer-quick').forEach(b=>b.classList.toggle('active',b.dataset.composerType===type));
     const emoji=['😀','😂','😍','😎','😭','😡','🥹','😴','🤔','😳','🔥','💙','✨','🎮','🎨','🗿','👍','👀'];
     const stickers=['💙 AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
-    const apps=['📊 Enquete','@ Menção','</> Código'];
+    const apps=[{label:'Enquete',icon:'poll'},{label:'Menção',icon:'user'},{label:'Código',icon:'code'}];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
     if(type==='gif'){openKlipyGifPicker(box);return;}
     if(type==='sticker'){if(view.mode==='server'){void openServerStickerPicker(box);return;}title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
     if(type==='apps'){title='Apps rápidos';items=apps;helper='Atalhos para recursos que já existem no Azurecord.'}
-    box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>`<button type="button" class="composer-chip ${item.length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(item)}">${esc(item)}</button>`).join('')}</div><p class="composer-helper">${helper}</p>`;
+    box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>{const value=typeof item==='string'?item:item.label;const visual=type==='apps'?uiIcon(item.icon,16)+' '+esc(item.label):esc(value);return `<button type="button" class="composer-chip ${String(value).length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(value)}">${visual}</button>`;}).join('')}</div><p class="composer-helper">${helper}</p>`;
     box.hidden=false;
     box.querySelectorAll('[data-composer-choice]').forEach(btn=>btn.onclick=()=>{
       const val=btn.dataset.composerValue||'';
