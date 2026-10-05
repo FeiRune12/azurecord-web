@@ -2020,38 +2020,229 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
   margin-top:12px;padding:10px 12px;border:1px solid rgba(139,92,255,.28);border-radius:10px;
   background:rgba(139,92,255,.08);font-size:10px;color:var(--muted)
 }
-.klipy-picker{display:grid;gap:10px;min-width:min(560px,82vw)}
-.klipy-picker-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.klipy-picker-head h4{margin:0}
-.klipy-powered{font-size:9px;font-weight:900;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
-.klipy-search-row{display:flex;gap:8px;align-items:center}
+/* Azurecord - KLIPY GIF Picker */
+
+.klipy-picker{
+  display:grid;
+  gap:10px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+
+.klipy-picker-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-width:0;
+}
+
+.klipy-picker-head h4{
+  margin:0;
+}
+
+.klipy-powered{
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.06em;
+  color:var(--muted);
+  text-transform:uppercase;
+}
+
+.klipy-search-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+
 .klipy-search-row input{
-  flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);color:var(--text);
-  padding:9px 10px;font:inherit;font-size:10px;outline:none
+  flex:1;
+  min-width:0;
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:var(--panel-2);
+  color:var(--text);
+  padding:9px 10px;
+  font:inherit;
+  font-size:10px;
+  outline:none;
+  box-sizing:border-box;
 }
-.klipy-search-row input:focus{border-color:rgba(0,102,255,.55);box-shadow:0 0 0 2px var(--accent-soft)}
+
+.klipy-search-row input:focus{
+  border-color:rgba(0,102,255,.55);
+  box-shadow:0 0 0 2px var(--accent-soft);
+}
+
+/* Grade dos GIFs */
 .klipy-gif-grid{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:390px;overflow:auto;
-  padding-right:2px
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:7px;
+
+  width:100%;
+  max-width:100%;
+  min-width:0;
+
+  max-height:390px;
+
+  overflow-y:auto;
+  overflow-x:hidden;
+
+  padding-right:2px;
+  box-sizing:border-box;
 }
+
+/* Cada GIF + botão de favorito */
+.klipy-gif-card-wrap{
+  position:relative;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+
 .klipy-gif-card{
-  position:relative;display:block;padding:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;
-  background:#070a0f;cursor:pointer;min-height:92px
+  position:relative;
+  display:block;
+
+  width:100%;
+  max-width:100%;
+  min-width:0;
+
+  padding:0;
+
+  border:1px solid var(--line);
+  border-radius:10px;
+
+  overflow:hidden;
+
+  background:#070a0f;
+  cursor:pointer;
+
+  min-height:92px;
+  box-sizing:border-box;
 }
-.klipy-gif-card:hover{border-color:rgba(0,102,255,.62);transform:translateY(-1px)}
-.klipy-gif-card img{display:block;width:100%;height:120px;object-fit:cover}
-.klipy-loading,.klipy-empty{
-  grid-column:1/-1;padding:22px 14px;text-align:center;border:1px dashed var(--line);border-radius:10px;
-  color:var(--muted);font-size:10px
+
+.klipy-gif-card:hover{
+  border-color:rgba(0,102,255,.62);
+  transform:translateY(-1px);
 }
+
+.klipy-gif-card img{
+  display:block;
+  width:100%;
+  max-width:100%;
+  height:120px;
+  object-fit:cover;
+}
+
+/* Favoritar GIF */
+.klipy-favorite-btn{
+  position:absolute;
+  top:6px;
+  right:6px;
+
+  width:28px;
+  height:28px;
+
+  border:0;
+  border-radius:999px;
+
+  background:rgba(5,8,14,.78);
+  color:#fff;
+
+  font-size:16px;
+  line-height:1;
+
+  cursor:pointer;
+
+  backdrop-filter:blur(5px);
+  z-index:2;
+}
+
+.klipy-favorite-btn:hover{
+  transform:scale(1.06);
+}
+
+.klipy-favorite-btn.active{
+  color:#ffd75e;
+  background:rgba(44,36,10,.88);
+}
+
+/* Loading / vazio */
+.klipy-loading,
+.klipy-empty{
+  grid-column:1/-1;
+
+  padding:22px 14px;
+
+  text-align:center;
+
+  border:1px dashed var(--line);
+  border-radius:10px;
+
+  color:var(--muted);
+  font-size:10px;
+}
+
+/* Mobile */
 @media(max-width:700px){
-  .klipy-picker{min-width:0;width:min(94vw,520px)}
-  .klipy-gif-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-height:48vh}
-  .klipy-gif-card img{height:112px}
-  .klipy-search-row{align-items:stretch}
+
+  .klipy-picker{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    box-sizing:border-box;
+  }
+
+  .klipy-search-row{
+    align-items:stretch;
+    width:100%;
+    max-width:100%;
+    min-width:0;
+  }
+
+  .klipy-gif-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+
+    width:100%;
+    max-width:100%;
+    min-width:0;
+
+    max-height:48vh;
+
+    overflow-y:auto;
+    overflow-x:hidden;
+
+    box-sizing:border-box;
+  }
+
+  .klipy-gif-card-wrap{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+  }
+
+  .klipy-gif-card{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+  }
+
+  .klipy-gif-card img{
+    width:100%;
+    max-width:100%;
+    height:112px;
+  }
 }
-
-
 /* Azurecord 6.0.1: Lumen DJ */
 .lumen-integration-card{border-color:rgba(139,92,255,.3)!important;background:linear-gradient(135deg,rgba(139,92,255,.09),rgba(49,216,255,.04))!important}
 .server-voice-tile.is-lumen{border-color:rgba(139,92,255,.52)!important;box-shadow:0 0 0 2px rgba(139,92,255,.12),0 16px 42px rgba(42,20,94,.26)!important}
@@ -2088,11 +2279,6 @@ html[data-compact="1"] .message-row{padding-top:4px!important;padding-bottom:4px
 @media(max-width:700px){.server-sticker-picker{min-width:0;width:min(94vw,520px)}.server-sticker-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.server-sticker-use img{height:80px}}
 
 /* Azurecord 6.0.4 GIF favorites + Lumen voice */
-.klipy-gif-card-wrap{position:relative;min-width:0}
-.klipy-favorite-btn{position:absolute;top:6px;right:6px;width:28px;height:28px;border:0;border-radius:999px;background:rgba(5,8,14,.78);color:#fff;font-size:16px;line-height:1;cursor:pointer;backdrop-filter:blur(5px);z-index:2}
-.klipy-favorite-btn:hover{transform:scale(1.06)}
-.klipy-favorite-btn.active{color:#ffd75e;background:rgba(44,36,10,.88)}
-
 .lumen-voice-panel{margin:10px 12px 0;padding:12px;border:1px solid rgba(139,92,255,.35);border-radius:13px;background:linear-gradient(180deg,rgba(139,92,255,.12),rgba(48,28,96,.08));display:grid;gap:10px}
 .lumen-voice-panel[hidden]{display:none!important}
 .lumen-voice-head{display:flex;align-items:center;gap:10px}
