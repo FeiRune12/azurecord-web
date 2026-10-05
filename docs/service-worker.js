@@ -1,4 +1,4 @@
-const CACHE_NAME = 'azurecord-6-0-6-recovery-shell';
+const CACHE_NAME = 'azurecord-6-0-7-lumen153-shell';
 const APP_SHELL = [
   './',
   './index.html',

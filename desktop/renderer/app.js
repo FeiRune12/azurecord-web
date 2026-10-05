@@ -2376,7 +2376,7 @@
       if(embedBox){
         if(embedUrl){
           embedBox.hidden=false;
-          if(embedBox.dataset.src!==embedUrl){embedBox.dataset.src=embedUrl;embedBox.innerHTML='<iframe src="'+esc(embedUrl)+'" title="Lumen DJ" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe>';}
+          if(embedBox.dataset.src!==embedUrl){embedBox.dataset.src=embedUrl;embedBox.innerHTML='<iframe src="'+esc(embedUrl)+'" title="Lumen DJ" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>';}
         }else{embedBox.hidden=true;embedBox.dataset.src='';embedBox.innerHTML='';}
       }
     }

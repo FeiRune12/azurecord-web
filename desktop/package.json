@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "6.0.6",
+  "version": "6.0.7",
   "private": true,
-  "description": "Azurecord 6.0.6: recuperação estável de mensagens e sincronização do layout KLIPY no desktop.",
+  "description": "Azurecord 6.0.7: correção do player YouTube da Lumen no desktop e identificação do embed.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
