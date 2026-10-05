@@ -3072,13 +3072,13 @@
     if(arr.length)return;
     const recent=state.lolaGreetingHistory[state.currentAccountId]||[];
     const candidates=secret?[
-      'Ei, achou meu cantinho secreto! 😈 Pode falar.',
-      'Olha quem apareceu por aqui... 👹💙 E aí?'
+      'Ei, achou meu cantinho secreto!  Pode falar.',
+      'Olha quem apareceu por aqui...  E aí?'
     ]:[
-      'Opa! 😈 Chat aberto, já pode falar comigo.',
-      'Cheguei! 💙 O que está pegando?',
-      'Pronto, novo papo! 👹 Pode começar do jeito que quiser.',
-      'Na área! 🔥 Manda o assunto.'
+      'Opa!  Chat aberto, já pode falar comigo.',
+      'Cheguei!  O que está pegando?',
+      'Pronto, novo papo!  Pode começar do jeito que quiser.',
+      'Na área!  Manda o assunto.'
     ];
     const greeting=window.AzurecordLola.pickFresh(candidates,recent);
     state.lolaGreetingHistory[state.currentAccountId]=[...recent,greeting].slice(-8);
@@ -3487,7 +3487,7 @@
     if(!box.hidden && active && active.dataset.composerType===type){closeComposerPopover();return;}
     $$('.composer-quick').forEach(b=>b.classList.toggle('active',b.dataset.composerType===type));
     const emoji=['😀','😂','😍','😎','😭','😡','🥹','😴','🤔','😳','🔥','💙','✨','🎮','🎨','🗿','👍','👀'];
-    const stickers=['💙 AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
+    const stickers=['AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
     const apps=[{label:'Enquete',icon:'poll'},{label:'Menção',icon:'user'},{label:'Código',icon:'code'}];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
@@ -3804,9 +3804,9 @@
   function formatVisualObservation(file){ const v=file?.visual||{};if(!v.width||!v.height)return '';const bits=[];if(v.dominantColor)bits.push(`predomínio de ${v.dominantColor}`);if(typeof v.brightness==='number')bits.push(v.brightness<30?'luminosidade baixa':v.brightness>75?'luminosidade alta':'luminosidade equilibrada');if(v.orientation)bits.push(`formato ${v.orientation}`);return bits.join(', '); }
   function buildLolaDesignReply(file,mem){
     const v=file?.visual||{},kind=v.kind||guessAttachmentKind(file?.name,file?.type),name=file?.name||'esse arquivo',obs=formatVisualObservation(file),size=v.width&&v.height?`${v.width}×${v.height}`:'';const ctx=memoryContext(mem);const projectHint=ctx.projects.length?` Isso combina com o que você anda fazendo em ${ctx.projects.at(-1)}.`:'';
-    if(kind==='design')return `Eu vi o arquivo “${name}” 👀🎨${size?` Ele tem ${size} px`:''}${obs?` e ${obs}`:''}. Pelo nome e pelo visual do arquivo, isso tem muita cara de peça de design. Quero saber o que você estava tentando comunicar aqui.${projectHint}`;
-    if(kind==='foto')return `Vi “${name}” 👀${size?` e o arquivo tem ${size} px`:''}${obs?` (${obs})`:''}. Gostei de você me mostrar isso. Me conta o contexto dessa imagem? 💙`;
-    return `Recebi “${name}” 👀${size?` em ${size}`:''}${obs?`, com ${obs}`:''}. O que você quer que eu observe nele?`;
+    if(kind==='design')return `Eu vi o arquivo “${name}” ${size?` Ele tem ${size} px`:''}${obs?` e ${obs}`:''}. Pelo nome e pelo visual do arquivo, isso tem muita cara de peça de design. Quero saber o que você estava tentando comunicar aqui.${projectHint}`;
+    if(kind==='foto')return `Vi “${name}” ${size?` e o arquivo tem ${size} px`:''}${obs?` (${obs})`:''}. Gostei de você me mostrar isso. Me conta o contexto dessa imagem? `;
+    return `Recebi “${name}” ${size?` em ${size}`:''}${obs?`, com ${obs}`:''}. O que você quer que eu observe nele?`;
   }
   function isFavorRequest(text){
     return /(?:posso|poderia|posso eu)\s+(?:te\s+)?pedir\s+um\s+favor/i.test(String(text||'')) || /você\s+me\s+faz\s+um\s+favor/i.test(String(text||''));
@@ -3846,7 +3846,7 @@
     const score=Math.max(0,Math.min(10,Number(scoreBase.toFixed(1))));
     const ctx=memoryContext(mem);
     const personal=ctx.projects.length?` E como você já vem trabalhando em ${ctx.projects.at(-1)}, eu também olharia se essa peça conversa com a identidade do projeto.`:'';
-    const opening=hadFavor ? 'Pode. E já que você pediu uma avaliação, vou ser bem direta contigo. 👀🎨' : 'Posso avaliar, sim. 👀🎨';
+    const opening=hadFavor ? 'Pode. E já que você pediu uma avaliação, vou ser bem direta contigo. ' : 'Posso avaliar, sim. ';
     return `${opening}${notes.length?' '+notes.join(' '):''}${obs?` Na prévia técnica, percebi ${obs}.`:''}\n\n**Pontos fortes**\n• ${strengths.join('\n• ')}\n\n**Pontos fracos**\n• ${weaknesses.join('\n• ')}${personal}\n\n**Nota final: ${score}/10**\nEu trataria essa como uma primeira avaliação baseada na prévia da imagem, no nome do arquivo e nas características visuais que o Azurecord conseguiu extrair. Para uma crítica mais completa, eu ainda conferiria tipografia, alinhamento, espaçamento e hierarquia diretamente na arte.`;
   }
   function inferLolaIntent(text){
@@ -3877,28 +3877,28 @@
   function lolaBasicReply(text,mem,ctx){
     const lower=String(text||'').trim().toLowerCase();
     if(/\b(oi|olá|ola|e aí|e ai|bom dia|boa tarde|boa noite)\b/.test(lower)){
-      return chooseFreshLolaReply(mem,['Oii! 💙 Tô aqui com você.','Opa! 👀 Que bom te ver por aqui.']);
+      return chooseFreshLolaReply(mem,['Oii!  Tô aqui com você.','Opa!  Que bom te ver por aqui.']);
     }
     if(/\b(tudo\s+bem|como\s+(você|voce|vc)\s+est[aá]|como\s+voc[eê]\s+t[aá])/.test(lower)){
-      return chooseFreshLolaReply(mem,['Tô bem sim. 💙 E agora fiquei curiosa com o que você queria me contar.','Tô tranquila por aqui. ✨ O que você quer fazer agora?']);
+      return chooseFreshLolaReply(mem,['Tô bem sim.  E agora fiquei curiosa com o que você queria me contar.','Tô tranquila por aqui.  O que você quer fazer agora?']);
     }
-    if(/\b(obrigad|valeu|vlw)\b/.test(lower)) return 'De nada! 💙';
-    if(/\b(desculp|foi mal|perd[aã]o)\b/.test(lower)) return 'Relaxa, acontece. 💙';
+    if(/\b(obrigad|valeu|vlw)\b/.test(lower)) return 'De nada! ';
+    if(/\b(desculp|foi mal|perd[aã]o)\b/.test(lower)) return 'Relaxa, acontece. ';
     if(/^(sim|claro|pode|bora|aceito|quero|com certeza|vamos)$/i.test(lower)){
-      return chooseFreshLolaReply(mem,['Então bora. 👀 Me conta o que vem agora.','Fechou. 💙 Tô acompanhando.','Pode deixar. ✨ Continua.']);
+      return chooseFreshLolaReply(mem,['Então bora.  Me conta o que vem agora.','Fechou.  Tô acompanhando.','Pode deixar.  Continua.']);
     }
     const arithmetic=lower.match(/^(?:quanto\s+é\s+|quanto\s+eh\s+)?(-?\d+(?:[.,]\d+)?)\s*([+\-*x×÷\/])\s*(-?\d+(?:[.,]\d+)?)\s*\??$/i);
     if(arithmetic){
       const a=Number(arithmetic[1].replace(',','.')),op=arithmetic[2].trim(),b=Number(arithmetic[3].replace(',','.'));
       let result=null;
       if(op==='+')result=a+b; else if(op==='-')result=a-b; else if(op==='*'||/x|×/i.test(op))result=a*b; else if(op==='/'||op==='÷')result=b===0?null:a/b;
-      if(result!==null&&Number.isFinite(result)) return `Dá ${Number.isInteger(result)?result:result.toFixed(4).replace(/0+$/,'').replace(/\.$/,'')}. 🧮`;
+      if(result!==null&&Number.isFinite(result)) return `Dá ${Number.isInteger(result)?result:result.toFixed(4).replace(/0+$/,'').replace(/\.$/,'')}. `;
     }
     if(/^(quem|o que|qual|como|por que|porque|onde|quando)\b/.test(lower)){
       // Fallback conservador: se a IA real estiver indisponível, ainda responde
       // de forma útil sem fingir conhecimento específico que não possui.
-      if(/\b(você|voce|vc)\b.*\b(lola|é|eh|está|esta)\b/.test(lower)) return 'Sou a Lola do Azurecord. 💙 Tô aqui pra conversar, pensar junto e acompanhar o que você estiver fazendo.';
-      return 'Eu consigo responder isso melhor com a IA conectada. Enquanto ela processa, me passa a pergunta exatamente como você quer saber e eu continuo daqui. 👀';
+      if(/\b(você|voce|vc)\b.*\b(lola|é|eh|está|esta)\b/.test(lower)) return 'Sou a Lola do Azurecord.  Tô aqui pra conversar, pensar junto e acompanhar o que você estiver fazendo.';
+      return 'Eu consigo responder isso melhor com a IA conectada. Enquanto ela processa, me passa a pergunta exatamente como você quer saber e eu continuo daqui. ';
     }
     return null;
   }
@@ -3908,19 +3908,19 @@
     const intent=mem.lastIntent||inferLolaIntent(text);
     const recent=ctx.recent.at(-2)||'';
     const map={
-      greeting:['Oii! 💙 Tô aqui. Conta, o que está acontecendo?','Opa, oi! 👀 Já cheguei. Me conta o que você quer conversar.'],
-      planning:['Beleza, vamos pensar nisso juntos. 💙 Me dá o contexto inteiro que eu consigo acompanhar a ideia melhor.'],
-      math:['Pode mandar a parte de matemática. 🧮 Eu acompanho o raciocínio passo a passo e, se tiver erro, a gente confere onde ele apareceu.'],
-      science:['Manda a pergunta de ciência. 🔬 Eu separo o que é fato, hipótese e o que depende do contexto, sem inventar certeza onde não existe.'],
-      humanities:['Pode mandar. 📚 Eu consigo conversar sobre história, geografia, filosofia, literatura e assuntos parecidos, levando em conta o contexto que você der.'],
-      media:['Bora. 🎬🎮 Me diz qual obra, personagem ou situação você quer discutir e eu sigo o assunto daqui.'],
-      school:['Manda o que aconteceu na escola. 📚 Se for exercício, eu consigo acompanhar a questão; se for só conversa, também.'],
-      programming:['Manda o código, erro ou ideia. 💻 Eu sigo o contexto técnico e separo o que é causa provável do que ainda precisa ser verificado.'],
-      debug:['Tá, vamos caçar esse bug. 🔧 Me mostra o comportamento, o que mudou por último e o erro que apareceu.'],
-      design:['Pode mandar. 🎨 Se for uma peça, arquivo ou ideia visual, eu consigo comentar o nome do arquivo, a prévia e o contexto que você der.'],
-      games:['Hahaha, bora pros jogos. 🎮 Manda a situação completa que eu entro na conversa.'],
-      question:['Posso discutir isso com você. 👀 Só me dá o contexto que estiver faltando e eu sigo a linha da conversa.'],
-      chat:[recent?`Entendi. 👀 Tô acompanhando o que você acabou de falar sobre “${recent.slice(0,70)}${recent.length>70?'…':''}”. Continua.`:'Entendi. 💙 Pode continuar, eu tô acompanhando.']
+      greeting:['Oii!  Tô aqui. Conta, o que está acontecendo?','Opa, oi!  Já cheguei. Me conta o que você quer conversar.'],
+      planning:['Beleza, vamos pensar nisso juntos.  Me dá o contexto inteiro que eu consigo acompanhar a ideia melhor.'],
+      math:['Pode mandar a parte de matemática.  Eu acompanho o raciocínio passo a passo e, se tiver erro, a gente confere onde ele apareceu.'],
+      science:['Manda a pergunta de ciência.  Eu separo o que é fato, hipótese e o que depende do contexto, sem inventar certeza onde não existe.'],
+      humanities:['Pode mandar.  Eu consigo conversar sobre história, geografia, filosofia, literatura e assuntos parecidos, levando em conta o contexto que você der.'],
+      media:['Bora.  Me diz qual obra, personagem ou situação você quer discutir e eu sigo o assunto daqui.'],
+      school:['Manda o que aconteceu na escola.  Se for exercício, eu consigo acompanhar a questão; se for só conversa, também.'],
+      programming:['Manda o código, erro ou ideia.  Eu sigo o contexto técnico e separo o que é causa provável do que ainda precisa ser verificado.'],
+      debug:['Tá, vamos caçar esse bug.  Me mostra o comportamento, o que mudou por último e o erro que apareceu.'],
+      design:['Pode mandar.  Se for uma peça, arquivo ou ideia visual, eu consigo comentar o nome do arquivo, a prévia e o contexto que você der.'],
+      games:['Hahaha, bora pros jogos.  Manda a situação completa que eu entro na conversa.'],
+      question:['Posso discutir isso com você.  Só me dá o contexto que estiver faltando e eu sigo a linha da conversa.'],
+      chat:[recent?`Entendi.  Tô acompanhando o que você acabou de falar sobre “${recent.slice(0,70)}${recent.length>70?'…':''}”. Continua.`:'Entendi.  Pode continuar, eu tô acompanhando.']
     };
     const choices=map[intent]||map.chat;
     return choices[Math.floor((mem.messageCount+choices.length)%choices.length)];
@@ -3943,7 +3943,7 @@
     const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
     let reply=aiResult?.text;
     if(!reply){
-      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. 🔧',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. 🧠',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. 🧠',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. 💙'};
+      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. ',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. ',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. ',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. '};
       reply=diagnostic[aiResult?.code]||window.AzurecordLola.offlineReply(text,previousReplies,files.length);
     }
     if(!reply)return;
