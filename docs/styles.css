@@ -2340,3 +2340,5 @@ button .ui-icon,.home-empty-icon .ui-icon,.app-card .ui-icon,.poll-question .ui-
   .update-choice-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}
   .update-choice-actions .home-mini-btn{width:100%;justify-content:center}
 }
+
+.klipy-favorite-btn .ui-icon{fill:none}.klipy-favorite-btn.active .ui-icon{fill:currentColor}.app-card>strong,.poll-question,.system-welcome-message>span:first-child{display:flex;align-items:center;gap:7px}
