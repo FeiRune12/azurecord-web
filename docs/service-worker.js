@@ -1,4 +1,4 @@
-const CACHE_NAME = 'azurecord-6-0-8-native-ui-shell';
+const CACHE_NAME = 'azurecord-6-0-9-native-ui-shell';
 const APP_SHELL = [
   './',
   './index.html',

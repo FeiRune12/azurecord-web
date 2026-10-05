@@ -1,13 +1,34 @@
 (() => {
   if (window.azurecordDesktop) return;
+
   const SESSION_KEY = 'azurecord_web_cloud_session_v1';
+  const native = window.AzurecordNative || null;
+  const isNativeAndroid = !!native && (
+    typeof native.isNativeAndroid === 'function' ? native.isNativeAndroid() : /AzurecordAndroid\//i.test(navigator.userAgent || '')
+  );
+
+  const localGet = () => {
+    try { return localStorage.getItem(SESSION_KEY); } catch { return null; }
+  };
+  const localSet = (token) => {
+    try { localStorage.setItem(SESSION_KEY, String(token || '')); return true; } catch { return false; }
+  };
+  const localDelete = () => {
+    try { localStorage.removeItem(SESSION_KEY); return true; } catch { return false; }
+  };
+
   window.azurecordDesktop = {
-    platform: null,
-    version: 'web',
-    appVersion: '6.0.8',
+    platform: isNativeAndroid ? 'android' : null,
+    version: isNativeAndroid ? 'native-android' : 'web',
+    appVersion: (() => {
+      try { return isNativeAndroid && typeof native.getAppVersion === 'function' ? native.getAppVersion() : '6.0.9'; }
+      catch { return '6.0.9'; }
+    })(),
+
     async getBackendInfo() {
       return { available: false, baseUrl: null, host: null, port: 0 };
     },
+
     async notify(title, body) {
       try {
         if (!('Notification' in window)) return false;
@@ -17,33 +38,48 @@
         return true;
       } catch { return false; }
     },
+
     async getSecureSession() {
-      try {
-        const nativeValue = window.AzurecordNative?.getSecureSession?.();
-        if (nativeValue) return String(nativeValue);
-      } catch {}
-      try { return localStorage.getItem(SESSION_KEY); } catch { return null; }
+      if (isNativeAndroid && typeof native.getSecureSession === 'function') {
+        try {
+          const token = native.getSecureSession();
+          if (token) {
+            localSet(token);
+            return token;
+          }
+        } catch {}
+      }
+      return localGet();
     },
+
     async setSecureSession(token) {
       const value = String(token || '');
-      try {
-        if (window.AzurecordNative?.setSecureSession?.(value)) {
-          try { localStorage.setItem(SESSION_KEY, value); } catch {}
-          return true;
-        }
-      } catch {}
-      try { localStorage.setItem(SESSION_KEY, value); return true; } catch { return false; }
+      if (!value) return false;
+      let nativeSaved = false;
+      if (isNativeAndroid && typeof native.setSecureSession === 'function') {
+        try { nativeSaved = native.setSecureSession(value) !== false; } catch {}
+      }
+      const localSaved = localSet(value);
+      return isNativeAndroid ? nativeSaved : localSaved;
     },
+
     async deleteSecureSession() {
-      try { window.AzurecordNative?.deleteSecureSession?.(); } catch {}
-      try { localStorage.removeItem(SESSION_KEY); return true; } catch { return false; }
+      let nativeDeleted = true;
+      if (isNativeAndroid && typeof native.deleteSecureSession === 'function') {
+        try { nativeDeleted = native.deleteSecureSession() !== false; } catch { nativeDeleted = false; }
+      }
+      const localDeleted = localDelete();
+      return isNativeAndroid ? nativeDeleted : localDeleted;
     },
+
     async getReadyUpdateVersion() {
-      try { return String(window.AzurecordNative?.getReadyUpdateVersion?.() || ''); } catch { return ''; }
+      if (!isNativeAndroid || typeof native.getReadyUpdateVersion !== 'function') return '';
+      try { return String(native.getReadyUpdateVersion() || ''); } catch { return ''; }
     },
+
     async installReadyUpdate() {
-      try { return !!window.AzurecordNative?.installReadyUpdate?.(); } catch { return false; }
+      if (!isNativeAndroid || typeof native.installReadyUpdate !== 'function') return false;
+      try { return native.installReadyUpdate() !== false; } catch { return false; }
     }
   };
 })();
-

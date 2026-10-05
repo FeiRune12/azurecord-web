@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.8');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.9');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -71,7 +71,7 @@
     try{
       const scriptSrc=document.currentScript?.src||[...document.scripts].map(s=>s.src).find(src=>/\/app\.js(?:\?|$)/i.test(src))||window.location.href;
       const url=new URL('./assets/lumen-avatar.jpg',scriptSrc);
-      url.searchParams.set('v','6.0.8');
+      url.searchParams.set('v','6.0.9');
       return url.href;
     }catch{return './assets/lumen-avatar.jpg?v=6.0.8';}
   })();
@@ -113,7 +113,18 @@
       phone:'<path d="M6.5 4 10 8l-2 3c1.6 3 3 4.4 6 6l3-2 4 3.5c-1.2 2-3 3-5 2.5C9.5 19.3 4.7 14.5 3 8c-.5-2 1-3.5 3.5-4z"/>',
       gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
       warning:'<path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17h.01"/>',
+      eye:'<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/>',
+      play:'<path d="m9 6 9 6-9 6z"/>',
+      refresh:'<path d="M20 6v5h-5"/><path d="M19 11a7 7 0 1 0 1 5"/>',
+      external:'<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6H5V6h6"/>',
+      clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      unread:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/>',
+      chevronDown:'<path d="m7 10 5 5 5-5"/>',
+      chevronRight:'<path d="m10 7 5 5-5 5"/>',
+      arrowUp:'<path d="m7 10 5-5 5 5"/><path d="M12 5v14"/>',
+      arrowDown:'<path d="m7 14 5 5 5-5"/><path d="M12 5v14"/>',
       back:'<path d="m14 6-6 6 6 6"/>',
+      logout:'<path d="M10 5H5v14h5"/><path d="M13 8l4 4-4 4"/><path d="M17 12H9"/>',
       plus:'<path d="M12 5v14M5 12h14"/>',
       mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
       link:'<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/>',
@@ -1736,7 +1747,7 @@
     panel.id='mobileDmPanel';
     panel.className='mobile-dm-panel';
     panel.hidden=true;
-    panel.innerHTML=`<header class="mobile-dm-header"><div><span class="eyebrow">AZURECORD</span><h2>Mensagens</h2></div><button type="button" class="mobile-dm-refresh" data-mobile-dm-refresh aria-label="Atualizar mensagens">↻</button></header><div class="mobile-dm-subtitle">Mensagens diretas</div><div id="mobileDmList" class="mobile-dm-list"></div>`;
+    panel.innerHTML=`<header class="mobile-dm-header"><div><span class="eyebrow">AZURECORD</span><h2>Mensagens</h2></div><button type="button" class="mobile-dm-refresh" data-mobile-dm-refresh aria-label="Atualizar mensagens">${uiIcon('refresh',18)}</button></header><div class="mobile-dm-subtitle">Mensagens diretas</div><div id="mobileDmList" class="mobile-dm-list"></div>`;
     $('appScreen')?.appendChild(panel);
     panel.querySelector('[data-mobile-dm-refresh]').onclick=async()=>{
       const btn=panel.querySelector('[data-mobile-dm-refresh]');btn.disabled=true;
@@ -1828,6 +1839,8 @@
   function applyUiIconography(){
     const dmTitle=$('dmToggle')?.querySelector('span:first-child');
     if(dmTitle)dmTitle.innerHTML=uiIcon('mail',15)+' <span>MENSAGENS DIRETAS</span>';
+    setUiButton('passwordToggle','eye');
+    setUiButton('logoutBtn','logout');
     setUiButton('serverInviteBtn','link','Convidar');
     setUiButton('roleManageBtn','tag','Cargos');
     setUiButton('globalSearchBtn','search','Buscar');
@@ -1855,6 +1868,7 @@
   }
 
   function boot(){
+    window.__azurecordCheckUpdate=checkNativeReadyUpdate;
     applyUiIconography();
     try{
       window.azurecordDesktop?.onUpdateStatus?.((payload)=>{
@@ -2805,13 +2819,13 @@
     requestRenderShell();
     void syncChannelMessages(view.serverId,view.channelId);
   }
-  function toggleDms(){ const list=$('dmList'); const hidden=list.hidden;list.hidden=!hidden;$('dmToggle').setAttribute('aria-expanded',String(hidden));$('dmToggle').querySelector('.dm-chevron').textContent=hidden?'⌄':'›'; }
+  function toggleDms(){ const list=$('dmList'); const hidden=list.hidden;list.hidden=!hidden;$('dmToggle').setAttribute('aria-expanded',String(hidden));$('dmToggle').querySelector('.dm-chevron').innerHTML=hidden?uiIcon('chevronDown',14):uiIcon('chevronRight',14); }
 
   function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p&&resolvedPresence(p.id)==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
   function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
   function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">${uiIcon('users',28)}</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">${uiIcon('plus',16)} Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
-  function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
-  function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
+  function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">${uiIcon('refresh',15)} Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
+  function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>${uiIcon('search',16)}</span></div><div id="friendSearchResults"></div></div>`; }
   function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=isSystemMascot(p.id); const liveStatus=resolvedPresence(p.id); const statusText=system?systemMascotKind(p.id):statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); const systemActions=p.id==='user-lola'?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`; return `<div class="friend-row ${p.id==='user-lumen'?'lumen-mascot-row':''}" data-user-row="${p.id}"><div class="home-avatar avatar-img ${p.id==='user-lumen'?'lumen-mascot-avatar':''}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?systemActions:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
   function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} const refresh=$('refreshFriendRequests');if(refresh)refresh.onclick=async()=>{refresh.disabled=true;try{await hydrateFromCloudSocial({quiet:false});renderHome();}finally{refresh.disabled=false;}}; $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
   async function renderSearchResults(){
@@ -2961,7 +2975,7 @@
       return `<div class="dm-item" data-dm-row="${esc(id)}"><button type="button" class="dm-open" data-dm-open="${esc(id)}"><span class="mini-avatar avatar-img" style="${p?.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p?.avatar?'':esc((p?.username||'?')[0])}</span><span class="dm-item-main"><strong>${esc(p?.username||'Usuário')}</strong><span>${esc(preview)}</span></span>${state.unread[key]?'<span class="unread-dot"></span>':''}</button><button type="button" class="dm-close" data-dm-close="${esc(id)}" aria-label="Fechar conversa com ${esc(p?.username||'usuário')}">×</button></div>`;
     }).join('');
     box.hidden=false;
-    $('dmToggle').setAttribute('aria-expanded','true');$('dmToggle').querySelector('.dm-chevron').textContent='⌄';
+    $('dmToggle').setAttribute('aria-expanded','true');$('dmToggle').querySelector('.dm-chevron').innerHTML=uiIcon('chevronDown',14);
     box.querySelectorAll('[data-dm-open]').forEach(b=>b.onclick=()=>openDm(b.dataset.dmOpen));
     box.querySelectorAll('[data-dm-close]').forEach(b=>b.onclick=e=>{e.stopPropagation();closeDmTab(b.dataset.dmClose);});
   }
@@ -3058,13 +3072,13 @@
     if(arr.length)return;
     const recent=state.lolaGreetingHistory[state.currentAccountId]||[];
     const candidates=secret?[
-      'Ei, achou meu cantinho secreto! 😈 Pode falar.',
-      'Olha quem apareceu por aqui... 👹💙 E aí?'
+      'Ei, achou meu cantinho secreto!  Pode falar.',
+      'Olha quem apareceu por aqui...  E aí?'
     ]:[
-      'Opa! 😈 Chat aberto, já pode falar comigo.',
-      'Cheguei! 💙 O que está pegando?',
-      'Pronto, novo papo! 👹 Pode começar do jeito que quiser.',
-      'Na área! 🔥 Manda o assunto.'
+      'Opa!  Chat aberto, já pode falar comigo.',
+      'Cheguei!  O que está pegando?',
+      'Pronto, novo papo!  Pode começar do jeito que quiser.',
+      'Na área!  Manda o assunto.'
     ];
     const greeting=window.AzurecordLola.pickFresh(candidates,recent);
     state.lolaGreetingHistory[state.currentAccountId]=[...recent,greeting].slice(-8);
@@ -3091,7 +3105,7 @@
     if(view.mode==='home'){$('chatView').hidden=true;return;}
     $('chatView').hidden=false;
     const isDm=view.mode==='dm',p=isDm?getProfile(view.dmUserId):null,c=isDm?null:getChannel(view.serverId,view.channelId);
-    $('chatIcon').textContent=isDm?'':(c?.type==='text'?'#':'◉');
+    $('chatIcon').innerHTML=isDm?'':(c?.type==='text'?'#':uiIcon('volume',16));
     $('channelTitle').textContent=isDm?p?.username||'Mensagem Direta':c?.name||'geral';
     $('channelTopic').textContent=isDm?`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`:(c?.topic||'');
     $('channelWelcome').textContent=isDm?`Conversa com ${p?.username||'usuário'}`:`Bem-vindo a #${c?.name||'geral'}`;
@@ -3141,7 +3155,7 @@
           if(loading)btn.hidden=false;
           btn.setAttribute('aria-busy',loading?'true':'false');
           const icon=btn.querySelector('span');
-          if(icon)icon.textContent=loading?'…':'▶';
+          if(icon)icon.innerHTML=loading?uiIcon('clock',18):uiIcon('play',18);
         }
       };
       const resetError=()=>{if(error)error.hidden=true;if(errorText)errorText.textContent='Não foi possível carregar este vídeo.';};
@@ -3172,7 +3186,7 @@
       video.addEventListener('loadedmetadata',()=>{syncRatio();resetError();});
       video.addEventListener('loadeddata',()=>{syncRatio();resetError();});
       video.addEventListener('play',()=>{if(btn)btn.hidden=true;resetError();});
-      video.addEventListener('ended',()=>{if(btn){btn.hidden=false;const icon=btn.querySelector('span');if(icon)icon.textContent='▶';}});
+      video.addEventListener('ended',()=>{if(btn){btn.hidden=false;const icon=btn.querySelector('span');if(icon)icon.innerHTML=uiIcon('play',18);}});
       video.addEventListener('error',()=>{if(error)error.hidden=false;if(btn)btn.hidden=true;});
       if(btn)btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await prepareAndPlay();};
       if(retry)retry.onclick=async e=>{e.preventDefault();e.stopPropagation();await prepareAndPlay({force:true});};
@@ -3233,7 +3247,7 @@
     return `${(n/1024/1024/1024).toFixed(1)} GB`;
   }
   function fileIcon(type=''){
-    if(type.startsWith('video/'))return '▶';
+    if(type.startsWith('video/'))return uiIcon('play',18);
     if(type.startsWith('audio/'))return uiIcon('fileAudio',18);
     if(type.includes('pdf'))return 'PDF';
     if(type.includes('zip')||type.includes('rar')||type.includes('7z'))return 'ZIP';
@@ -3473,7 +3487,7 @@
     if(!box.hidden && active && active.dataset.composerType===type){closeComposerPopover();return;}
     $$('.composer-quick').forEach(b=>b.classList.toggle('active',b.dataset.composerType===type));
     const emoji=['😀','😂','😍','😎','😭','😡','🥹','😴','🤔','😳','🔥','💙','✨','🎮','🎨','🗿','👍','👀'];
-    const stickers=['💙 AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
+    const stickers=['AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
     const apps=[{label:'Enquete',icon:'poll'},{label:'Menção',icon:'user'},{label:'Código',icon:'code'}];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
@@ -3790,9 +3804,9 @@
   function formatVisualObservation(file){ const v=file?.visual||{};if(!v.width||!v.height)return '';const bits=[];if(v.dominantColor)bits.push(`predomínio de ${v.dominantColor}`);if(typeof v.brightness==='number')bits.push(v.brightness<30?'luminosidade baixa':v.brightness>75?'luminosidade alta':'luminosidade equilibrada');if(v.orientation)bits.push(`formato ${v.orientation}`);return bits.join(', '); }
   function buildLolaDesignReply(file,mem){
     const v=file?.visual||{},kind=v.kind||guessAttachmentKind(file?.name,file?.type),name=file?.name||'esse arquivo',obs=formatVisualObservation(file),size=v.width&&v.height?`${v.width}×${v.height}`:'';const ctx=memoryContext(mem);const projectHint=ctx.projects.length?` Isso combina com o que você anda fazendo em ${ctx.projects.at(-1)}.`:'';
-    if(kind==='design')return `Eu vi o arquivo “${name}” 👀🎨${size?` Ele tem ${size} px`:''}${obs?` e ${obs}`:''}. Pelo nome e pelo visual do arquivo, isso tem muita cara de peça de design. Quero saber o que você estava tentando comunicar aqui.${projectHint}`;
-    if(kind==='foto')return `Vi “${name}” 👀${size?` e o arquivo tem ${size} px`:''}${obs?` (${obs})`:''}. Gostei de você me mostrar isso. Me conta o contexto dessa imagem? 💙`;
-    return `Recebi “${name}” 👀${size?` em ${size}`:''}${obs?`, com ${obs}`:''}. O que você quer que eu observe nele?`;
+    if(kind==='design')return `Eu vi o arquivo “${name}” ${size?` Ele tem ${size} px`:''}${obs?` e ${obs}`:''}. Pelo nome e pelo visual do arquivo, isso tem muita cara de peça de design. Quero saber o que você estava tentando comunicar aqui.${projectHint}`;
+    if(kind==='foto')return `Vi “${name}” ${size?` e o arquivo tem ${size} px`:''}${obs?` (${obs})`:''}. Gostei de você me mostrar isso. Me conta o contexto dessa imagem? `;
+    return `Recebi “${name}” ${size?` em ${size}`:''}${obs?`, com ${obs}`:''}. O que você quer que eu observe nele?`;
   }
   function isFavorRequest(text){
     return /(?:posso|poderia|posso eu)\s+(?:te\s+)?pedir\s+um\s+favor/i.test(String(text||'')) || /você\s+me\s+faz\s+um\s+favor/i.test(String(text||''));
@@ -3832,7 +3846,7 @@
     const score=Math.max(0,Math.min(10,Number(scoreBase.toFixed(1))));
     const ctx=memoryContext(mem);
     const personal=ctx.projects.length?` E como você já vem trabalhando em ${ctx.projects.at(-1)}, eu também olharia se essa peça conversa com a identidade do projeto.`:'';
-    const opening=hadFavor ? 'Pode. E já que você pediu uma avaliação, vou ser bem direta contigo. 👀🎨' : 'Posso avaliar, sim. 👀🎨';
+    const opening=hadFavor ? 'Pode. E já que você pediu uma avaliação, vou ser bem direta contigo. ' : 'Posso avaliar, sim. ';
     return `${opening}${notes.length?' '+notes.join(' '):''}${obs?` Na prévia técnica, percebi ${obs}.`:''}\n\n**Pontos fortes**\n• ${strengths.join('\n• ')}\n\n**Pontos fracos**\n• ${weaknesses.join('\n• ')}${personal}\n\n**Nota final: ${score}/10**\nEu trataria essa como uma primeira avaliação baseada na prévia da imagem, no nome do arquivo e nas características visuais que o Azurecord conseguiu extrair. Para uma crítica mais completa, eu ainda conferiria tipografia, alinhamento, espaçamento e hierarquia diretamente na arte.`;
   }
   function inferLolaIntent(text){
@@ -3863,28 +3877,28 @@
   function lolaBasicReply(text,mem,ctx){
     const lower=String(text||'').trim().toLowerCase();
     if(/\b(oi|olá|ola|e aí|e ai|bom dia|boa tarde|boa noite)\b/.test(lower)){
-      return chooseFreshLolaReply(mem,['Oii! 💙 Tô aqui com você.','Opa! 👀 Que bom te ver por aqui.']);
+      return chooseFreshLolaReply(mem,['Oii!  Tô aqui com você.','Opa!  Que bom te ver por aqui.']);
     }
     if(/\b(tudo\s+bem|como\s+(você|voce|vc)\s+est[aá]|como\s+voc[eê]\s+t[aá])/.test(lower)){
-      return chooseFreshLolaReply(mem,['Tô bem sim. 💙 E agora fiquei curiosa com o que você queria me contar.','Tô tranquila por aqui. ✨ O que você quer fazer agora?']);
+      return chooseFreshLolaReply(mem,['Tô bem sim.  E agora fiquei curiosa com o que você queria me contar.','Tô tranquila por aqui.  O que você quer fazer agora?']);
     }
-    if(/\b(obrigad|valeu|vlw)\b/.test(lower)) return 'De nada! 💙';
-    if(/\b(desculp|foi mal|perd[aã]o)\b/.test(lower)) return 'Relaxa, acontece. 💙';
+    if(/\b(obrigad|valeu|vlw)\b/.test(lower)) return 'De nada! ';
+    if(/\b(desculp|foi mal|perd[aã]o)\b/.test(lower)) return 'Relaxa, acontece. ';
     if(/^(sim|claro|pode|bora|aceito|quero|com certeza|vamos)$/i.test(lower)){
-      return chooseFreshLolaReply(mem,['Então bora. 👀 Me conta o que vem agora.','Fechou. 💙 Tô acompanhando.','Pode deixar. ✨ Continua.']);
+      return chooseFreshLolaReply(mem,['Então bora.  Me conta o que vem agora.','Fechou.  Tô acompanhando.','Pode deixar.  Continua.']);
     }
     const arithmetic=lower.match(/^(?:quanto\s+é\s+|quanto\s+eh\s+)?(-?\d+(?:[.,]\d+)?)\s*([+\-*x×÷\/])\s*(-?\d+(?:[.,]\d+)?)\s*\??$/i);
     if(arithmetic){
       const a=Number(arithmetic[1].replace(',','.')),op=arithmetic[2].trim(),b=Number(arithmetic[3].replace(',','.'));
       let result=null;
       if(op==='+')result=a+b; else if(op==='-')result=a-b; else if(op==='*'||/x|×/i.test(op))result=a*b; else if(op==='/'||op==='÷')result=b===0?null:a/b;
-      if(result!==null&&Number.isFinite(result)) return `Dá ${Number.isInteger(result)?result:result.toFixed(4).replace(/0+$/,'').replace(/\.$/,'')}. 🧮`;
+      if(result!==null&&Number.isFinite(result)) return `Dá ${Number.isInteger(result)?result:result.toFixed(4).replace(/0+$/,'').replace(/\.$/,'')}. `;
     }
     if(/^(quem|o que|qual|como|por que|porque|onde|quando)\b/.test(lower)){
       // Fallback conservador: se a IA real estiver indisponível, ainda responde
       // de forma útil sem fingir conhecimento específico que não possui.
-      if(/\b(você|voce|vc)\b.*\b(lola|é|eh|está|esta)\b/.test(lower)) return 'Sou a Lola do Azurecord. 💙 Tô aqui pra conversar, pensar junto e acompanhar o que você estiver fazendo.';
-      return 'Eu consigo responder isso melhor com a IA conectada. Enquanto ela processa, me passa a pergunta exatamente como você quer saber e eu continuo daqui. 👀';
+      if(/\b(você|voce|vc)\b.*\b(lola|é|eh|está|esta)\b/.test(lower)) return 'Sou a Lola do Azurecord.  Tô aqui pra conversar, pensar junto e acompanhar o que você estiver fazendo.';
+      return 'Eu consigo responder isso melhor com a IA conectada. Enquanto ela processa, me passa a pergunta exatamente como você quer saber e eu continuo daqui. ';
     }
     return null;
   }
@@ -3894,19 +3908,19 @@
     const intent=mem.lastIntent||inferLolaIntent(text);
     const recent=ctx.recent.at(-2)||'';
     const map={
-      greeting:['Oii! 💙 Tô aqui. Conta, o que está acontecendo?','Opa, oi! 👀 Já cheguei. Me conta o que você quer conversar.'],
-      planning:['Beleza, vamos pensar nisso juntos. 💙 Me dá o contexto inteiro que eu consigo acompanhar a ideia melhor.'],
-      math:['Pode mandar a parte de matemática. 🧮 Eu acompanho o raciocínio passo a passo e, se tiver erro, a gente confere onde ele apareceu.'],
-      science:['Manda a pergunta de ciência. 🔬 Eu separo o que é fato, hipótese e o que depende do contexto, sem inventar certeza onde não existe.'],
-      humanities:['Pode mandar. 📚 Eu consigo conversar sobre história, geografia, filosofia, literatura e assuntos parecidos, levando em conta o contexto que você der.'],
-      media:['Bora. 🎬🎮 Me diz qual obra, personagem ou situação você quer discutir e eu sigo o assunto daqui.'],
-      school:['Manda o que aconteceu na escola. 📚 Se for exercício, eu consigo acompanhar a questão; se for só conversa, também.'],
-      programming:['Manda o código, erro ou ideia. 💻 Eu sigo o contexto técnico e separo o que é causa provável do que ainda precisa ser verificado.'],
-      debug:['Tá, vamos caçar esse bug. 🔧 Me mostra o comportamento, o que mudou por último e o erro que apareceu.'],
-      design:['Pode mandar. 🎨 Se for uma peça, arquivo ou ideia visual, eu consigo comentar o nome do arquivo, a prévia e o contexto que você der.'],
-      games:['Hahaha, bora pros jogos. 🎮 Manda a situação completa que eu entro na conversa.'],
-      question:['Posso discutir isso com você. 👀 Só me dá o contexto que estiver faltando e eu sigo a linha da conversa.'],
-      chat:[recent?`Entendi. 👀 Tô acompanhando o que você acabou de falar sobre “${recent.slice(0,70)}${recent.length>70?'…':''}”. Continua.`:'Entendi. 💙 Pode continuar, eu tô acompanhando.']
+      greeting:['Oii!  Tô aqui. Conta, o que está acontecendo?','Opa, oi!  Já cheguei. Me conta o que você quer conversar.'],
+      planning:['Beleza, vamos pensar nisso juntos.  Me dá o contexto inteiro que eu consigo acompanhar a ideia melhor.'],
+      math:['Pode mandar a parte de matemática.  Eu acompanho o raciocínio passo a passo e, se tiver erro, a gente confere onde ele apareceu.'],
+      science:['Manda a pergunta de ciência.  Eu separo o que é fato, hipótese e o que depende do contexto, sem inventar certeza onde não existe.'],
+      humanities:['Pode mandar.  Eu consigo conversar sobre história, geografia, filosofia, literatura e assuntos parecidos, levando em conta o contexto que você der.'],
+      media:['Bora.  Me diz qual obra, personagem ou situação você quer discutir e eu sigo o assunto daqui.'],
+      school:['Manda o que aconteceu na escola.  Se for exercício, eu consigo acompanhar a questão; se for só conversa, também.'],
+      programming:['Manda o código, erro ou ideia.  Eu sigo o contexto técnico e separo o que é causa provável do que ainda precisa ser verificado.'],
+      debug:['Tá, vamos caçar esse bug.  Me mostra o comportamento, o que mudou por último e o erro que apareceu.'],
+      design:['Pode mandar.  Se for uma peça, arquivo ou ideia visual, eu consigo comentar o nome do arquivo, a prévia e o contexto que você der.'],
+      games:['Hahaha, bora pros jogos.  Manda a situação completa que eu entro na conversa.'],
+      question:['Posso discutir isso com você.  Só me dá o contexto que estiver faltando e eu sigo a linha da conversa.'],
+      chat:[recent?`Entendi.  Tô acompanhando o que você acabou de falar sobre “${recent.slice(0,70)}${recent.length>70?'…':''}”. Continua.`:'Entendi.  Pode continuar, eu tô acompanhando.']
     };
     const choices=map[intent]||map.chat;
     return choices[Math.floor((mem.messageCount+choices.length)%choices.length)];
@@ -3929,7 +3943,7 @@
     const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
     let reply=aiResult?.text;
     if(!reply){
-      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. 🔧',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. 🧠',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. 🧠',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. 💙'};
+      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. ',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. ',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. ',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. '};
       reply=diagnostic[aiResult?.code]||window.AzurecordLola.offlineReply(text,previousReplies,files.length);
     }
     if(!reply)return;
@@ -3963,10 +3977,10 @@
       }
       if(video&&source){
         const videoType=type.startsWith('video/')?type:(/\.webm$/i.test(name)?'video/webm':(/\.mov$/i.test(name)?'video/quicktime':'video/mp4'));
-        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage" data-inline-video-stage><video preload="none" playsinline data-inline-video data-src="${source}" data-video-type="${esc(videoType)}"></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button><div class="inline-video-error" hidden><strong>Não foi possível carregar este vídeo.</strong><button type="button" class="inline-video-retry" data-inline-video-retry>Tentar novamente</button><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage" data-inline-video-stage><video preload="none" playsinline data-inline-video data-src="${source}" data-video-type="${esc(videoType)}"></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>${uiIcon('play',18)}</span></button><div class="inline-video-error" hidden><strong>Não foi possível carregar este vídeo.</strong><button type="button" class="inline-video-retry" data-inline-video-retry>Tentar novamente</button><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       const icon=image?'IMG':fileIcon(type);
-      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${icon}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
+      const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${icon}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">'+uiIcon('external',15)+'</span>':''}</div>`;
       return source?`<a class="attachment-link" href="${source}" target="_blank" rel="noopener">${card}</a>`:card;
     }).join('');
   }
@@ -4084,7 +4098,7 @@
     const preview=renderLinkPreviewShell(m);
     const deliveryClass=own&&m.failed?'message-failed':own&&m.pending?'message-pending':'message-delivered';
     const deliveryLabel=own&&m.failed?'Falha no envio':own&&m.pending?'Enviando':'Enviada';
-    return `<article class="message-row ${deliveryClass}" data-msg="${m.id}" data-delivery="${deliveryLabel}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">↩ ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${preview}${renderPollCard(m)}${own&&m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?'⚠ Não enviada':'◌ Enviando'} ${m.failed&&view.mode==='dm'?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`;
+    return `<article class="message-row ${deliveryClass}" data-msg="${m.id}" data-delivery="${deliveryLabel}"><button type="button" class="message-avatar avatar-img" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</button><div class="message-content"><button type="button" class="message-meta message-profile-trigger" data-profile-msg="${p.id}" aria-label="Abrir perfil de ${esc(p.username)}"><strong>${esc(p.username)}</strong><span class="role-chip ${getServerRole(getServer(view.serverId),p.id)==='Admin'?'admin':''}">${esc(getServerRole(getServer(view.serverId),p.id))}</span><time>${formatTime(m.time)}</time>${m.edited?'<span class="message-edited">editada</span>':''}</button>${m.replyTo?`<div class="reply-preview">${uiIcon('reply',13)} ${esc(m.replyTo.authorName)}: ${esc(m.replyTo.text)}</div>`:''}<div class="message-text ${action?'action-text':''}">${formatted}</div>${attachments}${preview}${renderPollCard(m)}${own&&m.pending?`<small class="dm-delivery ${m.failed?'dm-failed':''}">${m.failed?uiIcon('warning',13)+' Não enviada':uiIcon('clock',13)+' Enviando'} ${m.failed&&view.mode==='dm'?`<button type="button" data-retry-dm="${esc(m.id)}">Tentar novamente</button>`:''}</small>`:''}${reactions?`<div class="message-reactions">${reactions}</div>`:''}</div></article>`;
   }
   function formatText(text,username){
     let s=esc(text);
@@ -4304,7 +4318,7 @@
   }
   function insertAtCursor(txt){ const i=$('messageInput');const s=i.selectionStart??i.value.length; i.value=i.value.slice(0,s)+txt+i.value.slice(i.selectionEnd);i.focus();i.selectionStart=i.selectionEnd=s+txt.length; }
 
-  function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">${uiIcon('reply',15)} Responder</button><button class="context-item" data-context="forward">${uiIcon('forward',15)} Encaminhar</button><button class="context-item" data-context="pin">${uiIcon('pin',15)} ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">● Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">${uiIcon('link',15)} Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>${uiIcon('edit',15)} Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>${uiIcon('trash',15)} Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">${uiIcon('id',15)} Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
+  function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">${uiIcon('reply',15)} Responder</button><button class="context-item" data-context="forward">${uiIcon('forward',15)} Encaminhar</button><button class="context-item" data-context="pin">${uiIcon('pin',15)} ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">${uiIcon('unread',15)} Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">${uiIcon('link',15)} Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>${uiIcon('edit',15)} Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>${uiIcon('trash',15)} Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">${uiIcon('id',15)} Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
   function messageKey(id){return `${view.mode}|${view.serverId}|${view.channelId}|${view.dmUserId||''}|${id}`;}
   function reactMessage(id,emoji){const arr=getMessages();const m=arr.find(x=>x.id===id);if(!m)return;m.reactions=m.reactions||{};m.reactions[emoji]=(m.reactions[emoji]||0)+1;m.myReaction=emoji;setMessages(arr);hideContext();renderMessages();}
   async function deleteMessagePermanently(m,id){
@@ -4414,7 +4428,7 @@
         <div class="profile-main-head">
           <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div></div>
           <div class="profile-head-copy">
-            ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
+            ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">${uiIcon('plus',12)}</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
             <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}${p.pronouns?` <span class="profile-bullet">•</span> ${esc(p.pronouns)}`:''}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
           </div>
         </div>
@@ -4427,7 +4441,7 @@
       <div class="profile-main-head">
         <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div></div>
         <div class="profile-head-copy">
-          ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
+          ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">${uiIcon('plus',12)}</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
           <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}${ignored?' <span class="profile-bullet">•</span> Ignorado':''}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
         </div>
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
@@ -4665,7 +4679,7 @@
     if(tab==='lola')return `<div class="settings-section"><h3>Lola / Workers AI</h3>${settingsToggleRow('lolaEnabledV83','Ativar Lola','Permite conversar com a assistente do Azurecord.',cs.lolaEnabled!==false)}${settingsToggleRow('lolaMemoryV83','Memória da Lola','Permite usar memória de contexto quando disponível.',cs.lolaMemoryEnabled!==false)}<div class="settings-option"><div><strong>Modelo</strong><span>${esc(cloudInfo?.capabilities?.lolaWorkersAI?'Cloudflare Workers AI ativo':'Workers AI indisponível')}</span></div><span class="pill">Llama 4 Scout</span></div><div class="settings-actions"><button class="btn btn-primary" id="openLolaFromSettings">Abrir Lola</button><button class="btn btn-ghost" id="newLolaFromSettings">Nova conversa</button></div></div>`;
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
     if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Avatar e banner</strong><p>O banner não possui mais limite artificial de MB na seleção. O Azurecord abre o recorte e compacta a área escolhida antes de salvar, evitando mandar a imagem bruta gigantesca para a conta.</p></div></div>`;
-    if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>AzureCall 2.0 ativo</strong><p>Voz, vídeo e compartilhamento usam WebRTC com trilhas separadas para câmera e tela. Qualquer lado da chamada pode transmitir, inclusive no navegador móvel quando a captura nativa estiver disponível.</p><div class="choice-row"><button class="choice-btn active" disabled>◉ Voz</button><button class="choice-btn active" disabled>▣ Vídeo</button><button class="choice-btn active" disabled>▤ Tela</button></div></div></div>`;
+    if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>AzureCall 2.0 ativo</strong><p>Voz, vídeo e compartilhamento usam WebRTC com trilhas separadas para câmera e tela. Qualquer lado da chamada pode transmitir, inclusive no navegador móvel quando a captura nativa estiver disponível.</p><div class="choice-row"><button class="choice-btn active" disabled>${uiIcon('volume',15)} Voz</button><button class="choice-btn active" disabled>${uiIcon('video',15)} Vídeo</button><button class="choice-btn active" disabled>${uiIcon('screen',15)} Tela</button></div></div></div>`;
     if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord ${esc(AZURECORD_VERSION)}</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
@@ -4808,7 +4822,7 @@
     const box=$('contextMenu');
     const prefs=serverPreferenceState(s);
     const channelMuted=(prefs.mutedChannels||[]).includes(String(channelId));
-    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${uiIcon(channelMuted?'bell':'muteBell',15)} ${channelMuted?'Ativar notificações':'Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>↑ Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>↓ Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>${uiIcon('trash',15)} Excluir canal</button></div>`;
+    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${uiIcon(channelMuted?'bell':'muteBell',15)} ${channelMuted?'Ativar notificações':'Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>${uiIcon('arrowUp',15)} Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>${uiIcon('arrowDown',15)} Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>${uiIcon('trash',15)} Excluir canal</button></div>`;
     box.hidden=false;
     box.style.left=Math.min(ev.clientX,window.innerWidth-250)+'px'; box.style.top=Math.min(ev.clientY,window.innerHeight-180)+'px';
     box.querySelectorAll('[data-channel-context]').forEach(b=>{b.onclick=()=>channelContextAction(b.dataset.channelContext,channelId);});
@@ -4876,7 +4890,7 @@
   function serverSettingsContent(tab,s){
     const manager=canManageServer(s);const channels=s.channels||[];
     if(tab==='profile')return `<div class="settings-section"><h3>Perfil do servidor</h3><p class="muted">Personalize como o servidor aparece no Azurecord.</p><div class="server-settings-preview" style="--server-accent:${esc(s.accent||'#5865f2')}"><div class="server-settings-banner" style="${s.bannerUrl?`background-image:url('${safeUrl(s.bannerUrl)}')`:''}"></div><div class="server-settings-card-head"><div class="server-settings-icon" style="${s.iconUrl?`background-image:url('${safeUrl(s.iconUrl)}')`:''}">${s.iconUrl?'':esc(s.icon||s.name?.[0]||'S')}</div><div><strong>${esc(s.name)}</strong><span>${esc(s.description||'Comunidade do Azurecord.')}</span></div></div></div><div class="settings-form-grid"><label>Nome<input id="serverSettingsName" maxlength="80" value="${esc(s.name)}" ${manager?'':'disabled'}></label><label>Cor da faixa<input id="serverSettingsAccent" type="color" value="${esc(s.accent||'#5865f2')}" ${manager?'':'disabled'}></label><label class="span-2">Descrição<textarea id="serverSettingsDescription" maxlength="240" ${manager?'':'disabled'}>${esc(s.description||'')}</textarea></label><label>Ícone<input id="serverSettingsIconFile" type="file" accept="image/*" ${manager?'':'disabled'}></label><label>Faixa / banner<input id="serverSettingsBannerFile" type="file" accept="image/*" ${manager?'':'disabled'}></label></div><div class="settings-actions"><button class="btn btn-primary" id="saveServerProfile" ${manager?'':'disabled'}>Salvar alterações</button></div></div>`;
-    if(tab==='channels')return `<div class="settings-section"><div class="settings-title-row"><div><h3>Canais</h3><p class="muted">${channels.length} canal(is)</p></div>${manager?'<div class="choice-row"><button class="btn btn-primary" id="serverAddText">+ Texto</button><button class="btn btn-ghost" id="serverAddVoice">+ Voz</button></div>':''}</div><div class="settings-list-cards">${channels.map(c=>`<div class="settings-list-card"><div><strong>${c.type==='voice'?'◉':'#'} ${esc(c.name)}</strong><span>${esc(c.topic||'Sem tópico')}</span></div>${manager?`<button class="home-mini-btn danger" data-settings-delete-channel="${esc(c.id)}">Excluir</button>`:''}</div>`).join('')}</div></div>`;
+    if(tab==='channels')return `<div class="settings-section"><div class="settings-title-row"><div><h3>Canais</h3><p class="muted">${channels.length} canal(is)</p></div>${manager?'<div class="choice-row"><button class="btn btn-primary" id="serverAddText">+ Texto</button><button class="btn btn-ghost" id="serverAddVoice">+ Voz</button></div>':''}</div><div class="settings-list-cards">${channels.map(c=>`<div class="settings-list-card"><div><strong>${c.type==='voice'?uiIcon('volume',15):'#'} ${esc(c.name)}</strong><span>${esc(c.topic||'Sem tópico')}</span></div>${manager?`<button class="home-mini-btn danger" data-settings-delete-channel="${esc(c.id)}">Excluir</button>`:''}</div>`).join('')}</div></div>`;
     if(tab==='members')return `<div class="settings-section"><h3>Membros</h3><div id="serverSettingsMembers"><span class="muted">Carregando membros...</span></div></div>`;
     if(tab==='roles')return `<div class="settings-section"><h3>Cargos</h3><p class="muted">Altere o cargo dos membros. O dono permanece Admin.</p><div id="serverSettingsRoles"><span class="muted">Carregando cargos...</span></div></div>`;
     if(tab==='invites')return `<div class="settings-section"><div class="settings-title-row"><div><h3>Convites</h3><p class="muted">Compartilhe códigos para outras pessoas entrarem.</p></div>${manager?'<button class="btn btn-primary" id="createServerInviteV83">Criar convite</button>':''}</div><div id="serverSettingsInvites"><span class="muted">Carregando convites...</span></div></div>`;
@@ -4911,7 +4925,7 @@
     if(tab==='channels'){ $('serverAddText')?.addEventListener('click',()=>{closeModal();openCreateChannel('text');});$('serverAddVoice')?.addEventListener('click',()=>{closeModal();openCreateChannel('voice');});$$('[data-settings-delete-channel]').forEach(b=>b.onclick=async()=>{const id=b.dataset.settingsDeleteChannel;const c=getChannel(s.id,id);if(!c)return;if(c.type==='text'){await channelContextAction('delete',id);}else{if(!confirm(`Excluir o canal de voz ${c.name}?`))return;s.channels=s.channels.filter(x=>x.id!==id);save();persistServersNow();renderShell();if(socialCloudReady()&&s.backendId&&c.backendId){try{await cloudRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});}catch(err){showToast(err.message||'Falha ao excluir canal.');}}}setTimeout(()=>openServerSettings('channels'),80);});}
     if(tab==='members'||tab==='roles')loadServerSettingsMembers(s,tab==='roles');
     if(tab==='invites'){loadServerSettingsInvites(s);$('createServerInviteV83')?.addEventListener('click',async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`,{method:'POST',body:'{}'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.create'});loadServerSettingsInvites(s);showToast('Convite criado.');}catch(err){showToast(err.message||'Falha ao criar convite.');}});}
-    if(tab==='integrations'){$('toggleLumenServer')?.addEventListener('click',async()=>{if(!manager)return;const features=new Set(Array.isArray(s.features)?s.features:[]);const adding=!features.has('lumen-dj');if(adding)features.add('lumen-dj');else features.delete('lumen-dj');try{const patch={features:[...features]};if(socialCloudReady()){const data=await socialRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data?.server||patch);}else Object.assign(s,patch);save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'lumen.toggle'});renderMemberPanel();openServerSettings('integrations');showToast(adding?'Lumen entrou no servidor. ♫':'Lumen saiu do servidor.');}catch(err){showToast(err.message||'Não foi possível atualizar a Lumen.');}});}
+    if(tab==='integrations'){$('toggleLumenServer')?.addEventListener('click',async()=>{if(!manager)return;const features=new Set(Array.isArray(s.features)?s.features:[]);const adding=!features.has('lumen-dj');if(adding)features.add('lumen-dj');else features.delete('lumen-dj');try{const patch={features:[...features]};if(socialCloudReady()){const data=await socialRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data?.server||patch);}else Object.assign(s,patch);save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'lumen.toggle'});renderMemberPanel();openServerSettings('integrations');showToast(adding?'Lumen entrou no servidor.':'Lumen saiu do servidor.');}catch(err){showToast(err.message||'Não foi possível atualizar a Lumen.');}});}
     $('deleteServerV83')?.addEventListener('click',async()=>{if($('deleteServerPhrase').value.trim()!==s.name){showToast('Digite o nome exato do servidor.');return;}try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'DELETE'});sendCloudRealtime({type:'account.commit',reason:'server.delete'});state.servers=state.servers.filter(x=>x.id!==s.id);save();persistServersNow();closeModal();openHome('friends');showToast('Servidor excluído.');}catch(err){showToast(err.message||'Falha ao excluir servidor.');}});
   }
   async function loadServerSettingsMembers(s,rolesMode=false){
@@ -5269,7 +5283,7 @@
     return await new Promise(resolve=>{
       const layer=document.createElement('div');layer.className='screen-source-picker-layer';
       const cards=sources.map(source=>{
-        const thumb=source.thumbnail?'<img src="'+source.thumbnail+'" alt="">':'<div class="screen-source-placeholder">▣</div>';
+        const thumb=source.thumbnail?'<img src="'+source.thumbnail+'" alt="">':'<div class="screen-source-placeholder">'+uiIcon('screen',24)+'</div>';
         const kind=source.type==='screen'?'Tela inteira':'Aplicativo';
         return '<button type="button" class="screen-source-card" data-display-source="'+esc(source.id)+'">'+thumb+'<div><strong>'+esc(source.name||kind)+'</strong><span>'+kind+'</span></div></button>';
       }).join('');
@@ -6026,7 +6040,7 @@
     voice.innerHTML=voiceChannels.map(c=>{
       const joined=serverVoiceSession?.serverId===s.id&&serverVoiceSession?.channelId===c.id;
       const count=joined?serverVoiceSession.participantIds.size:0;
-      return `<button type="button" class="channel-item ${joined?'active voice-connected':''}" data-voice-channel="${esc(c.id)}"><span>◉</span>${esc(c.name||'voz')}<small>${joined?count+' conectado'+(count===1?'':'s'):''}</small></button>`;
+      return `<button type="button" class="channel-item ${joined?'active voice-connected':''}" data-voice-channel="${esc(c.id)}"><span>${uiIcon('volume',15)}</span>${esc(c.name||'voz')}<small>${joined?count+' conectado'+(count===1?'':'s'):''}</small></button>`;
     }).join('')||'<div class="dm-empty">Nenhum canal de voz.</div>';
     text.querySelectorAll('[data-channel]').forEach(b=>{b.addEventListener('click',()=>openChannel(b.dataset.channel));b.addEventListener('contextmenu',e=>openChannelContextMenu(e,b.dataset.channel));});
     voice.querySelectorAll('[data-voice-channel]').forEach(b=>b.addEventListener('click',()=>openChannel(b.dataset.voiceChannel)));
