@@ -1699,7 +1699,7 @@
       nav.querySelector('[data-mobile-you]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('you');openAppSettings('account');};
     }
     if(!$('mobileMenuBtn')){
-      const btn=document.createElement('button');btn.id='mobileMenuBtn';btn.className='mobile-menu-btn';btn.type='button';btn.textContent='☰';btn.setAttribute('aria-label','Abrir navegação');
+      const btn=document.createElement('button');btn.id='mobileMenuBtn';btn.className='mobile-menu-btn';btn.type='button';btn.innerHTML=uiIcon('menu',20);btn.setAttribute('aria-label','Abrir navegação');
       $('chatHeader')?.prepend(btn);btn.onclick=()=>setMobileDrawer(true);
     }
     document.addEventListener('click',e=>{
@@ -2466,7 +2466,7 @@
       const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
       const speaking=isLumen?!!lumenState:session.speakingIds?.has(String(id));
       const lumenCaption=isLumen?String(lumenState?.name||'DJ Lumen'):'';
-      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(lumenCaption?'<small class="server-voice-now-playing">♫ '+esc(lumenCaption)+'</small>':'')+'</article>';
+      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(lumenCaption?'<small class="server-voice-now-playing">'+uiIcon('music',13)+' '+esc(lumenCaption)+'</small>':'')+'</article>';
     }).join('');
     for(const id of ids){
       const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
@@ -2799,7 +2799,7 @@
 
   function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p&&resolvedPresence(p.id)==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
   function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
-  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
+  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">'+uiIcon('users',28)+'</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">'+uiIcon('plus',16)+' Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
   function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=isSystemMascot(p.id); const liveStatus=resolvedPresence(p.id); const statusText=system?systemMascotKind(p.id):statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); const systemActions=p.id==='user-lola'?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`; return `<div class="friend-row ${p.id==='user-lumen'?'lumen-mascot-row':''}" data-user-row="${p.id}"><div class="home-avatar avatar-img ${p.id==='user-lumen'?'lumen-mascot-avatar':''}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?systemActions:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
@@ -2920,7 +2920,7 @@
     state.dmMessages[key]=Array.isArray(state.dmMessages[key])?state.dmMessages[key]:[];
     save();
     renderDms();renderBadges();
-    if(firstUnlock)showToast('Chat secreto da Lola desbloqueado. 👀💙');
+    if(firstUnlock)showToast('Chat secreto da Lola desbloqueado.');
     closeModal();
     openDm('user-lola',{secret:true,suppressProfile:true});
     return true;
@@ -2931,7 +2931,7 @@
     return false;
   }
   function openSecretCodes(){
-    showModal('Códigos secretos',`<div class="app-card"><strong>🔐 Área de códigos</strong><p>Há experiências escondidas no beta do Azurecord. Digite um código para descobrir se alguma delas foi liberada.</p><label>Código<input id="secretCodeInput" autocomplete="off" spellcheck="false" placeholder="Digite o código"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="secretCodeCancel">Cancelar</button><button class="btn btn-primary" id="secretCodeUnlock">Desbloquear</button></div><p class="tiny-note">Alguns códigos podem desbloquear conversas ou recursos especiais.</p></div>`);
+    showModal('Códigos secretos',`<div class="app-card"><strong>'+uiIcon('lock',18)+' Área de códigos</strong><p>Há experiências escondidas no beta do Azurecord. Digite um código para descobrir se alguma delas foi liberada.</p><label>Código<input id="secretCodeInput" autocomplete="off" spellcheck="false" placeholder="Digite o código"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="secretCodeCancel">Cancelar</button><button class="btn btn-primary" id="secretCodeUnlock">Desbloquear</button></div><p class="tiny-note">Alguns códigos podem desbloquear conversas ou recursos especiais.</p></div>`);
     $('secretCodeCancel').onclick=closeModal;
     $('secretCodeUnlock').onclick=()=>checkLolaSecretCode($('secretCodeInput').value,'panel');
     $('secretCodeInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();checkLolaSecretCode(e.currentTarget.value,'panel');}});
@@ -2947,7 +2947,7 @@
     if(!ids.length){box.innerHTML='<div class="dm-empty">Nenhuma DM aberta.</div>';return;}
     box.innerHTML=ids.map(id=>{
       const p=getProfile(id); const key=dmKey(id); const msgs=(state.dmMessages[key]||[]).filter(m=>!isMessageSourceHidden(m.author||m.senderId)); const last=msgs.at(-1);
-      const preview=isIgnored(id)?'Mensagens deste usuário estão ocultas.':(last?.failed?'⚠ Não enviada • ':'')+(last?.text || (id==='user-lola'?'Conversa livre com a Lola.':'Conversa'));
+      const preview=isIgnored(id)?'Mensagens deste usuário estão ocultas.':(last?.failed?'Não enviada • ':'')+(last?.text || (id==='user-lola'?'Conversa livre com a Lola.':'Conversa'));
       return `<div class="dm-item" data-dm-row="${esc(id)}"><button type="button" class="dm-open" data-dm-open="${esc(id)}"><span class="mini-avatar avatar-img" style="${p?.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p?.avatar?'':esc((p?.username||'?')[0])}</span><span class="dm-item-main"><strong>${esc(p?.username||'Usuário')}</strong><span>${esc(preview)}</span></span>${state.unread[key]?'<span class="unread-dot"></span>':''}</button><button type="button" class="dm-close" data-dm-close="${esc(id)}" aria-label="Fechar conversa com ${esc(p?.username||'usuário')}">×</button></div>`;
     }).join('');
     box.hidden=false;
@@ -3021,11 +3021,11 @@
     if(me===state.currentAccountId){
       if(view.mode==='dm'&&view.dmUserId==='user-lola')queueLolaInitiation(false);
       $('messageInput').disabled=false;$('messageInput').focus();
-      showToast('Nova conversa criada. 😈 Histórico anterior arquivado no Azurecord Cloud.');
+      showToast('Nova conversa criada. Histórico anterior arquivado no Azurecord Cloud.');
     }
   }
   async function openDm(id,options={}){
-    if(id==='user-lumen'){showToast('Lumen é a mascote do Azurecord. O chat dela ainda não é uma segunda IA. ⚡');openProfileModal(id);return;}
+    if(id==='user-lumen'){showToast('Lumen é a mascote do Azurecord. O chat dela ainda não é uma segunda IA.');openProfileModal(id);return;}
     if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
     if(!getProfile(id))return;
     if(id!=='user-lola'&&isBlocked(id)){showToast('Desbloqueie este usuário antes de abrir uma DM.');openProfileModal(id);return;}
@@ -3224,7 +3224,7 @@
   }
   function fileIcon(type=''){
     if(type.startsWith('video/'))return '▶';
-    if(type.startsWith('audio/'))return '♫';
+    if(type.startsWith('audio/'))return uiIcon('fileAudio',18);
     if(type.includes('pdf'))return 'PDF';
     if(type.includes('zip')||type.includes('rar')||type.includes('7z'))return 'ZIP';
     if(type.includes('word')||type.includes('document'))return 'DOC';
@@ -3361,7 +3361,7 @@
       renderAttachmentPreview();
       closeComposerPopover();
       void socialRequest('/api/klipy/register-share',{method:'POST',body:JSON.stringify({id,q:klipyLastQuery})}).catch(()=>{});
-      showToast('GIF da KLIPY anexado. ✨');
+      showToast('GIF da KLIPY anexado.');
     });
     box.querySelectorAll('[data-klipy-favorite]').forEach(btn=>btn.onclick=e=>{
       e.stopPropagation();
@@ -4045,7 +4045,7 @@
       const active=Number(poll.myVote)===index;
       return '<button type="button" class="poll-option '+(active?'active':'')+'" data-poll-message="'+esc(m.id)+'" data-poll-option="'+index+'"><span class="poll-option-label">'+esc(option)+'</span><span class="poll-option-count">'+count+' • '+pct+'%</span><i style="width:'+pct+'%"></i></button>';
     }).join('');
-    return '<div class="poll-card"><div class="poll-question">📊 '+esc(poll.question||m.text||'Enquete')+'</div><div class="poll-options">'+html+'</div><div class="poll-total">'+total+' voto'+(total===1?'':'s')+' • clique para votar ou trocar seu voto</div></div>';
+    return '<div class="poll-card"><div class="poll-question">'+uiIcon('poll',18)+' '+esc(poll.question||m.text||'Enquete')+'</div><div class="poll-options">'+html+'</div><div class="poll-total">'+total+' voto'+(total===1?'':'s')+' • clique para votar ou trocar seu voto</div></div>';
   }
   async function votePoll(messageId,optionIndex){
     if(view.mode!=='server'||!socialCloudReady())return;
@@ -4063,7 +4063,7 @@
   function renderMessage(m){
     if(m?.system?.type==='member_join'){
       const username=m.system.username||getProfile(m.system.userId)?.username||'Novo membro';
-      return '<div class="system-welcome-message"><span>👋</span><strong>'+esc(username)+'</strong><span>entrou no servidor. Boas-vindas!</span><time>'+formatTime(m.time)+'</time></div>';
+      return '<div class="system-welcome-message"><span>'+uiIcon('users',16)+'</span><strong>'+esc(username)+'</strong><span>entrou no servidor. Boas-vindas!</span><time>'+formatTime(m.time)+'</time></div>';
     }
     const p=getProfile(m.author)||{username:'Usuário'};
     const own=m.author===state.currentAccountId;
@@ -4422,13 +4422,13 @@
         </div>
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
       </div>
-      <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'✦')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
+      <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'Membro')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
       <div class="profile-body-grid">
         <section class="profile-section-card"><div class="dm-peek-label">SOBRE MIM</div><p>${esc(p.bio||'Sem bio.')}</p></section>
         <section class="profile-section-card"><div class="dm-peek-label">PERSONALIDADE</div><p>${esc(p.personality||'Usuário do Azurecord.')}</p></section>
       </div>
       <div class="profile-meta-grid"><div><span>Membro desde</span><strong>${esc(p.memberSince||'2026')}</strong></div><div><span>${system?'Tipo':'Amigos'}</span><strong>${system?(p.id==='user-lola'?'Assistente':'Mascote'):String(p.friendCount??friendIdsForProfile(p.id))}</strong></div><div><span>Usuário</span><strong>${esc(p.handle||'@'+p.username.toLowerCase())}</strong></div></div>
-      ${system?(p.id==='user-lola'?`<div class="profile-actions profile-action-grid profile-action-grid-system"><button class="btn btn-primary" data-profile-dm="${p.id}">Mensagem direta</button></div>`:`<div class="mascot-profile-note">⚡ Lumen é mascote oficial do Azurecord. A IA continua sendo a Lola.</div>`):!self?`<div class="profile-actions profile-action-grid">
+      ${system?(p.id==='user-lola'?`<div class="profile-actions profile-action-grid profile-action-grid-system"><button class="btn btn-primary" data-profile-dm="${p.id}">Mensagem direta</button></div>`:`<div class="mascot-profile-note">'+uiIcon('music',16)+' Lumen é mascote oficial do Azurecord. A IA continua sendo a Lola.</div>`):!self?`<div class="profile-actions profile-action-grid">
         <button class="btn btn-primary" data-profile-dm="${p.id}" ${blocked?'disabled':''}>Mensagem direta</button>
         <button class="btn btn-ghost" data-profile-friend="${p.id}" ${blocked?'disabled':''}>${isFriend(p.id)?'Remover amigo':'Adicionar amigo'}</button>
         <button class="btn ${blocked?'btn-ghost':'btn-danger'}" data-profile-block="${p.id}">${blocked?'Desbloquear':'Bloquear'}</button>
@@ -4611,7 +4611,7 @@
           <div class="settings-account-avatar avatar-img" style="${avatarStyle}">${user?.avatar?'':esc((user?.username||'A')[0])}</div>
           <div class="settings-account-copy"><strong>${esc(user?.username||'Azurecord')}</strong><span>${esc(user?.handle||'Configurações')}</span></div>
         </div>
-        <label class="settings-search"><span>⌕</span><input id="settingsNavSearch" type="search" placeholder="Buscar" autocomplete="off"></label>
+        <label class="settings-search"><span>'+uiIcon('search',16)+'</span><input id="settingsNavSearch" type="search" placeholder="Buscar" autocomplete="off"></label>
         <div class="settings-sidebar-title">${esc(title)}</div>
         <nav>${nav.map(item=>`<button type="button" class="settings-nav-item ${item.id===active?'active':''} ${item.danger?'danger':''}" data-settings-tab="${item.id}" data-settings-label="${esc(item.label.toLowerCase())}"><span class="settings-nav-icon">${item.icon||''}</span><span>${esc(item.label)}</span></button>`).join('')}</nav>
       </aside>
@@ -4852,16 +4852,16 @@
   function canManageServer(server){ const s=typeof server==='string'?getServer(server):server; return !!s && (s.owner===state.currentAccountId || getServerRole(s,state.currentAccountId)==='Admin'); }
   function openRoleManager(){const s=getServer(view.serverId);if(!s)return;const members=[currentUser(),...DEMO_USERS.filter(x=>x.id!==currentUser()?.id)];state.roles[s.id]=state.roles[s.id]||{};if(s.owner===state.currentAccountId)state.roles[s.id][state.currentAccountId]='Admin';showModal('Cargos e permissões',`<p class="muted">Protótipo local: defina o cargo visual de cada membro deste servidor.</p><div class="setting-list">${members.filter(Boolean).map(p=>`<div class="setting-row"><div><strong>${esc(p.username)}</strong><span>${esc(p.handle)}</span></div><select data-role-user="${p.id}"><option ${((state.roles[s.id]||{})[p.id]||getServerRole(s,p.id))==='Admin'?'selected':''}>Admin</option><option ${((state.roles[s.id]||{})[p.id]||getServerRole(s,p.id))==='Moderador'?'selected':''}>Moderador</option><option ${((state.roles[s.id]||{})[p.id]||getServerRole(s,p.id))==='Membro'?'selected':''}>Membro</option></select></div>`).join('')}</div><p class="tiny-note">Permissões reais por canal entram quando houver backend.</p>`);$$('[data-role-user]').forEach(sel=>sel.onchange=()=>{state.roles[s.id]=state.roles[s.id]||{};state.roles[s.id][sel.dataset.roleUser]=sel.value;save();renderMemberPanel();});}
   const SERVER_SETTINGS_NAV=[
-    {id:'profile',label:'Perfil do servidor',icon:'🏠',hint:'Nome, ícone, faixa e descrição.'},
-    {id:'channels',label:'Canais',icon:'#',hint:'Crie e organize canais.'},
-    {id:'members',label:'Membros',icon:'👥',hint:'Veja e gerencie pessoas do servidor.'},
-    {id:'roles',label:'Cargos',icon:'🏷',hint:'Admin, moderador e membro.'},
-    {id:'invites',label:'Convites',icon:'🔗',hint:'Crie, copie e revogue convites.'},
-    {id:'access',label:'Acesso',icon:'🔐',hint:'Regras gerais de acesso.'},
-    {id:'moderation',label:'Moderação',icon:'🛡',hint:'Ferramentas de segurança e moderação.'},
-    {id:'integrations',label:'Integrações',icon:'🧩',hint:'Apps e integrações do servidor.'},
-    {id:'audit',label:'Auditoria',icon:'📜',hint:'Registro administrativo.'},
-    {id:'delete',label:'Excluir servidor',icon:'🗑',hint:'Zona de perigo.',danger:true},
+    {id:'profile',label:'Perfil do servidor',icon:uiIcon('home'),hint:'Nome, ícone, faixa e descrição.'},
+    {id:'channels',label:'Canais',icon:uiIcon('message'),hint:'Crie e organize canais.'},
+    {id:'members',label:'Membros',icon:uiIcon('users'),hint:'Veja e gerencie pessoas do servidor.'},
+    {id:'roles',label:'Cargos',icon:uiIcon('tag'),hint:'Admin, moderador e membro.'},
+    {id:'invites',label:'Convites',icon:uiIcon('link'),hint:'Crie, copie e revogue convites.'},
+    {id:'access',label:'Acesso',icon:uiIcon('lock'),hint:'Regras gerais de acesso.'},
+    {id:'moderation',label:'Moderação',icon:uiIcon('shield'),hint:'Ferramentas de segurança e moderação.'},
+    {id:'integrations',label:'Integrações',icon:uiIcon('puzzle'),hint:'Apps e integrações do servidor.'},
+    {id:'audit',label:'Auditoria',icon:uiIcon('audit'),hint:'Registro administrativo.'},
+    {id:'delete',label:'Excluir servidor',icon:uiIcon('trash'),hint:'Zona de perigo.',danger:true},
   ];
   function serverSettingsContent(tab,s){
     const manager=canManageServer(s);const channels=s.channels||[];
