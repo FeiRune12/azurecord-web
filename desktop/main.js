@@ -209,6 +209,27 @@ app.whenReady().then(async () => {
   try {
     app.setAppUserModelId('com.azurecord.app');
 
+    // YouTube embed requires an HTTP Referer in desktop/WebView environments.
+    // The renderer is loaded from file://, so Chromium would otherwise send no usable Referer and YouTube returns error 153.
+    try {
+      const youtubeEmbedFilter = {
+        urls: [
+          'https://www.youtube.com/embed/*',
+          'https://www.youtube-nocookie.com/embed/*'
+        ]
+      };
+      session.defaultSession.webRequest.onBeforeSendHeaders(youtubeEmbedFilter, (details, callback) => {
+        const requestHeaders = { ...(details.requestHeaders || {}) };
+        for (const key of Object.keys(requestHeaders)) {
+          if (key.toLowerCase() === 'referer') delete requestHeaders[key];
+        }
+        requestHeaders.Referer = 'https://azurecord.vercel.app/';
+        callback({ requestHeaders });
+      });
+    } catch (err) {
+      log('[youtube-embed-referer]', err?.message || err);
+    }
+
     try {
       session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
         try {
