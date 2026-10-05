@@ -1773,13 +1773,90 @@
     }
   }
 
+
+  let updateChoiceVersion='';
+  function ensureUpdateChoice(){
+    let box=$('azurecordUpdateChoice');
+    if(box)return box;
+    box=document.createElement('aside');
+    box.id='azurecordUpdateChoice';
+    box.className='update-choice';
+    box.hidden=true;
+    box.innerHTML='<div class="update-choice-icon">'+uiIcon('download',22)+'</div><div class="update-choice-copy"><strong id="updateChoiceTitle">Atualização disponível</strong><span id="updateChoiceText">Uma nova versão do Azurecord está pronta.</span></div><div class="update-choice-actions"><button type="button" class="home-mini-btn ghost" id="updateChoiceLater">Depois</button><button type="button" class="home-mini-btn" id="updateChoiceNow">Atualizar agora</button></div>';
+    document.body.appendChild(box);
+    $('updateChoiceLater').onclick=()=>{box.hidden=true;};
+    return box;
+  }
+  async function showUpdateChoice(version,installer){
+    const clean=String(version||'').trim();
+    if(!clean||clean===AZURECORD_VERSION)return;
+    const box=ensureUpdateChoice();
+    updateChoiceVersion=clean;
+    $('updateChoiceTitle').textContent='Azurecord '+clean+' disponível';
+    $('updateChoiceText').textContent='A atualização já está pronta. Você decide quando instalar.';
+    $('updateChoiceNow').onclick=async()=>{
+      const btn=$('updateChoiceNow');btn.disabled=true;btn.textContent='Preparando...';
+      try{
+        const ok=await installer?.();
+        if(ok!==false){box.hidden=true;showToast('Atualização autorizada. O Azurecord vai iniciar a instalação.');}
+        else showToast('Não foi possível iniciar a atualização agora.');
+      }catch(err){showToast(err?.message||'Não foi possível iniciar a atualização agora.');}
+      finally{btn.disabled=false;btn.textContent='Atualizar agora';}
+    };
+    box.hidden=false;
+  }
+  async function checkNativeReadyUpdate(){
+    try{
+      const version=await window.azurecordDesktop?.getReadyUpdateVersion?.();
+      if(version&&version!==AZURECORD_VERSION&&version!==updateChoiceVersion){
+        await showUpdateChoice(version,()=>window.azurecordDesktop?.installReadyUpdate?.());
+      }
+    }catch{}
+  }
+  function setUiButton(id,icon,label=''){
+    const el=$(id);if(!el)return;
+    el.innerHTML=uiIcon(icon,18)+(label?'<span>'+esc(label)+'</span>':'');
+  }
+  function applyUiIconography(){
+    const dmTitle=$('dmToggle')?.querySelector('span:first-child');
+    if(dmTitle)dmTitle.innerHTML=uiIcon('mail',15)+' <span>MENSAGENS DIRETAS</span>';
+    setUiButton('serverInviteBtn','link','Convidar');
+    setUiButton('roleManageBtn','tag','Cargos');
+    setUiButton('globalSearchBtn','search','Buscar');
+    setUiButton('homeAddBtn','plus','Adicionar amigo');
+    setUiButton('voiceBtn','volume','Voz');
+    setUiButton('videoBtn','video','Vídeo');
+    setUiButton('screenBtn','screen','Tela');
+    setUiButton('searchBtn','search');
+    setUiButton('peopleBtn','users','Pessoas');
+    setUiButton('lolaStatusBtn','brain','Configurar Lola');
+    setUiButton('newLolaChatBtn','message','Nova conversa');
+    setUiButton('clearDmBtn','trash','Limpar');
+    setUiButton('memberToggle','menu');
+    setUiButton('attachBtn','plus');
+    setUiButton('stickerBtn','sticker');
+    setUiButton('emojiBtn','smile');
+    setUiButton('appsBtn','grid');
+    const send=document.querySelector('.send-btn');if(send)send.innerHTML=uiIcon('message',18);
+    setUiButton('callMicBtn','mic');
+    setUiButton('callCameraBtn','video');
+    setUiButton('callShareBtn','screen');
+    setUiButton('callHangupBtn','phoneOff');
+  }
+
   function boot(){
+    applyUiIconography();
     try{
       window.azurecordDesktop?.onUpdateStatus?.((payload)=>{
         if(payload?.state==='updated')showToast(`Azurecord atualizado para ${payload.version||'a versão mais recente'}.`,{duration:5200});
-        else if(payload?.state==='downloaded'&&payload?.autoInstall)showToast('Atualização baixada. O Azurecord vai reiniciar para instalar.',{duration:4000});
+        else if(payload?.state==='downloaded'){
+          void showUpdateChoice(payload.version,()=>window.azurecordDesktop?.installUpdate?.());
+        }
       });
     }catch{}
+    void checkNativeReadyUpdate();
+    setInterval(checkNativeReadyUpdate,30000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void checkNativeReadyUpdate();});
     window.__azurecordBootStarted=performance.now();
     setScreen('loadingScreen');
     setupMobileUi();
