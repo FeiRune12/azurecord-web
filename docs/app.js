@@ -5920,34 +5920,34 @@
     const aiLabel=cloudInfo?.capabilities?.lolaWorkersAI
       ? `Workers AI conectado • ${cloudInfo.version||'Worker Cloud'}`
       : 'Workers AI não detectado no Worker';
-    showModal('Apps do Azurecord',`<div class="modal-grid"><div class="app-card"><strong>🧠 Lola IA</strong><p>${esc(aiLabel)}</p><button class="home-mini-btn" id="lolaAiSetup">Configurar</button></div><div class="app-card"><strong>🪙 AzurePoints</strong><p>Carteira, histórico, loja e solicitações de resgate.</p><button class="home-mini-btn" id="pointsApps">Abrir</button></div><div class="app-card"><strong>📊 Enquete</strong><p>Crie uma votação rápida no canal.</p><button class="home-mini-btn" id="createPollApp">Criar</button></div><div class="app-card"><strong>🕹 Mini-jogos</strong><p>Atividades rápidas para comunidades.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔔 Lembretes</strong><p>Organize avisos dentro do servidor.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🧰 Utilidades</strong><p>Ferramentas básicas para moderadores.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔐 Códigos secretos</strong><p>Uma área escondida para experiências do app.</p><button class="home-mini-btn" id="secretCodesApp" type="button">Abrir</button></div></div>`);
+    showModal('Apps do Azurecord',`<div class="modal-grid"><div class="app-card"><strong>${uiIcon('brain',18)} Lola IA</strong><p>${esc(aiLabel)}</p><button class="home-mini-btn" id="lolaAiSetup">Configurar</button></div><div class="app-card"><strong>${uiIcon('coin',18)} AzurePoints</strong><p>Carteira, histórico, loja e solicitações de resgate.</p><button class="home-mini-btn" id="pointsApps">Abrir</button></div><div class="app-card"><strong>${uiIcon('poll',18)} Enquete</strong><p>Crie uma votação rápida no canal.</p><button class="home-mini-btn" id="createPollApp">Criar</button></div><div class="app-card"><strong>${uiIcon('game',18)} Mini-jogos</strong><p>Atividades rápidas para comunidades.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>${uiIcon('bell',18)} Lembretes</strong><p>Organize avisos dentro do servidor.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>${uiIcon('tool',18)} Utilidades</strong><p>Ferramentas básicas para moderadores.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>${uiIcon('lock',18)} Códigos secretos</strong><p>Uma área escondida para experiências do app.</p><button class="home-mini-btn" id="secretCodesApp" type="button">Abrir</button></div></div>`);
     $('pointsApps')?.addEventListener('click',openAzurePoints);
     $('createPollApp')?.addEventListener('click',()=>{closeModal();openCreatePoll();});
     $('secretCodesApp')?.addEventListener('click',openSecretCodes);
     $('lolaAiSetup')?.addEventListener('click',openLolaAiSetup);
   }
   async function openAzurePoints(){
-    if(!pointsCloudReady()){showModal('AzurePoints',`<div class="app-card"><strong>🪙 Sua carteira</strong><p>Entre na sua conta Cloud para carregar sua carteira AzurePoints.</p></div>`);return;}
-    showModal('AzurePoints 🪙',`<div class="app-card">Carregando carteira Cloud...</div>`);
+    if(!pointsCloudReady()){showModal('AzurePoints',`<div class="app-card"><strong>${uiIcon('wallet',18)} Sua carteira</strong><p>Entre na sua conta Cloud para carregar sua carteira AzurePoints.</p></div>`);return;}
+    showModal('AzurePoints',`<div class="app-card">Carregando carteira Cloud...</div>`);
     try{
       const [result,shop,history,redemptions]=await Promise.all([
         cloudRequest('/api/points/wallet'),cloudRequest('/api/points/shop'),cloudRequest('/api/points/history'),cloudRequest('/api/points/redemptions')]);
       const w=result.wallet;
       const money=(cents)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100);
       const available=w.available,rate=result.pointsPerBRL;
-      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>🏪 Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
+      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>${uiIcon('shop',18)} Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
       const requested=redemptions.redemptions||[];
-      showModal('AzurePoints 🪙',`<div class="points-panel"><div class="points-top"><small>SALDO CLOUD</small><h2 id="pointsWalletBalance">${available.toLocaleString('pt-BR')} AP</h2><p>Acumulados: ${w.earned.toLocaleString('pt-BR')} • Reservados: ${w.reserved.toLocaleString('pt-BR')}</p></div><h3>🏪 Loja</h3>${shopContent}
-        <h3>💸 Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta versão. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
-        <h3>📋 Histórico</h3><div class="points-scroll">${history.entries?.length?history.entries.slice(0,12).map(e=>`<div class="setting-row"><span>${esc(e.reason)}<small> ${new Date(e.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${e.delta>0?'+':''}${e.delta} AP</strong></div>`).join(''):'<p>Sem movimentações.</p>'}</div>
-        <h3>📨 Solicitações anteriores</h3><div>${requested.length?requested.slice(0,10).map(r=>`<div class="setting-row"><span>${r.points} AP → ${money(r.amountCentavos)}<small> ${new Date(r.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${{pending:'Pendente',paid:'Pago',rejected:'Recusado'}[r.status]||esc(r.status)}</strong></div>`).join(''):'<p>Nenhuma solicitação.</p>'}</div></div>`);
-    }catch(err){showModal('AzurePoints 🪙',`<div class="app-card"><p>Não foi possível buscar sua carteira Cloud: ${esc(err.message)}</p></div>`);}
+      showModal('AzurePoints',`<div class="points-panel"><div class="points-top"><small>SALDO CLOUD</small><h2 id="pointsWalletBalance">${available.toLocaleString('pt-BR')} AP</h2><p>Acumulados: ${w.earned.toLocaleString('pt-BR')} • Reservados: ${w.reserved.toLocaleString('pt-BR')}</p></div><h3>${uiIcon('shop',18)} Loja</h3>${shopContent}
+        <h3>${uiIcon('wallet',18)} Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta versão. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
+        <h3>${uiIcon('list',18)} Histórico</h3><div class="points-scroll">${history.entries?.length?history.entries.slice(0,12).map(e=>`<div class="setting-row"><span>${esc(e.reason)}<small> ${new Date(e.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${e.delta>0?'+':''}${e.delta} AP</strong></div>`).join(''):'<p>Sem movimentações.</p>'}</div>
+        <h3>${uiIcon('inbox',18)} Solicitações anteriores</h3><div>${requested.length?requested.slice(0,10).map(r=>`<div class="setting-row"><span>${r.points} AP → ${money(r.amountCentavos)}<small> ${new Date(r.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${{pending:'Pendente',paid:'Pago',rejected:'Recusado'}[r.status]||esc(r.status)}</strong></div>`).join(''):'<p>Nenhuma solicitação.</p>'}</div></div>`);
+    }catch(err){showModal('AzurePoints',`<div class="app-card"><p>Não foi possível buscar sua carteira Cloud: ${esc(err.message)}</p></div>`);}
   }
   function openLolaAiSetup(){
     const aiBound=!!cloudInfo?.capabilities?.lolaWorkersAI;
     const logged=!!(cloudToken&&cloudVerifiedAccountId===state.currentAccountId);
-    const status=aiBound&&logged?'Conectada ao Workers AI ✅':aiBound?'Workers AI disponível; entre na conta Cloud.':'Binding AI não detectado no Worker.';
-    showModal('Lola IA',`<div class="app-card"><strong>🧠 Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ✅':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.8.1.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
+    const status=aiBound&&logged?'Conectada ao Workers AI':aiBound?'Workers AI disponível; entre na conta Cloud.':'Binding AI não detectado no Worker.';
+    showModal('Lola IA',`<div class="app-card"><strong>${uiIcon('brain',18)} Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ativo':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.8.1.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
     $('aiSetupClose').onclick=closeModal;
   }
   function openCreatePoll(){
@@ -5967,7 +5967,7 @@
       try{
         const clientId=uid('poll');
         const path='/api/servers/'+encodeURIComponent(srv.backendId||srv.id)+'/channels/'+encodeURIComponent(ch.backendId||ch.id)+'/messages';
-        const result=await socialRequest(path,{method:'POST',body:JSON.stringify({clientId,text:'📊 '+question,poll:{question,options}})});
+        const result=await socialRequest(path,{method:'POST',body:JSON.stringify({clientId,text:'Enquete: '+question,poll:{question,options}})});
         if(!result.message)throw new Error('Resposta da enquete incompleta.');
         applyRealtimeChannelMessage(srv.backendId||srv.id,ch.backendId||ch.id,result.message);
         sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:result.message.id,clientId});
@@ -6020,7 +6020,7 @@
     if(!view.channelId || !channels.some(c=>c.id===view.channelId && c.type==='text')){
       view.channelId=textChannels[0]?.id||channels[0]?.id||null;
     }
-    text.innerHTML=textChannels.map(c=>{const mentions=Number(state.mentionCounts?.[String(s.id)+'|'+String(c.id)]||0);return `<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?'🔕':(mentions>0?`<span class="channel-mention-badge">${mentions>99?'99+':mentions}</span>`:(state.unread?.[`${s.id}|${c.id}`]?'●':''))}</small></button>`}).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
+    text.innerHTML=textChannels.map(c=>{const mentions=Number(state.mentionCounts?.[String(s.id)+'|'+String(c.id)]||0);return `<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?uiIcon('muteBell',13):(mentions>0?`<span class="channel-mention-badge">${mentions>99?'99+':mentions}</span>`:(state.unread?.[`${s.id}|${c.id}`]?'●':''))}</small></button>`}).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
     voice.innerHTML=voiceChannels.map(c=>{
       const joined=serverVoiceSession?.serverId===s.id&&serverVoiceSession?.channelId===c.id;
       const count=joined?serverVoiceSession.participantIds.size:0;
