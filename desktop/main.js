@@ -97,13 +97,6 @@ function createWindow() {
   });
 
   mainWindow.on('close', (event) => {
-    if (!app.isQuitting && updaterController?.isReady?.()) {
-      event.preventDefault();
-      app.isQuitting = true;
-      log('[updater] Fechando para instalar atualização pronta.');
-      updaterController.installNow?.();
-      return;
-    }
     if (!app.isQuitting) {
       event.preventDefault();
       mainWindow.hide();
@@ -122,7 +115,7 @@ function buildMenu() {
         submenu: [
           { label: 'Mostrar janela', click: () => mainWindow?.show() },
           { type: 'separator' },
-          { label: 'Sair do Azurecord', click: () => { if (updaterController?.isReady?.()) updaterController.installNow?.(); else { app.isQuitting = true; app.quit(); } } }
+          { label: 'Sair do Azurecord', click: () => { app.isQuitting = true; app.quit(); } }
         ]
       },
       {
@@ -159,7 +152,7 @@ function setupTray() {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: 'Abrir Azurecord', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
       { type: 'separator' },
-      { label: 'Sair', click: () => { if (updaterController?.isReady?.()) updaterController.installNow?.(); else { app.isQuitting = true; app.quit(); } } }
+      { label: 'Sair', click: () => { app.isQuitting = true; app.quit(); } }
     ]));
     tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
   } catch (err) {
@@ -325,6 +318,10 @@ app.whenReady().then(async () => {
       if (!Notification.isSupported()) return false;
       new Notification({ title: String(payload.title || 'Azurecord'), body: String(payload.body || '') }).show();
       return true;
+    });
+
+    ipcMain.handle('desktop:update-install', () => {
+      return updaterController?.installNow?.() || false;
     });
 
     ipcMain.handle('desktop:secure-session-get', () => {

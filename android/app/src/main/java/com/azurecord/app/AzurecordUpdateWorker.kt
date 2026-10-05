@@ -104,6 +104,7 @@ class AzurecordUpdateWorker(
         }
 
         AzurecordUpdater.markReady(applicationContext, tag, target)
+        AzurecordUpdater.showReadyNotification(applicationContext, tag)
     }
 
     private fun compareVersions(a: String, b: String): Int {

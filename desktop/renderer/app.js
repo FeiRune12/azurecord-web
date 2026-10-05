@@ -2,7 +2,7 @@
   'use strict';
 
   const KEY = 'azurecord_app_v82_state';
-  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.5');
+  const AZURECORD_VERSION = String(window.AZURECORD_BUILD?.version || window.azurecordDesktop?.appVersion || window.AzurecordNative?.getAppVersion?.() || '6.0.8');
   const THEME_KEY = 'azurecord_app_v8_theme';
   const SERVER_KEY = 'azurecord_app_servers_v1';
   const CLOUD_API_URL = String(window.AZURECORD_CONFIG?.apiBaseUrl || 'https://azurecord-api.giovannisilvaalves604.workers.dev').replace(/\/$/, '');
@@ -71,9 +71,9 @@
     try{
       const scriptSrc=document.currentScript?.src||[...document.scripts].map(s=>s.src).find(src=>/\/app\.js(?:\?|$)/i.test(src))||window.location.href;
       const url=new URL('./assets/lumen-avatar.jpg',scriptSrc);
-      url.searchParams.set('v','6.0.5');
+      url.searchParams.set('v','6.0.8');
       return url.href;
-    }catch{return './assets/lumen-avatar.jpg?v=6.0.5';}
+    }catch{return './assets/lumen-avatar.jpg?v=6.0.8';}
   })();
 
   const DEMO_LOLA = {
@@ -81,7 +81,7 @@
     bio:'Designer, criativa e sempre pronta para conversar sobre arte, ideias e projetos.',
     accent:'#35b6ff', status:'online', avatar:LOLA_AVATAR_URL, banner:LOLA_BANNER_URL,
     personality:'Criativa, calorosa, curiosa e detalhista. Adora design, jogos e transformar ideias em coisas visuais.',
-    memberSince:'27 de set. de 2026', role:'Membro', badge:'✦'
+    memberSince:'27 de set. de 2026', role:'Membro', badge:'Assistente'
   };
 
   const DEMO_LUMEN = {
@@ -89,7 +89,7 @@
     bio:'A Muse de Azure Striker Gunvolt e DJ oficial do Azurecord.',
     accent:'#8b5cff', status:'online', avatar:LUMEN_AVATAR_URL, banner:'',
     personality:'Brilhante, energética e musical. Representa o lado mais elétrico e performático do Azurecord.',
-    memberSince:'4 de out. de 2026', role:'DJ', badge:'♫'
+    memberSince:'4 de out. de 2026', role:'DJ', badge:'DJ'
   };
   const SYSTEM_MASCOT_IDS = new Set(['user-lola','user-lumen']);
   function isSystemMascot(id){return SYSTEM_MASCOT_IDS.has(String(id||''));}
@@ -114,7 +114,45 @@
       gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
       warning:'<path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17h.01"/>',
       back:'<path d="m14 6-6 6 6 6"/>',
-      plus:'<path d="M12 5v14M5 12h14"/>'
+      plus:'<path d="M12 5v14M5 12h14"/>',
+      mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
+      link:'<path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"/>',
+      tag:'<path d="M20 13 13 20l-9-9V4h7z"/><circle cx="8.5" cy="8.5" r="1.3"/>',
+      users:'<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M14 15a4.5 4.5 0 0 1 6.5 4"/>',
+      search:'<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/>',
+      volume:'<path d="M4 10v4h4l5 4V6L8 10z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>',
+      mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>',
+      micOff:'<path d="m3 3 18 18"/><path d="M9 5v6a3 3 0 0 0 4.8 2.4M15 9V6a3 3 0 0 0-5.2-2"/><path d="M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.7 3"/>',
+      video:'<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>',
+      videoOff:'<path d="m3 3 18 18"/><path d="M10 6H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h11V12M16 10l5-3v10l-2.5-1.5"/>',
+      screen:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+      phoneOff:'<path d="m3 3 18 18"/><path d="M6.5 4 10 8l-2 3c.8 1.5 1.5 2.5 2.6 3.5M13.5 17c.2.1.3.2.5.3l3-2 4 3.5c-1.2 2-3 3-5 2.5-1.2-.3-2.4-.8-3.5-1.4"/>',
+      menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+      trash:'<path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/>',
+      code:'<path d="m8 9-3 3 3 3M16 9l3 3-3 3M14 5l-4 14"/>',
+      grid:'<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+      smile:'<circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9h.01M15 9h.01"/>',
+      sticker:'<path d="M5 3h14v10l-6 8H5z"/><path d="M13 21v-8h6"/>',
+      star:'<path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.7l6.2-.9z"/>',
+      poll:'<path d="M5 19V9M12 19V5M19 19v-7"/>',
+      puzzle:'<path d="M4 8h5V4a2 2 0 1 1 4 0v4h7v5h-4a2 2 0 1 0 0 4h4v3H4v-5h3a2 2 0 1 0 0-4H4z"/>',
+      audit:'<path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 11h6M9 15h6"/>',
+      wallet:'<path d="M4 6h15v13H4z"/><path d="M4 9h15M15 13h4v4h-4a2 2 0 0 1 0-4z"/>',
+      shop:'<path d="M4 9h16l-1-5H5z"/><path d="M6 9v11h12V9M9 20v-6h6v6"/>',
+      list:'<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+      inbox:'<path d="M4 4h16v16H4z"/><path d="M4 14h5l2 3h2l2-3h5"/>',
+      music:'<path d="M9 18V6l10-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>',
+      fileAudio:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1.5"/><circle cx="13" cy="16" r="1.5"/>',
+      muteBell:'<path d="m3 3 18 18"/><path d="M6 9a6 6 0 0 1 9.5-4.9M18 10v4l2 3H9M10 21h4"/>',
+      download:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>',
+      pin:'<path d="m9 4 6 6M7 8l5-5 5 5-2 2 4 4-5 5-4-4-2 2-1-7z"/><path d="m7 17-4 4"/>',
+      edit:'<path d="M4 20h4l11-11-4-4L4 16z"/><path d="m13 7 4 4"/>',
+      id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M5.5 16a3 3 0 0 1 5 0M13 10h5M13 14h5"/>',
+      game:'<path d="M7 9h10a5 5 0 0 1 4.5 7.2l-1 2a2 2 0 0 1-3.3.5L15 16H9l-2.2 2.7a2 2 0 0 1-3.3-.5l-1-2A5 5 0 0 1 7 9z"/><path d="M7 12v4M5 14h4M16.5 13h.01M18.5 15h.01"/>',
+      tool:'<path d="M14 6a4 4 0 0 0-5 5L3 17l4 4 6-6a4 4 0 0 0 5-5l-3 3-2-2z"/>',
+      check:'<path d="m5 12 4 4L19 6"/>',
+      reply:'<path d="m9 7-5 5 5 5"/><path d="M4 12h9a6 6 0 0 1 6 6"/>',
+      forward:'<path d="m15 7 5 5-5 5"/><path d="M20 12h-9a6 6 0 0 0-6 6"/>'
     };
     const body=paths[name]||paths.user;
     return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -1454,7 +1492,7 @@
       merged.avatar=LUMEN_AVATAR_URL;
       merged.banner=stored?.banner||demo?.banner||'';
       merged.role='DJ';
-      merged.badge='♫';
+      merged.badge='DJ';
       return merged;
     }
     if (demo && stored) return {...demo, ...stored, avatar: stored.avatar || demo.avatar, banner: stored.banner || demo.banner};
@@ -1669,7 +1707,7 @@
       nav.querySelector('[data-mobile-you]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('you');openAppSettings('account');};
     }
     if(!$('mobileMenuBtn')){
-      const btn=document.createElement('button');btn.id='mobileMenuBtn';btn.className='mobile-menu-btn';btn.type='button';btn.textContent='☰';btn.setAttribute('aria-label','Abrir navegação');
+      const btn=document.createElement('button');btn.id='mobileMenuBtn';btn.className='mobile-menu-btn';btn.type='button';btn.innerHTML=uiIcon('menu',20);btn.setAttribute('aria-label','Abrir navegação');
       $('chatHeader')?.prepend(btn);btn.onclick=()=>setMobileDrawer(true);
     }
     document.addEventListener('click',e=>{
@@ -1743,13 +1781,92 @@
     }
   }
 
+
+  let updateChoiceVersion='';
+  function ensureUpdateChoice(){
+    let box=$('azurecordUpdateChoice');
+    if(box)return box;
+    box=document.createElement('aside');
+    box.id='azurecordUpdateChoice';
+    box.className='update-choice';
+    box.hidden=true;
+    box.innerHTML='<div class="update-choice-icon">'+uiIcon('download',22)+'</div><div class="update-choice-copy"><strong id="updateChoiceTitle">Atualização disponível</strong><span id="updateChoiceText">Uma nova versão do Azurecord está pronta.</span></div><div class="update-choice-actions"><button type="button" class="home-mini-btn ghost" id="updateChoiceLater">Depois</button><button type="button" class="home-mini-btn" id="updateChoiceNow">Atualizar agora</button></div>';
+    document.body.appendChild(box);
+    $('updateChoiceLater').onclick=()=>{box.hidden=true;};
+    return box;
+  }
+  async function showUpdateChoice(version,installer){
+    const clean=String(version||'').trim();
+    if(!clean||clean===AZURECORD_VERSION)return;
+    const box=ensureUpdateChoice();
+    updateChoiceVersion=clean;
+    $('updateChoiceTitle').textContent='Azurecord '+clean+' disponível';
+    $('updateChoiceText').textContent='A atualização já está pronta. Você decide quando instalar.';
+    $('updateChoiceNow').onclick=async()=>{
+      const btn=$('updateChoiceNow');btn.disabled=true;btn.textContent='Preparando...';
+      try{
+        const ok=await installer?.();
+        if(ok!==false){box.hidden=true;showToast('Atualização autorizada. O Azurecord vai iniciar a instalação.');}
+        else showToast('Não foi possível iniciar a atualização agora.');
+      }catch(err){showToast(err?.message||'Não foi possível iniciar a atualização agora.');}
+      finally{btn.disabled=false;btn.textContent='Atualizar agora';}
+    };
+    box.hidden=false;
+  }
+  async function checkNativeReadyUpdate(){
+    try{
+      const version=await window.azurecordDesktop?.getReadyUpdateVersion?.();
+      if(version&&version!==AZURECORD_VERSION&&version!==updateChoiceVersion){
+        await showUpdateChoice(version,()=>window.azurecordDesktop?.installReadyUpdate?.());
+      }
+    }catch{}
+  }
+  function setUiButton(id,icon,label=''){
+    const el=$(id);if(!el)return;
+    el.innerHTML=uiIcon(icon,18)+(label?'<span>'+esc(label)+'</span>':'');
+  }
+  function applyUiIconography(){
+    const dmTitle=$('dmToggle')?.querySelector('span:first-child');
+    if(dmTitle)dmTitle.innerHTML=uiIcon('mail',15)+' <span>MENSAGENS DIRETAS</span>';
+    setUiButton('serverInviteBtn','link','Convidar');
+    setUiButton('roleManageBtn','tag','Cargos');
+    setUiButton('globalSearchBtn','search','Buscar');
+    setUiButton('homeAddBtn','plus','Adicionar amigo');
+    setUiButton('voiceBtn','volume','Voz');
+    setUiButton('videoBtn','video','Vídeo');
+    setUiButton('screenBtn','screen','Tela');
+    setUiButton('searchBtn','search');
+    setUiButton('peopleBtn','users','Pessoas');
+    setUiButton('lolaStatusBtn','brain','Configurar Lola');
+    setUiButton('newLolaChatBtn','message','Nova conversa');
+    setUiButton('clearDmBtn','trash','Limpar');
+    setUiButton('memberToggle','menu');
+    setUiButton('attachBtn','plus');
+    setUiButton('stickerBtn','sticker');
+    setUiButton('emojiBtn','smile');
+    setUiButton('appsBtn','grid');
+    const send=document.querySelector('.send-btn');if(send)send.innerHTML=uiIcon('message',18);
+    setUiButton('callAcceptBtn','check');
+    setUiButton('callDeclineBtn','phoneOff');
+    setUiButton('callMicBtn','mic');
+    setUiButton('callCameraBtn','video');
+    setUiButton('callShareBtn','screen');
+    setUiButton('callHangupBtn','phoneOff');
+  }
+
   function boot(){
+    applyUiIconography();
     try{
       window.azurecordDesktop?.onUpdateStatus?.((payload)=>{
         if(payload?.state==='updated')showToast(`Azurecord atualizado para ${payload.version||'a versão mais recente'}.`,{duration:5200});
-        else if(payload?.state==='downloaded'&&payload?.autoInstall)showToast('Atualização baixada. O Azurecord vai reiniciar para instalar.',{duration:4000});
+        else if(payload?.state==='downloaded'){
+          void showUpdateChoice(payload.version,()=>window.azurecordDesktop?.installUpdate?.());
+        }
       });
     }catch{}
+    void checkNativeReadyUpdate();
+    setInterval(checkNativeReadyUpdate,30000);
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')void checkNativeReadyUpdate();});
     window.__azurecordBootStarted=performance.now();
     setScreen('loadingScreen');
     setupMobileUi();
@@ -2126,7 +2243,7 @@
     overlay.id='serverVoiceOverlay';
     overlay.className='azure-call-overlay server-voice-overlay';
     overlay.hidden=true;
-    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">🔊 CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div id="lumenVoicePanel" class="lumen-voice-panel" hidden><div class="lumen-voice-head"><div class="mini-avatar avatar-img" id="lumenVoiceAvatar"></div><div><strong>Lumen DJ</strong><span id="lumenVoiceNow">Peça uma música por nome ou cole um link.</span></div></div><div class="lumen-voice-controls"><input id="lumenVoiceInput" placeholder="Nome da música ou link do YouTube / Spotify"><button id="lumenVoicePlayBtn" class="btn btn-primary" type="button">Tocar</button><button id="lumenVoiceStopBtn" class="btn btn-ghost" type="button">Parar</button></div><div id="lumenVoiceEmbed" class="lumen-voice-embed" hidden></div></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="serverVoiceCameraBtn" class="call-control" type="button" aria-label="Câmera">📷</button><button id="serverVoiceShareBtn" class="call-control" type="button" aria-label="Transmitir tela">▣</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">☎</button></div></div></div>';
+    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">'+uiIcon('volume',14)+' CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div id="lumenVoicePanel" class="lumen-voice-panel" hidden><div class="lumen-voice-head"><div class="mini-avatar avatar-img" id="lumenVoiceAvatar"></div><div><strong>Lumen DJ</strong><span id="lumenVoiceNow">Peça uma música por nome ou cole um link.</span></div></div><div class="lumen-voice-controls"><input id="lumenVoiceInput" placeholder="Nome da música ou link do YouTube / Spotify"><button id="lumenVoicePlayBtn" class="btn btn-primary" type="button">Tocar</button><button id="lumenVoiceStopBtn" class="btn btn-ghost" type="button">Parar</button></div><div id="lumenVoiceEmbed" class="lumen-voice-embed" hidden></div></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">'+uiIcon('mic',18)+'</button><button id="serverVoiceCameraBtn" class="call-control" type="button" aria-label="Câmera">'+uiIcon('video',18)+'</button><button id="serverVoiceShareBtn" class="call-control" type="button" aria-label="Transmitir tela">'+uiIcon('screen',18)+'</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">'+uiIcon('phoneOff',18)+'</button></div></div></div>';
     document.body.appendChild(overlay);
     $('serverVoiceCloseView').onclick=()=>{overlay.hidden=true;};
     $('serverVoiceMicBtn').onclick=toggleServerVoiceMic;
@@ -2305,7 +2422,7 @@
     audio.onerror=()=>{if(serverVoiceSession===session){showToast('Lumen não conseguiu reproduzir esse áudio.');void stopLumenDj({silent:true});}};
     await audio.play();
     broadcastLumenState(session,{active:true,mode:'audio',name:session.lumenNowPlaying.name});
-    renderServerVoiceModal();showToast('♫ Lumen: '+session.lumenNowPlaying.name);
+    renderServerVoiceModal();showToast('Lumen: '+session.lumenNowPlaying.name);
   }
   async function playLumenOfficialLink(rawUrl){
     const session=serverVoiceSession;if(!session)throw new Error('Entre em um canal de voz primeiro.');
@@ -2318,7 +2435,7 @@
     session.lumenOfficialEmbed={active:true,mode:'embed',provider:String(data.provider||'Música'),name:String(data.title||'Música'),url:String(data.url||rawUrl),embedUrl:embed};
     session.lumenNowPlaying={name:session.lumenOfficialEmbed.name,mode:'embed',provider:session.lumenOfficialEmbed.provider};
     broadcastLumenState(session,{active:true,mode:'embed',provider:session.lumenOfficialEmbed.provider,name:session.lumenOfficialEmbed.name,url:session.lumenOfficialEmbed.url,embedUrl:session.lumenOfficialEmbed.embedUrl});
-    renderServerVoiceModal();showToast('♫ Lumen abriu '+session.lumenOfficialEmbed.name+'.');
+    renderServerVoiceModal();showToast('Lumen abriu '+session.lumenOfficialEmbed.name+'.');
   }
   async function lumenRequestMusic(value){
     const session=serverVoiceSession;if(!session){showToast('Entre em um canal de voz primeiro.');return false;}
@@ -2344,11 +2461,11 @@
     $('serverVoiceTitle').textContent=channel?.name||'Canal de voz';
     $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
     $('serverVoiceMicBtn').classList.toggle('off',!!session.micMuted);
-    $('serverVoiceMicBtn').textContent=session.micMuted?'🔇':'🎙';
+    $('serverVoiceMicBtn').innerHTML=uiIcon(session.micMuted?'micOff':'mic',18);
     $('serverVoiceCameraBtn').classList.toggle('off',!session.cameraTrack||session.cameraTrack.enabled===false);
-    $('serverVoiceCameraBtn').textContent=session.cameraTrack&&session.cameraTrack.enabled!==false?'📹':'📷';
+    $('serverVoiceCameraBtn').innerHTML=uiIcon(session.cameraTrack&&session.cameraTrack.enabled!==false?'video':'videoOff',18);
     $('serverVoiceShareBtn').classList.toggle('active',!!session.screenTrack||!!session.nativeScreenSharing||!!session.nativeScreenRequested);
-    $('serverVoiceShareBtn').textContent=(session.screenTrack||session.nativeScreenSharing)?'▣':'▢';
+    $('serverVoiceShareBtn').innerHTML=uiIcon('screen',18);
     $('serverVoiceGrid').innerHTML=ids.map(id=>{
       const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
       const isLumen=id==='user-lumen';
@@ -2359,7 +2476,7 @@
       const videoId='serverVoiceVideo_'+String(id).replace(/[^a-zA-Z0-9_-]/g,'_');
       const speaking=isLumen?!!lumenState:session.speakingIds?.has(String(id));
       const lumenCaption=isLumen?String(lumenState?.name||'DJ Lumen'):'';
-      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(lumenCaption?'<small class="server-voice-now-playing">♫ '+esc(lumenCaption)+'</small>':'')+'</article>';
+      return '<article class="server-voice-tile '+(isMe?'is-self ':'')+(isLumen?'is-lumen ':'')+(speaking?'is-speaking':'')+'" data-server-voice-user="'+esc(String(id))+'">'+(videoStream?'<video id="'+videoId+'" class="server-voice-video" autoplay playsinline muted></video>':'<div class="server-voice-avatar avatar-img" style="'+avatarStyle+'">'+letter+'</div>')+'<span class="server-voice-name">'+esc(p.username||'Usuário')+(isMe?' (você)':'')+'</span>'+(lumenCaption?'<small class="server-voice-now-playing">'+uiIcon('music',13)+' '+esc(lumenCaption)+'</small>':'')+'</article>';
     }).join('');
     for(const id of ids){
       const peer=session.peers.get(String(id));const stream=id===String(state.currentAccountId)?(session.screenStream||session.cameraStream):(peer?.screenStream||peer?.videoStream);
@@ -2369,7 +2486,7 @@
     if(lumenPanel){
       const enabled=serverHasLumen(server);lumenPanel.hidden=!enabled;
       const avatar=$('lumenVoiceAvatar');if(avatar){avatar.style.backgroundImage="url('"+safeUrl(DEMO_LUMEN.avatar)+"')";avatar.textContent='';}
-      const nowEl=$('lumenVoiceNow');if(nowEl)nowEl.textContent=lumenState?'♫ '+String(lumenState.name||'Música'):'Peça uma música por nome ou cole um link.';
+      const nowEl=$('lumenVoiceNow');if(nowEl)nowEl.textContent=lumenState?String(lumenState.name||'Música'):'Peça uma música por nome ou cole um link.';
       const embedBox=$('lumenVoiceEmbed');
       const embedState=session.lumenOfficialEmbed||(session.remoteLumen?.mode==='embed'?session.remoteLumen:null);
       const embedUrl=safeLumenEmbedUrl(embedState?.embedUrl||'');
@@ -2692,7 +2809,7 @@
 
   function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p&&resolvedPresence(p.id)==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
   function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
-  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">👥</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">＋ Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
+  function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">${uiIcon('users',28)}</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">${uiIcon('plus',16)} Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
   function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
   function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=isSystemMascot(p.id); const liveStatus=resolvedPresence(p.id); const statusText=system?systemMascotKind(p.id):statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); const systemActions=p.id==='user-lola'?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`; return `<div class="friend-row ${p.id==='user-lumen'?'lumen-mascot-row':''}" data-user-row="${p.id}"><div class="home-avatar avatar-img ${p.id==='user-lumen'?'lumen-mascot-avatar':''}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?systemActions:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
@@ -2813,7 +2930,7 @@
     state.dmMessages[key]=Array.isArray(state.dmMessages[key])?state.dmMessages[key]:[];
     save();
     renderDms();renderBadges();
-    if(firstUnlock)showToast('Chat secreto da Lola desbloqueado. 👀💙');
+    if(firstUnlock)showToast('Chat secreto da Lola desbloqueado.');
     closeModal();
     openDm('user-lola',{secret:true,suppressProfile:true});
     return true;
@@ -2824,7 +2941,7 @@
     return false;
   }
   function openSecretCodes(){
-    showModal('Códigos secretos',`<div class="app-card"><strong>🔐 Área de códigos</strong><p>Há experiências escondidas no beta do Azurecord. Digite um código para descobrir se alguma delas foi liberada.</p><label>Código<input id="secretCodeInput" autocomplete="off" spellcheck="false" placeholder="Digite o código"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="secretCodeCancel">Cancelar</button><button class="btn btn-primary" id="secretCodeUnlock">Desbloquear</button></div><p class="tiny-note">Alguns códigos podem desbloquear conversas ou recursos especiais.</p></div>`);
+    showModal('Códigos secretos',`<div class="app-card"><strong>${uiIcon('lock',18)} Área de códigos</strong><p>Há experiências escondidas no beta do Azurecord. Digite um código para descobrir se alguma delas foi liberada.</p><label>Código<input id="secretCodeInput" autocomplete="off" spellcheck="false" placeholder="Digite o código"></label><div class="onboarding-actions"><button class="btn btn-ghost" id="secretCodeCancel">Cancelar</button><button class="btn btn-primary" id="secretCodeUnlock">Desbloquear</button></div><p class="tiny-note">Alguns códigos podem desbloquear conversas ou recursos especiais.</p></div>`);
     $('secretCodeCancel').onclick=closeModal;
     $('secretCodeUnlock').onclick=()=>checkLolaSecretCode($('secretCodeInput').value,'panel');
     $('secretCodeInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();checkLolaSecretCode(e.currentTarget.value,'panel');}});
@@ -2840,7 +2957,7 @@
     if(!ids.length){box.innerHTML='<div class="dm-empty">Nenhuma DM aberta.</div>';return;}
     box.innerHTML=ids.map(id=>{
       const p=getProfile(id); const key=dmKey(id); const msgs=(state.dmMessages[key]||[]).filter(m=>!isMessageSourceHidden(m.author||m.senderId)); const last=msgs.at(-1);
-      const preview=isIgnored(id)?'Mensagens deste usuário estão ocultas.':(last?.failed?'⚠ Não enviada • ':'')+(last?.text || (id==='user-lola'?'Conversa livre com a Lola.':'Conversa'));
+      const preview=isIgnored(id)?'Mensagens deste usuário estão ocultas.':(last?.failed?'Não enviada • ':'')+(last?.text || (id==='user-lola'?'Conversa livre com a Lola.':'Conversa'));
       return `<div class="dm-item" data-dm-row="${esc(id)}"><button type="button" class="dm-open" data-dm-open="${esc(id)}"><span class="mini-avatar avatar-img" style="${p?.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p?.avatar?'':esc((p?.username||'?')[0])}</span><span class="dm-item-main"><strong>${esc(p?.username||'Usuário')}</strong><span>${esc(preview)}</span></span>${state.unread[key]?'<span class="unread-dot"></span>':''}</button><button type="button" class="dm-close" data-dm-close="${esc(id)}" aria-label="Fechar conversa com ${esc(p?.username||'usuário')}">×</button></div>`;
     }).join('');
     box.hidden=false;
@@ -2914,11 +3031,11 @@
     if(me===state.currentAccountId){
       if(view.mode==='dm'&&view.dmUserId==='user-lola')queueLolaInitiation(false);
       $('messageInput').disabled=false;$('messageInput').focus();
-      showToast('Nova conversa criada. 😈 Histórico anterior arquivado no Azurecord Cloud.');
+      showToast('Nova conversa criada. Histórico anterior arquivado no Azurecord Cloud.');
     }
   }
   async function openDm(id,options={}){
-    if(id==='user-lumen'){showToast('Lumen é a mascote do Azurecord. O chat dela ainda não é uma segunda IA. ⚡');openProfileModal(id);return;}
+    if(id==='user-lumen'){showToast('Lumen é a mascote do Azurecord. O chat dela ainda não é uma segunda IA.');openProfileModal(id);return;}
     if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
     if(!getProfile(id))return;
     if(id!=='user-lola'&&isBlocked(id)){showToast('Desbloqueie este usuário antes de abrir uma DM.');openProfileModal(id);return;}
@@ -3117,7 +3234,7 @@
   }
   function fileIcon(type=''){
     if(type.startsWith('video/'))return '▶';
-    if(type.startsWith('audio/'))return '♫';
+    if(type.startsWith('audio/'))return uiIcon('fileAudio',18);
     if(type.includes('pdf'))return 'PDF';
     if(type.includes('zip')||type.includes('rar')||type.includes('7z'))return 'ZIP';
     if(type.includes('word')||type.includes('document'))return 'DOC';
@@ -3240,7 +3357,7 @@
       const title=esc(rawTitle);
       const dims=Array.isArray(item.dims)?item.dims:[0,0];
       const fav=isGifFavorite(item);
-      return `<div class="klipy-gif-card-wrap"><button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button><button type="button" class="klipy-favorite-btn ${fav?'active':''}" data-klipy-favorite="${id}" data-favorite-url="${url}" data-favorite-preview="${preview}" data-favorite-title="${title}" data-favorite-size="${Number(item.size||0)}" data-favorite-width="${Number(dims[0]||0)}" data-favorite-height="${Number(dims[1]||0)}" aria-label="${fav?'Remover dos favoritos':'Favoritar GIF'}">${fav?'★':'☆'}</button></div>`;
+      return `<div class="klipy-gif-card-wrap"><button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button><button type="button" class="klipy-favorite-btn ${fav?'active':''}" data-klipy-favorite="${id}" data-favorite-url="${url}" data-favorite-preview="${preview}" data-favorite-title="${title}" data-favorite-size="${Number(item.size||0)}" data-favorite-width="${Number(dims[0]||0)}" data-favorite-height="${Number(dims[1]||0)}" aria-label="${fav?'Remover dos favoritos':'Favoritar GIF'}">${uiIcon('star',16)}</button></div>`;
     }).join('');
     box.querySelectorAll('[data-klipy-id]').forEach(btn=>btn.onclick=()=>{
       const url=String(btn.dataset.klipyUrl||'');if(!url)return;
@@ -3254,7 +3371,7 @@
       renderAttachmentPreview();
       closeComposerPopover();
       void socialRequest('/api/klipy/register-share',{method:'POST',body:JSON.stringify({id,q:klipyLastQuery})}).catch(()=>{});
-      showToast('GIF da KLIPY anexado. ✨');
+      showToast('GIF da KLIPY anexado.');
     });
     box.querySelectorAll('[data-klipy-favorite]').forEach(btn=>btn.onclick=e=>{
       e.stopPropagation();
@@ -3264,7 +3381,7 @@
         description:String(btn.dataset.favoriteTitle||'GIF da KLIPY'),size:Number(btn.dataset.favoriteSize||0),
         dims:[Number(btn.dataset.favoriteWidth||0),Number(btn.dataset.favoriteHeight||0)]
       };
-      const active=toggleGifFavorite(item);btn.classList.toggle('active',active);btn.textContent=active?'★':'☆';
+      const active=toggleGifFavorite(item);btn.classList.toggle('active',active);btn.innerHTML=uiIcon('star',16);
       btn.setAttribute('aria-label',active?'Remover dos favoritos':'Favoritar GIF');
     });
   }
@@ -3285,7 +3402,7 @@
   }
   function openKlipyGifPicker(box){
     box.dataset.mode='gif-klipy';
-    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><div class="choice-row"><button type="button" class="home-mini-btn ghost" id="klipyFavoritesBtn">★ Favoritos</button><span class="klipy-powered">Powered by KLIPY</span></div></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
+    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><div class="choice-row"><button type="button" class="home-mini-btn ghost" id="klipyFavoritesBtn">${uiIcon('star',16)} Favoritos</button><span class="klipy-powered">Powered by KLIPY</span></div></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
     box.hidden=false;
     const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='image/gif,.gif';fileInput.hidden=true;
     fileInput.onchange=async()=>{if(fileInput.files?.length)await handleFiles({target:fileInput});closeComposerPopover();};
@@ -3357,13 +3474,13 @@
     $$('.composer-quick').forEach(b=>b.classList.toggle('active',b.dataset.composerType===type));
     const emoji=['😀','😂','😍','😎','😭','😡','🥹','😴','🤔','😳','🔥','💙','✨','🎮','🎨','🗿','👍','👀'];
     const stickers=['💙 AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
-    const apps=['📊 Enquete','@ Menção','</> Código'];
+    const apps=[{label:'Enquete',icon:'poll'},{label:'Menção',icon:'user'},{label:'Código',icon:'code'}];
     let title=''; let items=[]; let helper='';
     if(type==='emoji'){title='Emoji';items=emoji;helper='Escolha um emoji para inserir na mensagem.'}
     if(type==='gif'){openKlipyGifPicker(box);return;}
     if(type==='sticker'){if(view.mode==='server'){void openServerStickerPicker(box);return;}title='Stickers';items=stickers;helper='Stickers rápidos para as conversas do Azurecord.'}
     if(type==='apps'){title='Apps rápidos';items=apps;helper='Atalhos para recursos que já existem no Azurecord.'}
-    box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>`<button type="button" class="composer-chip ${item.length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(item)}">${esc(item)}</button>`).join('')}</div><p class="composer-helper">${helper}</p>`;
+    box.innerHTML=`<h4>${title}</h4><div class="composer-grid">${items.map((item,i)=>{const value=typeof item==='string'?item:item.label;const visual=type==='apps'?uiIcon(item.icon,16)+' '+esc(item.label):esc(value);return `<button type="button" class="composer-chip ${String(value).length>8?'wide':''}" data-composer-choice="${i}" data-composer-value="${esc(value)}">${visual}</button>`;}).join('')}</div><p class="composer-helper">${helper}</p>`;
     box.hidden=false;
     box.querySelectorAll('[data-composer-choice]').forEach(btn=>btn.onclick=()=>{
       const val=btn.dataset.composerValue||'';
@@ -3938,7 +4055,7 @@
       const active=Number(poll.myVote)===index;
       return '<button type="button" class="poll-option '+(active?'active':'')+'" data-poll-message="'+esc(m.id)+'" data-poll-option="'+index+'"><span class="poll-option-label">'+esc(option)+'</span><span class="poll-option-count">'+count+' • '+pct+'%</span><i style="width:'+pct+'%"></i></button>';
     }).join('');
-    return '<div class="poll-card"><div class="poll-question">📊 '+esc(poll.question||m.text||'Enquete')+'</div><div class="poll-options">'+html+'</div><div class="poll-total">'+total+' voto'+(total===1?'':'s')+' • clique para votar ou trocar seu voto</div></div>';
+    return '<div class="poll-card"><div class="poll-question">'+uiIcon('poll',18)+' '+esc(poll.question||m.text||'Enquete')+'</div><div class="poll-options">'+html+'</div><div class="poll-total">'+total+' voto'+(total===1?'':'s')+' • clique para votar ou trocar seu voto</div></div>';
   }
   async function votePoll(messageId,optionIndex){
     if(view.mode!=='server'||!socialCloudReady())return;
@@ -3956,7 +4073,7 @@
   function renderMessage(m){
     if(m?.system?.type==='member_join'){
       const username=m.system.username||getProfile(m.system.userId)?.username||'Novo membro';
-      return '<div class="system-welcome-message"><span>👋</span><strong>'+esc(username)+'</strong><span>entrou no servidor. Boas-vindas!</span><time>'+formatTime(m.time)+'</time></div>';
+      return '<div class="system-welcome-message"><span>'+uiIcon('users',16)+'</span><strong>'+esc(username)+'</strong><span>entrou no servidor. Boas-vindas!</span><time>'+formatTime(m.time)+'</time></div>';
     }
     const p=getProfile(m.author)||{username:'Usuário'};
     const own=m.author===state.currentAccountId;
@@ -4187,7 +4304,7 @@
   }
   function insertAtCursor(txt){ const i=$('messageInput');const s=i.selectionStart??i.value.length; i.value=i.value.slice(0,s)+txt+i.value.slice(i.selectionEnd);i.focus();i.selectionStart=i.selectionEnd=s+txt.length; }
 
-  function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">↩ Responder</button><button class="context-item" data-context="forward">↪ Encaminhar</button><button class="context-item" data-context="pin">📌 ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">● Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">🔗 Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>✎ Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>🗑 Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">🆔 Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
+  function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">${uiIcon('reply',15)} Responder</button><button class="context-item" data-context="forward">${uiIcon('forward',15)} Encaminhar</button><button class="context-item" data-context="pin">${uiIcon('pin',15)} ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">● Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">${uiIcon('link',15)} Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>${uiIcon('edit',15)} Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>${uiIcon('trash',15)} Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">${uiIcon('id',15)} Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
   function messageKey(id){return `${view.mode}|${view.serverId}|${view.channelId}|${view.dmUserId||''}|${id}`;}
   function reactMessage(id,emoji){const arr=getMessages();const m=arr.find(x=>x.id===id);if(!m)return;m.reactions=m.reactions||{};m.reactions[emoji]=(m.reactions[emoji]||0)+1;m.myReaction=emoji;setMessages(arr);hideContext();renderMessages();}
   async function deleteMessagePermanently(m,id){
@@ -4315,13 +4432,13 @@
         </div>
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
       </div>
-      <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'✦')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
+      <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'Membro')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
       <div class="profile-body-grid">
         <section class="profile-section-card"><div class="dm-peek-label">SOBRE MIM</div><p>${esc(p.bio||'Sem bio.')}</p></section>
         <section class="profile-section-card"><div class="dm-peek-label">PERSONALIDADE</div><p>${esc(p.personality||'Usuário do Azurecord.')}</p></section>
       </div>
       <div class="profile-meta-grid"><div><span>Membro desde</span><strong>${esc(p.memberSince||'2026')}</strong></div><div><span>${system?'Tipo':'Amigos'}</span><strong>${system?(p.id==='user-lola'?'Assistente':'Mascote'):String(p.friendCount??friendIdsForProfile(p.id))}</strong></div><div><span>Usuário</span><strong>${esc(p.handle||'@'+p.username.toLowerCase())}</strong></div></div>
-      ${system?(p.id==='user-lola'?`<div class="profile-actions profile-action-grid profile-action-grid-system"><button class="btn btn-primary" data-profile-dm="${p.id}">Mensagem direta</button></div>`:`<div class="mascot-profile-note">⚡ Lumen é mascote oficial do Azurecord. A IA continua sendo a Lola.</div>`):!self?`<div class="profile-actions profile-action-grid">
+      ${system?(p.id==='user-lola'?`<div class="profile-actions profile-action-grid profile-action-grid-system"><button class="btn btn-primary" data-profile-dm="${p.id}">Mensagem direta</button></div>`:`<div class="mascot-profile-note">${uiIcon('music',16)} Lumen é mascote oficial do Azurecord. A IA continua sendo a Lola.</div>`):!self?`<div class="profile-actions profile-action-grid">
         <button class="btn btn-primary" data-profile-dm="${p.id}" ${blocked?'disabled':''}>Mensagem direta</button>
         <button class="btn btn-ghost" data-profile-friend="${p.id}" ${blocked?'disabled':''}>${isFriend(p.id)?'Remover amigo':'Adicionar amigo'}</button>
         <button class="btn ${blocked?'btn-ghost':'btn-danger'}" data-profile-block="${p.id}">${blocked?'Desbloquear':'Bloquear'}</button>
@@ -4504,7 +4621,7 @@
           <div class="settings-account-avatar avatar-img" style="${avatarStyle}">${user?.avatar?'':esc((user?.username||'A')[0])}</div>
           <div class="settings-account-copy"><strong>${esc(user?.username||'Azurecord')}</strong><span>${esc(user?.handle||'Configurações')}</span></div>
         </div>
-        <label class="settings-search"><span>⌕</span><input id="settingsNavSearch" type="search" placeholder="Buscar" autocomplete="off"></label>
+        <label class="settings-search"><span>${uiIcon('search',16)}</span><input id="settingsNavSearch" type="search" placeholder="Buscar" autocomplete="off"></label>
         <div class="settings-sidebar-title">${esc(title)}</div>
         <nav>${nav.map(item=>`<button type="button" class="settings-nav-item ${item.id===active?'active':''} ${item.danger?'danger':''}" data-settings-tab="${item.id}" data-settings-label="${esc(item.label.toLowerCase())}"><span class="settings-nav-icon">${item.icon||''}</span><span>${esc(item.label)}</span></button>`).join('')}</nav>
       </aside>
@@ -4691,7 +4808,7 @@
     const box=$('contextMenu');
     const prefs=serverPreferenceState(s);
     const channelMuted=(prefs.mutedChannels||[]).includes(String(channelId));
-    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${channelMuted?'🔔 Ativar notificações':'🔕 Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>↑ Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>↓ Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>🗑 Excluir canal</button></div>`;
+    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${uiIcon(channelMuted?'bell':'muteBell',15)} ${channelMuted?'Ativar notificações':'Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>↑ Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>↓ Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>${uiIcon('trash',15)} Excluir canal</button></div>`;
     box.hidden=false;
     box.style.left=Math.min(ev.clientX,window.innerWidth-250)+'px'; box.style.top=Math.min(ev.clientY,window.innerHeight-180)+'px';
     box.querySelectorAll('[data-channel-context]').forEach(b=>{b.onclick=()=>channelContextAction(b.dataset.channelContext,channelId);});
@@ -4745,16 +4862,16 @@
   function canManageServer(server){ const s=typeof server==='string'?getServer(server):server; return !!s && (s.owner===state.currentAccountId || getServerRole(s,state.currentAccountId)==='Admin'); }
   function openRoleManager(){const s=getServer(view.serverId);if(!s)return;const members=[currentUser(),...DEMO_USERS.filter(x=>x.id!==currentUser()?.id)];state.roles[s.id]=state.roles[s.id]||{};if(s.owner===state.currentAccountId)state.roles[s.id][state.currentAccountId]='Admin';showModal('Cargos e permissões',`<p class="muted">Protótipo local: defina o cargo visual de cada membro deste servidor.</p><div class="setting-list">${members.filter(Boolean).map(p=>`<div class="setting-row"><div><strong>${esc(p.username)}</strong><span>${esc(p.handle)}</span></div><select data-role-user="${p.id}"><option ${((state.roles[s.id]||{})[p.id]||getServerRole(s,p.id))==='Admin'?'selected':''}>Admin</option><option ${((state.roles[s.id]||{})[p.id]||getServerRole(s,p.id))==='Moderador'?'selected':''}>Moderador</option><option ${((state.roles[s.id]||{})[p.id]||getServerRole(s,p.id))==='Membro'?'selected':''}>Membro</option></select></div>`).join('')}</div><p class="tiny-note">Permissões reais por canal entram quando houver backend.</p>`);$$('[data-role-user]').forEach(sel=>sel.onchange=()=>{state.roles[s.id]=state.roles[s.id]||{};state.roles[s.id][sel.dataset.roleUser]=sel.value;save();renderMemberPanel();});}
   const SERVER_SETTINGS_NAV=[
-    {id:'profile',label:'Perfil do servidor',icon:'🏠',hint:'Nome, ícone, faixa e descrição.'},
-    {id:'channels',label:'Canais',icon:'#',hint:'Crie e organize canais.'},
-    {id:'members',label:'Membros',icon:'👥',hint:'Veja e gerencie pessoas do servidor.'},
-    {id:'roles',label:'Cargos',icon:'🏷',hint:'Admin, moderador e membro.'},
-    {id:'invites',label:'Convites',icon:'🔗',hint:'Crie, copie e revogue convites.'},
-    {id:'access',label:'Acesso',icon:'🔐',hint:'Regras gerais de acesso.'},
-    {id:'moderation',label:'Moderação',icon:'🛡',hint:'Ferramentas de segurança e moderação.'},
-    {id:'integrations',label:'Integrações',icon:'🧩',hint:'Apps e integrações do servidor.'},
-    {id:'audit',label:'Auditoria',icon:'📜',hint:'Registro administrativo.'},
-    {id:'delete',label:'Excluir servidor',icon:'🗑',hint:'Zona de perigo.',danger:true},
+    {id:'profile',label:'Perfil do servidor',icon:uiIcon('home'),hint:'Nome, ícone, faixa e descrição.'},
+    {id:'channels',label:'Canais',icon:uiIcon('message'),hint:'Crie e organize canais.'},
+    {id:'members',label:'Membros',icon:uiIcon('users'),hint:'Veja e gerencie pessoas do servidor.'},
+    {id:'roles',label:'Cargos',icon:uiIcon('tag'),hint:'Admin, moderador e membro.'},
+    {id:'invites',label:'Convites',icon:uiIcon('link'),hint:'Crie, copie e revogue convites.'},
+    {id:'access',label:'Acesso',icon:uiIcon('lock'),hint:'Regras gerais de acesso.'},
+    {id:'moderation',label:'Moderação',icon:uiIcon('shield'),hint:'Ferramentas de segurança e moderação.'},
+    {id:'integrations',label:'Integrações',icon:uiIcon('puzzle'),hint:'Apps e integrações do servidor.'},
+    {id:'audit',label:'Auditoria',icon:uiIcon('audit'),hint:'Registro administrativo.'},
+    {id:'delete',label:'Excluir servidor',icon:uiIcon('trash'),hint:'Zona de perigo.',danger:true},
   ];
   function serverSettingsContent(tab,s){
     const manager=canManageServer(s);const channels=s.channels||[];
@@ -4833,7 +4950,7 @@
     const width=250;menu.style.left=Math.min(window.innerWidth-width-10,Math.max(10,rect.right-width))+'px';
     menu.style.top=Math.min(window.innerHeight-menu.offsetHeight-10,rect.bottom+6)+'px';
   }
-  function serverMenuCheckbox(checked){return '<span class="server-menu-check">'+(checked?'✓':'')+'</span>';}
+  function serverMenuCheckbox(checked){return '<span class="server-menu-check">'+(checked?uiIcon('check',14):'')+'</span>';}
   function openServerNotificationSettings(s){
     closeServerQuickMenu();const prefs=serverPreferenceState(s);
     showModal('Config. de notificação','<p class="muted">Escolha quando o Azurecord deve chamar sua atenção neste servidor.</p><div class="server-option-list">'+
@@ -4870,16 +4987,16 @@
     const s=getServer(view.serverId);if(!s)return;closeServerQuickMenu();const prefs=serverPreferenceState(s);
     const menu=document.createElement('div');menu.id='serverQuickMenu';menu.className='server-quick-menu';
     const ownerLeave=s.owner===state.currentAccountId?'':'<button class="danger" data-server-action="leave">Sair do servidor</button><div class="server-menu-sep"></div>';
-    const adminSettings=canManageServer(s)?'<div class="server-menu-sep"></div><button data-server-action="settings">⚙ Configurações do servidor</button>':'';
+    const adminSettings=canManageServer(s)?'<div class="server-menu-sep"></div><button data-server-action="settings">'+uiIcon('gear',15)+' Configurações do servidor</button>':'';
     menu.innerHTML=
       '<button data-server-action="read">Marcar como lida</button><div class="server-menu-sep"></div>'+
       '<button data-server-action="invite">Convidar para o servidor</button><div class="server-menu-sep"></div>'+
-      '<button data-server-action="mute"><span>Silenciar servidor</span><span>'+(prefs.muted?'✓':'›')+'</span></button>'+
+      '<button data-server-action="mute"><span>Silenciar servidor</span><span>'+(prefs.muted?uiIcon('check',14):'›')+'</span></button>'+
       '<button data-server-action="notify"><span>Config. de notificação</span><small>'+(prefs.notificationMode==='all'?'Todas as mensagens':prefs.notificationMode==='none'?'Nada':'Apenas @menções')+'</small><span>›</span></button>'+
       '<button data-server-action="hide-muted"><span>Ocultar canais silenciados</span>'+serverMenuCheckbox(!!prefs.hideMuted)+'</button>'+
       '<button data-server-action="show-all"><span>Mostrar todos os canais</span>'+serverMenuCheckbox(!!prefs.showAll)+'</button><div class="server-menu-sep"></div>'+
       '<button data-server-action="privacy">Config. de privacidade</button><button data-server-action="profile">Editar perfil por servidor</button><div class="server-menu-sep"></div>'+
-      ownerLeave+'<button data-server-action="copy-id"><span>▣ &nbsp; Copiar ID do servidor</span></button>'+adminSettings;
+      ownerLeave+'<button data-server-action="copy-id"><span>'+uiIcon('id',15)+' Copiar ID do servidor</span></button>'+adminSettings;
     document.body.appendChild(menu);positionServerQuickMenu(menu,event?.currentTarget||$('serverMenu'));
     menu.querySelectorAll('[data-server-action]').forEach(b=>b.onclick=()=>{
       const action=b.dataset.serverAction;
@@ -5805,34 +5922,34 @@
     const aiLabel=cloudInfo?.capabilities?.lolaWorkersAI
       ? `Workers AI conectado • ${cloudInfo.version||'Worker Cloud'}`
       : 'Workers AI não detectado no Worker';
-    showModal('Apps do Azurecord',`<div class="modal-grid"><div class="app-card"><strong>🧠 Lola IA</strong><p>${esc(aiLabel)}</p><button class="home-mini-btn" id="lolaAiSetup">Configurar</button></div><div class="app-card"><strong>🪙 AzurePoints</strong><p>Carteira, histórico, loja e solicitações de resgate.</p><button class="home-mini-btn" id="pointsApps">Abrir</button></div><div class="app-card"><strong>📊 Enquete</strong><p>Crie uma votação rápida no canal.</p><button class="home-mini-btn" id="createPollApp">Criar</button></div><div class="app-card"><strong>🕹 Mini-jogos</strong><p>Atividades rápidas para comunidades.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔔 Lembretes</strong><p>Organize avisos dentro do servidor.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🧰 Utilidades</strong><p>Ferramentas básicas para moderadores.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>🔐 Códigos secretos</strong><p>Uma área escondida para experiências do app.</p><button class="home-mini-btn" id="secretCodesApp" type="button">Abrir</button></div></div>`);
+    showModal('Apps do Azurecord',`<div class="modal-grid"><div class="app-card"><strong>${uiIcon('brain',18)} Lola IA</strong><p>${esc(aiLabel)}</p><button class="home-mini-btn" id="lolaAiSetup">Configurar</button></div><div class="app-card"><strong>${uiIcon('coin',18)} AzurePoints</strong><p>Carteira, histórico, loja e solicitações de resgate.</p><button class="home-mini-btn" id="pointsApps">Abrir</button></div><div class="app-card"><strong>${uiIcon('poll',18)} Enquete</strong><p>Crie uma votação rápida no canal.</p><button class="home-mini-btn" id="createPollApp">Criar</button></div><div class="app-card"><strong>${uiIcon('game',18)} Mini-jogos</strong><p>Atividades rápidas para comunidades.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>${uiIcon('bell',18)} Lembretes</strong><p>Organize avisos dentro do servidor.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>${uiIcon('tool',18)} Utilidades</strong><p>Ferramentas básicas para moderadores.</p><button class="home-mini-btn" type="button" disabled>Em breve</button></div><div class="app-card"><strong>${uiIcon('lock',18)} Códigos secretos</strong><p>Uma área escondida para experiências do app.</p><button class="home-mini-btn" id="secretCodesApp" type="button">Abrir</button></div></div>`);
     $('pointsApps')?.addEventListener('click',openAzurePoints);
     $('createPollApp')?.addEventListener('click',()=>{closeModal();openCreatePoll();});
     $('secretCodesApp')?.addEventListener('click',openSecretCodes);
     $('lolaAiSetup')?.addEventListener('click',openLolaAiSetup);
   }
   async function openAzurePoints(){
-    if(!pointsCloudReady()){showModal('AzurePoints',`<div class="app-card"><strong>🪙 Sua carteira</strong><p>Entre na sua conta Cloud para carregar sua carteira AzurePoints.</p></div>`);return;}
-    showModal('AzurePoints 🪙',`<div class="app-card">Carregando carteira Cloud...</div>`);
+    if(!pointsCloudReady()){showModal('AzurePoints',`<div class="app-card"><strong>${uiIcon('wallet',18)} Sua carteira</strong><p>Entre na sua conta Cloud para carregar sua carteira AzurePoints.</p></div>`);return;}
+    showModal('AzurePoints',`<div class="app-card">Carregando carteira Cloud...</div>`);
     try{
       const [result,shop,history,redemptions]=await Promise.all([
         cloudRequest('/api/points/wallet'),cloudRequest('/api/points/shop'),cloudRequest('/api/points/history'),cloudRequest('/api/points/redemptions')]);
       const w=result.wallet;
       const money=(cents)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100);
       const available=w.available,rate=result.pointsPerBRL;
-      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>🏪 Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
+      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>'+uiIcon('shop',18)+' Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
       const requested=redemptions.redemptions||[];
-      showModal('AzurePoints 🪙',`<div class="points-panel"><div class="points-top"><small>SALDO CLOUD</small><h2 id="pointsWalletBalance">${available.toLocaleString('pt-BR')} AP</h2><p>Acumulados: ${w.earned.toLocaleString('pt-BR')} • Reservados: ${w.reserved.toLocaleString('pt-BR')}</p></div><h3>🏪 Loja</h3>${shopContent}
-        <h3>💸 Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta versão. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
-        <h3>📋 Histórico</h3><div class="points-scroll">${history.entries?.length?history.entries.slice(0,12).map(e=>`<div class="setting-row"><span>${esc(e.reason)}<small> ${new Date(e.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${e.delta>0?'+':''}${e.delta} AP</strong></div>`).join(''):'<p>Sem movimentações.</p>'}</div>
-        <h3>📨 Solicitações anteriores</h3><div>${requested.length?requested.slice(0,10).map(r=>`<div class="setting-row"><span>${r.points} AP → ${money(r.amountCentavos)}<small> ${new Date(r.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${{pending:'Pendente',paid:'Pago',rejected:'Recusado'}[r.status]||esc(r.status)}</strong></div>`).join(''):'<p>Nenhuma solicitação.</p>'}</div></div>`);
-    }catch(err){showModal('AzurePoints 🪙',`<div class="app-card"><p>Não foi possível buscar sua carteira Cloud: ${esc(err.message)}</p></div>`);}
+      showModal('AzurePoints',`<div class="points-panel"><div class="points-top"><small>SALDO CLOUD</small><h2 id="pointsWalletBalance">${available.toLocaleString('pt-BR')} AP</h2><p>Acumulados: ${w.earned.toLocaleString('pt-BR')} • Reservados: ${w.reserved.toLocaleString('pt-BR')}</p></div><h3>${uiIcon('shop',18)} Loja</h3>${shopContent}
+        <h3>${uiIcon('wallet',18)} Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta versão. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
+        <h3>${uiIcon('list',18)} Histórico</h3><div class="points-scroll">${history.entries?.length?history.entries.slice(0,12).map(e=>`<div class="setting-row"><span>${esc(e.reason)}<small> ${new Date(e.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${e.delta>0?'+':''}${e.delta} AP</strong></div>`).join(''):'<p>Sem movimentações.</p>'}</div>
+        <h3>${uiIcon('inbox',18)} Solicitações anteriores</h3><div>${requested.length?requested.slice(0,10).map(r=>`<div class="setting-row"><span>${r.points} AP → ${money(r.amountCentavos)}<small> ${new Date(r.createdAt).toLocaleDateString('pt-BR')}</small></span><strong>${{pending:'Pendente',paid:'Pago',rejected:'Recusado'}[r.status]||esc(r.status)}</strong></div>`).join(''):'<p>Nenhuma solicitação.</p>'}</div></div>`);
+    }catch(err){showModal('AzurePoints',`<div class="app-card"><p>Não foi possível buscar sua carteira Cloud: ${esc(err.message)}</p></div>`);}
   }
   function openLolaAiSetup(){
     const aiBound=!!cloudInfo?.capabilities?.lolaWorkersAI;
     const logged=!!(cloudToken&&cloudVerifiedAccountId===state.currentAccountId);
-    const status=aiBound&&logged?'Conectada ao Workers AI ✅':aiBound?'Workers AI disponível; entre na conta Cloud.':'Binding AI não detectado no Worker.';
-    showModal('Lola IA',`<div class="app-card"><strong>🧠 Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ✅':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.8.1.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
+    const status=aiBound&&logged?'Conectada ao Workers AI':aiBound?'Workers AI disponível; entre na conta Cloud.':'Binding AI não detectado no Worker.';
+    showModal('Lola IA',`<div class="app-card"><strong>${uiIcon('brain',18)} Lola no Cloudflare Workers AI</strong><p>${esc(status)}</p><p>A Lola agora usa o mesmo login Cloud do Azurecord. Não existe API key dentro do aplicativo e o backend Node local não é necessário para conversar com ela.</p><div class="setting-row"><span>Modelo</span><strong><code>@cf/meta/llama-4-scout-17b-16e-instruct</code></strong></div><div class="setting-row"><span>Worker</span><strong>${esc(cloudInfo?.version||'offline')}</strong></div><div class="setting-row"><span>Histórico</span><strong>${cloudInfo?.capabilities?.lolaCloudHistory?'D1 Cloud ativo':'indisponível'}</strong></div><p class="tiny-note">Se aparecer “Binding AI não detectado”, confirme no Cloudflare que existe <code>AI → Workers AI</code> e publique o <code>worker-v0.8.1.js</code>.</p><div class="onboarding-actions"><button class="btn btn-primary" id="aiSetupClose">Fechar</button></div></div>`);
     $('aiSetupClose').onclick=closeModal;
   }
   function openCreatePoll(){
@@ -5852,7 +5969,7 @@
       try{
         const clientId=uid('poll');
         const path='/api/servers/'+encodeURIComponent(srv.backendId||srv.id)+'/channels/'+encodeURIComponent(ch.backendId||ch.id)+'/messages';
-        const result=await socialRequest(path,{method:'POST',body:JSON.stringify({clientId,text:'📊 '+question,poll:{question,options}})});
+        const result=await socialRequest(path,{method:'POST',body:JSON.stringify({clientId,text:'Enquete: '+question,poll:{question,options}})});
         if(!result.message)throw new Error('Resposta da enquete incompleta.');
         applyRealtimeChannelMessage(srv.backendId||srv.id,ch.backendId||ch.id,result.message);
         sendCloudRealtime({type:'channel.commit',serverId:srv.backendId||srv.id,channelId:ch.backendId||ch.id,messageId:result.message.id,clientId});
@@ -5905,7 +6022,7 @@
     if(!view.channelId || !channels.some(c=>c.id===view.channelId && c.type==='text')){
       view.channelId=textChannels[0]?.id||channels[0]?.id||null;
     }
-    text.innerHTML=textChannels.map(c=>{const mentions=Number(state.mentionCounts?.[String(s.id)+'|'+String(c.id)]||0);return `<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?'🔕':(mentions>0?`<span class="channel-mention-badge">${mentions>99?'99+':mentions}</span>`:(state.unread?.[`${s.id}|${c.id}`]?'●':''))}</small></button>`}).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
+    text.innerHTML=textChannels.map(c=>{const mentions=Number(state.mentionCounts?.[String(s.id)+'|'+String(c.id)]||0);return `<button type="button" class="channel-item ${c.id===view.channelId?'active':''} ${mutedSet.has(String(c.id))?'channel-muted':''}" data-channel="${esc(c.id)}"><span>#</span>${esc(c.name||'canal')}<small>${mutedSet.has(String(c.id))?uiIcon('muteBell',13):(mentions>0?`<span class="channel-mention-badge">${mentions>99?'99+':mentions}</span>`:(state.unread?.[`${s.id}|${c.id}`]?'●':''))}</small></button>`}).join('')||'<div class="dm-empty">Nenhum canal de texto.</div>';
     voice.innerHTML=voiceChannels.map(c=>{
       const joined=serverVoiceSession?.serverId===s.id&&serverVoiceSession?.channelId===c.id;
       const count=joined?serverVoiceSession.participantIds.size:0;

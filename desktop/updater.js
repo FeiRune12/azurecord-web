@@ -21,7 +21,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
   }
 
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
   let updateReady = false;
@@ -61,7 +61,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     downloadedVersion = info?.version || null;
     log('[updater] Atualização baixada:', downloadedVersion || 'desconhecida');
     writeState({ pendingVersion: downloadedVersion || null, downloadedAt: Date.now() });
-    notify('Atualização pronta', 'O Azurecord será reiniciado para aplicar a nova versão.');
+    notify('Atualização pronta', 'Abra o Azurecord e escolha quando instalar a nova versão.');
     try {
       const win = getMainWindow?.();
       if (win && !win.isDestroyed()) {
@@ -69,12 +69,10 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
           state: 'downloaded',
           version: info?.version || null,
           installOnQuit: false,
-          autoInstall: true,
+          autoInstall: false,
         });
       }
     } catch {}
-    const installTimer = setTimeout(() => installNow(), 1200);
-    installTimer.unref?.();
   });
   autoUpdater.on('error', (error) => log('[updater] Erro:', error?.stack || error));
 
