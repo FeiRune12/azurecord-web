@@ -44,7 +44,7 @@
       <div id="authNotice" class="auth-notice" role="status" aria-live="polite" hidden></div>
       <form id="authForm" class="auth-form">
         <label>Email<input id="emailInput" type="email" required autocomplete="email" placeholder="voce@email.com"></label>
-        <label>Senha<div class="password-field"><input id="passwordInput" type="password" required minlength="8" autocomplete="current-password" placeholder="Digite sua senha"><button type="button" class="password-toggle" id="passwordToggle">◉</button></div></label>
+        <label>Senha<div class="password-field"><input id="passwordInput" type="password" required minlength="8" autocomplete="current-password" placeholder="Digite sua senha"><button type="button" class="password-toggle" id="passwordToggle" aria-label="Mostrar ou ocultar senha"></button></div></label>
         <label id="confirmRow" hidden>Confirmar senha<input id="confirmInput" type="password" minlength="8" autocomplete="new-password" placeholder="Repita sua senha"></label>
         <label class="remember-line"><input id="rememberLogin" type="checkbox" checked> <span>Manter minha conta salva neste computador</span></label>
         <button class="btn btn-primary wide" id="authSubmit">Entrar no Azurecord</button>
@@ -104,7 +104,7 @@
         <div id="voiceChannels"></div>
         <div class="server-tools"><button id="serverInviteBtn">Convidar</button><button id="roleManageBtn">Cargos</button></div>
       </div>
-      <div class="user-bar" id="userBar"><div class="mini-avatar" id="userMiniAvatar">F</div><div class="user-bar-info"><strong id="userBarName">Fei</strong><span id="userBarStatus">online</span></div><button class="icon-btn" id="logoutBtn">↪</button></div>
+      <div class="user-bar" id="userBar"><div class="mini-avatar" id="userMiniAvatar">F</div><div class="user-bar-info"><strong id="userBarName">Fei</strong><span id="userBarStatus">online</span></div><button class="icon-btn" id="logoutBtn" aria-label="Sair"></button></div>
     </aside>
 
     <main class="chat-panel">
