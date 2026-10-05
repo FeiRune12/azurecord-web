@@ -264,7 +264,7 @@
     return err?.name==='AbortError'||!status||status===408||status>=500;
   }
 
-  async function cloudPostMessageWithRetry(path,payload,{timeoutMs:7000,retries:1}={}){
+  async function cloudPostMessageWithRetry(path,payload,{timeoutMs=7000,retries=1}={}){
     let lastError=null;
     for(let attempt=0;attempt<=retries;attempt++){
       const controller=new AbortController();
