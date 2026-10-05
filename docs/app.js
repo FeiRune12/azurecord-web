@@ -2233,7 +2233,7 @@
     overlay.id='serverVoiceOverlay';
     overlay.className='azure-call-overlay server-voice-overlay';
     overlay.hidden=true;
-    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">🔊 CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div id="lumenVoicePanel" class="lumen-voice-panel" hidden><div class="lumen-voice-head"><div class="mini-avatar avatar-img" id="lumenVoiceAvatar"></div><div><strong>Lumen DJ</strong><span id="lumenVoiceNow">Peça uma música por nome ou cole um link.</span></div></div><div class="lumen-voice-controls"><input id="lumenVoiceInput" placeholder="Nome da música ou link do YouTube / Spotify"><button id="lumenVoicePlayBtn" class="btn btn-primary" type="button">Tocar</button><button id="lumenVoiceStopBtn" class="btn btn-ghost" type="button">Parar</button></div><div id="lumenVoiceEmbed" class="lumen-voice-embed" hidden></div></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">🎙</button><button id="serverVoiceCameraBtn" class="call-control" type="button" aria-label="Câmera">📷</button><button id="serverVoiceShareBtn" class="call-control" type="button" aria-label="Transmitir tela">▣</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">☎</button></div></div></div>';
+    overlay.innerHTML='<div class="azure-call-shell server-voice-shell"><div class="server-voice-header"><div><span class="server-voice-kicker">'+uiIcon('volume',14)+' CANAL DE VOZ</span><strong id="serverVoiceHeading">AzureCall</strong></div><button id="serverVoiceCloseView" class="icon-btn" type="button" aria-label="Fechar visualização">×</button></div><div id="serverVoiceGrid" class="server-voice-grid"></div><div id="lumenVoicePanel" class="lumen-voice-panel" hidden><div class="lumen-voice-head"><div class="mini-avatar avatar-img" id="lumenVoiceAvatar"></div><div><strong>Lumen DJ</strong><span id="lumenVoiceNow">Peça uma música por nome ou cole um link.</span></div></div><div class="lumen-voice-controls"><input id="lumenVoiceInput" placeholder="Nome da música ou link do YouTube / Spotify"><button id="lumenVoicePlayBtn" class="btn btn-primary" type="button">Tocar</button><button id="lumenVoiceStopBtn" class="btn btn-ghost" type="button">Parar</button></div><div id="lumenVoiceEmbed" class="lumen-voice-embed" hidden></div></div><div class="azure-call-bar server-voice-bar"><div class="azure-call-copy"><strong id="serverVoiceTitle">AzureCall</strong><span id="serverVoiceSubtitle">Servidor • WebRTC P2P</span></div><div class="azure-call-actions"><button id="serverVoiceMicBtn" class="call-control" type="button" aria-label="Microfone">'+uiIcon('mic',18)+'</button><button id="serverVoiceCameraBtn" class="call-control" type="button" aria-label="Câmera">'+uiIcon('video',18)+'</button><button id="serverVoiceShareBtn" class="call-control" type="button" aria-label="Transmitir tela">'+uiIcon('screen',18)+'</button><button id="serverVoiceLeaveBtn" class="call-control hangup" type="button" aria-label="Sair da chamada">'+uiIcon('phoneOff',18)+'</button></div></div></div>';
     document.body.appendChild(overlay);
     $('serverVoiceCloseView').onclick=()=>{overlay.hidden=true;};
     $('serverVoiceMicBtn').onclick=toggleServerVoiceMic;
@@ -2412,7 +2412,7 @@
     audio.onerror=()=>{if(serverVoiceSession===session){showToast('Lumen não conseguiu reproduzir esse áudio.');void stopLumenDj({silent:true});}};
     await audio.play();
     broadcastLumenState(session,{active:true,mode:'audio',name:session.lumenNowPlaying.name});
-    renderServerVoiceModal();showToast('♫ Lumen: '+session.lumenNowPlaying.name);
+    renderServerVoiceModal();showToast('Lumen: '+session.lumenNowPlaying.name);
   }
   async function playLumenOfficialLink(rawUrl){
     const session=serverVoiceSession;if(!session)throw new Error('Entre em um canal de voz primeiro.');
@@ -2425,7 +2425,7 @@
     session.lumenOfficialEmbed={active:true,mode:'embed',provider:String(data.provider||'Música'),name:String(data.title||'Música'),url:String(data.url||rawUrl),embedUrl:embed};
     session.lumenNowPlaying={name:session.lumenOfficialEmbed.name,mode:'embed',provider:session.lumenOfficialEmbed.provider};
     broadcastLumenState(session,{active:true,mode:'embed',provider:session.lumenOfficialEmbed.provider,name:session.lumenOfficialEmbed.name,url:session.lumenOfficialEmbed.url,embedUrl:session.lumenOfficialEmbed.embedUrl});
-    renderServerVoiceModal();showToast('♫ Lumen abriu '+session.lumenOfficialEmbed.name+'.');
+    renderServerVoiceModal();showToast('Lumen abriu '+session.lumenOfficialEmbed.name+'.');
   }
   async function lumenRequestMusic(value){
     const session=serverVoiceSession;if(!session){showToast('Entre em um canal de voz primeiro.');return false;}
@@ -2451,11 +2451,11 @@
     $('serverVoiceTitle').textContent=channel?.name||'Canal de voz';
     $('serverVoiceSubtitle').textContent=(server?.name||'Servidor')+' • '+ids.length+' conectado'+(ids.length===1?'':'s')+' • WebRTC P2P';
     $('serverVoiceMicBtn').classList.toggle('off',!!session.micMuted);
-    $('serverVoiceMicBtn').textContent=session.micMuted?'🔇':'🎙';
+    $('serverVoiceMicBtn').innerHTML=uiIcon(session.micMuted?'micOff':'mic',18);
     $('serverVoiceCameraBtn').classList.toggle('off',!session.cameraTrack||session.cameraTrack.enabled===false);
-    $('serverVoiceCameraBtn').textContent=session.cameraTrack&&session.cameraTrack.enabled!==false?'📹':'📷';
+    $('serverVoiceCameraBtn').innerHTML=uiIcon(session.cameraTrack&&session.cameraTrack.enabled!==false?'video':'videoOff',18);
     $('serverVoiceShareBtn').classList.toggle('active',!!session.screenTrack||!!session.nativeScreenSharing||!!session.nativeScreenRequested);
-    $('serverVoiceShareBtn').textContent=(session.screenTrack||session.nativeScreenSharing)?'▣':'▢';
+    $('serverVoiceShareBtn').innerHTML=uiIcon('screen',18);
     $('serverVoiceGrid').innerHTML=ids.map(id=>{
       const p=getProfile(id)||(id===String(state.currentAccountId)?currentUser():null)||{id,username:'Usuário'};
       const isLumen=id==='user-lumen';
@@ -2476,7 +2476,7 @@
     if(lumenPanel){
       const enabled=serverHasLumen(server);lumenPanel.hidden=!enabled;
       const avatar=$('lumenVoiceAvatar');if(avatar){avatar.style.backgroundImage="url('"+safeUrl(DEMO_LUMEN.avatar)+"')";avatar.textContent='';}
-      const nowEl=$('lumenVoiceNow');if(nowEl)nowEl.textContent=lumenState?'♫ '+String(lumenState.name||'Música'):'Peça uma música por nome ou cole um link.';
+      const nowEl=$('lumenVoiceNow');if(nowEl)nowEl.textContent=lumenState?String(lumenState.name||'Música'):'Peça uma música por nome ou cole um link.';
       const embedBox=$('lumenVoiceEmbed');
       const embedState=session.lumenOfficialEmbed||(session.remoteLumen?.mode==='embed'?session.remoteLumen:null);
       const embedUrl=safeLumenEmbedUrl(embedState?.embedUrl||'');
