@@ -4987,7 +4987,7 @@
     const s=getServer(view.serverId);if(!s)return;closeServerQuickMenu();const prefs=serverPreferenceState(s);
     const menu=document.createElement('div');menu.id='serverQuickMenu';menu.className='server-quick-menu';
     const ownerLeave=s.owner===state.currentAccountId?'':'<button class="danger" data-server-action="leave">Sair do servidor</button><div class="server-menu-sep"></div>';
-    const adminSettings=canManageServer(s)?'<div class="server-menu-sep"></div><button data-server-action="settings">${uiIcon('gear',15)} Configurações do servidor</button>':'';
+    const adminSettings=canManageServer(s)?'<div class="server-menu-sep"></div><button data-server-action="settings">'+uiIcon('gear',15)+' Configurações do servidor</button>':'';
     menu.innerHTML=
       '<button data-server-action="read">Marcar como lida</button><div class="server-menu-sep"></div>'+
       '<button data-server-action="invite">Convidar para o servidor</button><div class="server-menu-sep"></div>'+
@@ -4996,7 +4996,7 @@
       '<button data-server-action="hide-muted"><span>Ocultar canais silenciados</span>'+serverMenuCheckbox(!!prefs.hideMuted)+'</button>'+
       '<button data-server-action="show-all"><span>Mostrar todos os canais</span>'+serverMenuCheckbox(!!prefs.showAll)+'</button><div class="server-menu-sep"></div>'+
       '<button data-server-action="privacy">Config. de privacidade</button><button data-server-action="profile">Editar perfil por servidor</button><div class="server-menu-sep"></div>'+
-      ownerLeave+'<button data-server-action="copy-id"><span>${uiIcon('id',15)} Copiar ID do servidor</span></button>'+adminSettings;
+      ownerLeave+'<button data-server-action="copy-id"><span>'+uiIcon('id',15)+' Copiar ID do servidor</span></button>'+adminSettings;
     document.body.appendChild(menu);positionServerQuickMenu(menu,event?.currentTarget||$('serverMenu'));
     menu.querySelectorAll('[data-server-action]').forEach(b=>b.onclick=()=>{
       const action=b.dataset.serverAction;
@@ -5937,7 +5937,7 @@
       const w=result.wallet;
       const money=(cents)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(cents/100);
       const available=w.available,rate=result.pointsPerBRL;
-      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>${uiIcon('shop',18)} Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
+      const shopContent=shop.items?.length ? shop.items.map(i=>`<li>${esc(i.name)}</li>`).join(''):'<div class="app-card"><strong>'+uiIcon('shop',18)+' Loja vazia por enquanto</strong><p>Nenhum produto disponível nesta versão.</p></div>';
       const requested=redemptions.redemptions||[];
       showModal('AzurePoints',`<div class="points-panel"><div class="points-top"><small>SALDO CLOUD</small><h2 id="pointsWalletBalance">${available.toLocaleString('pt-BR')} AP</h2><p>Acumulados: ${w.earned.toLocaleString('pt-BR')} • Reservados: ${w.reserved.toLocaleString('pt-BR')}</p></div><h3>${uiIcon('shop',18)} Loja</h3>${shopContent}
         <h3>${uiIcon('wallet',18)} Resgate de pontos</h3><div class="app-card"><p>Resgates em dinheiro continuam desativados nesta versão. O saldo e o histórico ficam salvos no D1 Cloud.</p></div>
