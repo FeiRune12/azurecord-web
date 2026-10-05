@@ -113,6 +113,16 @@
       phone:'<path d="M6.5 4 10 8l-2 3c1.6 3 3 4.4 6 6l3-2 4 3.5c-1.2 2-3 3-5 2.5C9.5 19.3 4.7 14.5 3 8c-.5-2 1-3.5 3.5-4z"/>',
       gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
       warning:'<path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17h.01"/>',
+      eye:'<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.5"/>',
+      play:'<path d="m9 6 9 6-9 6z"/>',
+      refresh:'<path d="M20 6v5h-5"/><path d="M19 11a7 7 0 1 0 1 5"/>',
+      external:'<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6H5V6h6"/>',
+      clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      unread:'<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/>',
+      chevronDown:'<path d="m7 10 5 5 5-5"/>',
+      chevronRight:'<path d="m10 7 5 5-5 5"/>',
+      arrowUp:'<path d="m7 10 5-5 5 5"/><path d="M12 5v14"/>',
+      arrowDown:'<path d="m7 14 5 5 5-5"/><path d="M12 5v14"/>',
       back:'<path d="m14 6-6 6 6 6"/>',
       plus:'<path d="M12 5v14M5 12h14"/>',
       mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/>',
@@ -1736,7 +1746,7 @@
     panel.id='mobileDmPanel';
     panel.className='mobile-dm-panel';
     panel.hidden=true;
-    panel.innerHTML=`<header class="mobile-dm-header"><div><span class="eyebrow">AZURECORD</span><h2>Mensagens</h2></div><button type="button" class="mobile-dm-refresh" data-mobile-dm-refresh aria-label="Atualizar mensagens">↻</button></header><div class="mobile-dm-subtitle">Mensagens diretas</div><div id="mobileDmList" class="mobile-dm-list"></div>`;
+    panel.innerHTML=`<header class="mobile-dm-header"><div><span class="eyebrow">AZURECORD</span><h2>Mensagens</h2></div><button type="button" class="mobile-dm-refresh" data-mobile-dm-refresh aria-label="Atualizar mensagens">${uiIcon('refresh',18)}</button></header><div class="mobile-dm-subtitle">Mensagens diretas</div><div id="mobileDmList" class="mobile-dm-list"></div>`;
     $('appScreen')?.appendChild(panel);
     panel.querySelector('[data-mobile-dm-refresh]').onclick=async()=>{
       const btn=panel.querySelector('[data-mobile-dm-refresh]');btn.disabled=true;
@@ -1828,6 +1838,7 @@
   function applyUiIconography(){
     const dmTitle=$('dmToggle')?.querySelector('span:first-child');
     if(dmTitle)dmTitle.innerHTML=uiIcon('mail',15)+' <span>MENSAGENS DIRETAS</span>';
+    setUiButton('passwordToggle','eye');
     setUiButton('serverInviteBtn','link','Convidar');
     setUiButton('roleManageBtn','tag','Cargos');
     setUiButton('globalSearchBtn','search','Buscar');
@@ -1855,6 +1866,7 @@
   }
 
   function boot(){
+    window.__azurecordCheckUpdate=checkNativeReadyUpdate;
     applyUiIconography();
     try{
       window.azurecordDesktop?.onUpdateStatus?.((payload)=>{
@@ -2810,7 +2822,7 @@
   function renderFriendTabs(){const ids=friendIds(),online=ids.map(getProfile).filter(p=>p&&resolvedPresence(p.id)==='online').length;const a=$('[data-home-tab="all"]'),o=$('[data-home-tab="online"]');if(a){a.textContent=`Todos — ${ids.length}`;a.classList.toggle('active',view.homeTab!=='online');}if(o){o.textContent=`Online — ${online}`;o.classList.toggle('active',view.homeTab==='online');}}
   function renderHome(){ if(view.mode!=='home') return; renderFriendTabs(); const content=$('homeContent'); if(view.home==='requests'||view.homeTab==='pending'){view.home='requests';$('homeTitle').textContent='Solicitações';$('homeSubtitle').textContent='Veja solicitações recebidas e enviadas.';content.innerHTML=renderRequests();bindHome();return;} if(view.home==='add'||view.homeTab==='add'){view.home='add';$('homeTitle').textContent='Adicionar amigo';$('homeSubtitle').textContent='Encontre alguém pelo nome de usuário.';content.innerHTML=renderAddFriend();bindHome();return;} $('homeTitle').textContent='Amigos';$('homeSubtitle').textContent='Converse, veja quem está online e gerencie suas amizades.';content.innerHTML=renderFriends();bindHome(); }
   function renderFriends(){ const ids=friendIds(); let people=ids.map(getProfile).filter(Boolean); if(view.homeTab==='online')people=people.filter(p=>resolvedPresence(p.id)==='online'); if(!people.length)return `<div class="home-empty"><div class="home-empty-icon">${uiIcon('users',28)}</div><h3>Nenhum amigo por aqui ainda</h3><p>Adicione alguém pelo nome de usuário para começar.</p><button class="btn btn-primary" data-action="goto-add">${uiIcon('plus',16)} Adicionar amigo</button></div>`; return `<div class="section-title">AMIGOS • ${people.length}</div><div class="friend-list">${people.map(friendRow).join('')}</div><div class="home-section-spaced"><div class="section-title">MASCOTES DO AZURECORD</div><div class="friend-list">${[DEMO_LOLA,DEMO_LUMEN].map(friendRow).join('')}</div></div>`; }
-  function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">↻ Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
+  function renderRequests(){ const incoming=state.requests.filter(r=>r.to===state.currentAccountId&&r.status==='pending'); const outgoing=state.requests.filter(r=>r.from===state.currentAccountId&&r.status==='pending'); return `<div class="add-friend-card"><div class="add-friend-head"><strong>Solicitações recebidas</strong><div class="request-head-actions"><span>${incoming.length} pendente(s)</span><button class="home-mini-btn ghost" id="refreshFriendRequests">${uiIcon('refresh',15)} Atualizar</button></div></div>${incoming.length?incoming.map(r=>{const p=getProfile(r.from);return friendRow(p,{request:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação recebida.</span></div>'}<div class="add-friend-head home-section-spaced"><strong>Solicitações enviadas</strong><span>${outgoing.length}</span></div>${outgoing.length?outgoing.map(r=>{const p=getProfile(r.to);return friendRow(p,{outgoing:r});}).join(''):'<div class="home-empty compact"><span>Nenhuma solicitação enviada.</span></div>'}</div>`; }
   function renderAddFriend(){ return `<div class="add-friend-card"><div class="add-friend-head"><strong>Encontrar alguém</strong><span>Use o nome de usuário completo, por exemplo <b>@nome</b>.</span></div><div class="add-friend-search"><input id="friendSearchInput" placeholder="@nome" value="${esc(currentSearch)}"><span>⌕</span></div><div id="friendSearchResults"></div></div>`; }
   function friendRow(p,opts={}){ if(!p)return ''; const incoming=opts.request,outgoing=opts.outgoing; const system=isSystemMascot(p.id); const liveStatus=resolvedPresence(p.id); const statusText=system?systemMascotKind(p.id):statusLabel(liveStatus); const custom=system?'':customStatusOf(p); const meta=system?'':presenceMeta(p); const systemActions=p.id==='user-lola'?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`; return `<div class="friend-row ${p.id==='user-lumen'?'lumen-mascot-row':''}" data-user-row="${p.id}"><div class="home-avatar avatar-img ${p.id==='user-lumen'?'lumen-mascot-avatar':''}" style="${p.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p.avatar?'':esc((p.username||'?')[0].toUpperCase())}</div><div class="friend-main"><strong>${esc(p.username)} ${p.badge?`<span class="role-chip">${esc(p.badge)}</span>`:''}</strong><span>${esc(p.handle||'@'+p.username.toLowerCase())} • ${esc(statusText)}</span>${custom?`<small class="friend-custom-status">${esc(custom)}</small>`:''}${meta?`<small class="friend-presence-time">${esc(meta)}</small>`:''}</div><span class="presence-dot ${liveStatus}"></span><div class="friend-actions">${system?systemActions:incoming?`<button class="home-mini-btn" data-accept="${incoming.id}">Aceitar</button><button class="home-mini-btn ghost" data-decline="${incoming.id}">Recusar</button>`:outgoing?`<button class="home-mini-btn ghost" data-cancel="${outgoing.id}">Cancelar</button>`:isFriend(p.id)?`<button class="home-mini-btn" data-dm="${p.id}">Mensagem</button><button class="home-mini-btn ghost" data-profile="${p.id}">Perfil</button>`:`<button class="home-mini-btn" data-request-user="${p.id}">Adicionar</button>`}</div></div>`; }
   function bindHome(){ const input=$('friendSearchInput'); if(input){input.oninput=()=>{currentSearch=input.value;renderSearchResults();};renderSearchResults();} const refresh=$('refreshFriendRequests');if(refresh)refresh.onclick=async()=>{refresh.disabled=true;try{await hydrateFromCloudSocial({quiet:false});renderHome();}finally{refresh.disabled=false;}}; $$('#homeContent [data-dm]').forEach(b=>b.onclick=e=>{e.stopPropagation();openDm(b.dataset.dm)});$$('#homeContent [data-profile]').forEach(b=>b.onclick=e=>{e.stopPropagation();openProfileModal(b.dataset.profile)});$$('#homeContent [data-request-user]').forEach(b=>b.onclick=e=>{e.stopPropagation();sendFriendRequest(b.dataset.requestUser)});$$('#homeContent [data-accept]').forEach(b=>b.onclick=e=>{e.stopPropagation();acceptRequest(b.dataset.accept)});$$('#homeContent [data-decline]').forEach(b=>b.onclick=e=>{e.stopPropagation();declineRequest(b.dataset.decline)});$$('#homeContent [data-cancel]').forEach(b=>b.onclick=e=>{e.stopPropagation();cancelRequest(b.dataset.cancel)});$$('#homeContent [data-action="goto-add"]').forEach(b=>b.onclick=()=>openHome('add'));$$('#homeContent [data-user-row]').forEach(r=>r.onclick=()=>openProfileModal(r.dataset.userRow)); }
@@ -3091,7 +3103,7 @@
     if(view.mode==='home'){$('chatView').hidden=true;return;}
     $('chatView').hidden=false;
     const isDm=view.mode==='dm',p=isDm?getProfile(view.dmUserId):null,c=isDm?null:getChannel(view.serverId,view.channelId);
-    $('chatIcon').textContent=isDm?'':(c?.type==='text'?'#':'◉');
+    $('chatIcon').innerHTML=isDm?'':(c?.type==='text'?'#':uiIcon('volume',16));
     $('channelTitle').textContent=isDm?p?.username||'Mensagem Direta':c?.name||'geral';
     $('channelTopic').textContent=isDm?`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`:(c?.topic||'');
     $('channelWelcome').textContent=isDm?`Conversa com ${p?.username||'usuário'}`:`Bem-vindo a #${c?.name||'geral'}`;
@@ -3141,7 +3153,7 @@
           if(loading)btn.hidden=false;
           btn.setAttribute('aria-busy',loading?'true':'false');
           const icon=btn.querySelector('span');
-          if(icon)icon.textContent=loading?'…':'▶';
+          if(icon)icon.innerHTML=loading?uiIcon('clock',18):uiIcon('play',18);
         }
       };
       const resetError=()=>{if(error)error.hidden=true;if(errorText)errorText.textContent='Não foi possível carregar este vídeo.';};
@@ -3172,7 +3184,7 @@
       video.addEventListener('loadedmetadata',()=>{syncRatio();resetError();});
       video.addEventListener('loadeddata',()=>{syncRatio();resetError();});
       video.addEventListener('play',()=>{if(btn)btn.hidden=true;resetError();});
-      video.addEventListener('ended',()=>{if(btn){btn.hidden=false;const icon=btn.querySelector('span');if(icon)icon.textContent='▶';}});
+      video.addEventListener('ended',()=>{if(btn){btn.hidden=false;const icon=btn.querySelector('span');if(icon)icon.innerHTML=uiIcon('play',18);}});
       video.addEventListener('error',()=>{if(error)error.hidden=false;if(btn)btn.hidden=true;});
       if(btn)btn.onclick=async e=>{e.preventDefault();e.stopPropagation();await prepareAndPlay();};
       if(retry)retry.onclick=async e=>{e.preventDefault();e.stopPropagation();await prepareAndPlay({force:true});};
@@ -3233,7 +3245,7 @@
     return `${(n/1024/1024/1024).toFixed(1)} GB`;
   }
   function fileIcon(type=''){
-    if(type.startsWith('video/'))return '▶';
+    if(type.startsWith('video/'))return uiIcon('play',18);
     if(type.startsWith('audio/'))return uiIcon('fileAudio',18);
     if(type.includes('pdf'))return 'PDF';
     if(type.includes('zip')||type.includes('rar')||type.includes('7z'))return 'ZIP';
@@ -3963,7 +3975,7 @@
       }
       if(video&&source){
         const videoType=type.startsWith('video/')?type:(/\.webm$/i.test(name)?'video/webm':(/\.mov$/i.test(name)?'video/quicktime':'video/mp4'));
-        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage" data-inline-video-stage><video preload="none" playsinline data-inline-video data-src="${source}" data-video-type="${esc(videoType)}"></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>▶</span></button><div class="inline-video-error" hidden><strong>Não foi possível carregar este vídeo.</strong><button type="button" class="inline-video-retry" data-inline-video-retry>Tentar novamente</button><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
+        return `<figure class="message-attachment video-attachment"><div class="inline-video-stage" data-inline-video-stage><video preload="none" playsinline data-inline-video data-src="${source}" data-video-type="${esc(videoType)}"></video><button type="button" class="inline-video-play" data-inline-video-play aria-label="Reproduzir ${esc(name)}"><span>${uiIcon('play',18)}</span></button><div class="inline-video-error" hidden><strong>Não foi possível carregar este vídeo.</strong><button type="button" class="inline-video-retry" data-inline-video-retry>Tentar novamente</button><a href="${source}" target="_blank" rel="noopener">Abrir arquivo</a></div></div><figcaption><span>${esc(name)}</span><small>${formatFileSize(f.size)}</small></figcaption></figure>`;
       }
       const icon=image?'IMG':fileIcon(type);
       const card=`<div class="message-attachment file-attachment"><div class="attachment-file-icon">${icon}</div><div class="attachment-file-meta"><strong>${esc(name)}</strong><span>${esc(type||'Arquivo')} • ${formatFileSize(f.size)}</span></div>${source?'<span class="attachment-open">↗</span>':''}</div>`;
@@ -4304,7 +4316,7 @@
   }
   function insertAtCursor(txt){ const i=$('messageInput');const s=i.selectionStart??i.value.length; i.value=i.value.slice(0,s)+txt+i.value.slice(i.selectionEnd);i.focus();i.selectionStart=i.selectionEnd=s+txt.length; }
 
-  function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">${uiIcon('reply',15)} Responder</button><button class="context-item" data-context="forward">${uiIcon('forward',15)} Encaminhar</button><button class="context-item" data-context="pin">${uiIcon('pin',15)} ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">● Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">${uiIcon('link',15)} Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>${uiIcon('edit',15)} Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>${uiIcon('trash',15)} Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">${uiIcon('id',15)} Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
+  function openContextMenu(ev,msgId){ev.preventDefault();hideContext();view.contextMessageId=msgId;const box=$('contextMenu');const m=getMessages().find(x=>x.id===msgId);if(!m)return;const own=m.author===state.currentAccountId;box.innerHTML=`<div class="context-section"><div class="context-heading">REAÇÕES</div><div class="choice-row" style="padding:5px 10px">${['👍','❤️','😂','🔥','🎮'].map(x=>`<button class="choice-btn" data-context-react="${x}">${x}</button>`).join('')}</div></div><div class="context-section"><button class="context-item" data-context="reply">${uiIcon('reply',15)} Responder</button><button class="context-item" data-context="forward">${uiIcon('forward',15)} Encaminhar</button><button class="context-item" data-context="pin">${uiIcon('pin',15)} ${state.pinned[messageKey(msgId)]?'Desfixar':'Fixar'} mensagem</button><button class="context-item" data-context="unread">${uiIcon('unread',15)} Marcar como não lido</button></div><div class="context-section"><button class="context-item" data-context="copy">${uiIcon('link',15)} Copiar texto</button><button class="context-item" data-context="edit" ${own?'':'style="display:none"'}>${uiIcon('edit',15)} Editar mensagem</button><button class="context-item danger" data-context="delete" ${own?'':'style="display:none"'}>${uiIcon('trash',15)} Excluir mensagem</button></div><div class="context-section"><button class="context-item" data-context="id">${uiIcon('id',15)} Copiar ID da mensagem</button></div>`;box.hidden=false;box.style.left=Math.min(ev.clientX,window.innerWidth-235)+'px';box.style.top=Math.min(ev.clientY,window.innerHeight-330)+'px';box.querySelectorAll('[data-context-react]').forEach(b=>b.onclick=()=>reactMessage(msgId,b.dataset.contextReact));box.querySelectorAll('[data-context]').forEach(b=>b.onclick=()=>contextAction(b.dataset.context,msgId)); }
   function messageKey(id){return `${view.mode}|${view.serverId}|${view.channelId}|${view.dmUserId||''}|${id}`;}
   function reactMessage(id,emoji){const arr=getMessages();const m=arr.find(x=>x.id===id);if(!m)return;m.reactions=m.reactions||{};m.reactions[emoji]=(m.reactions[emoji]||0)+1;m.myReaction=emoji;setMessages(arr);hideContext();renderMessages();}
   async function deleteMessagePermanently(m,id){
@@ -4414,7 +4426,7 @@
         <div class="profile-main-head">
           <div class="profile-avatar-status-wrap"><div class="big-avatar avatar-img profile-avatar-large" style="${avatar?`background-image:url('${avatar}')`:''}">${avatar?'':esc((p.username||'?')[0].toUpperCase())}</div></div>
           <div class="profile-head-copy">
-            ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">＋</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
+            ${customStatusOf(p)?`<div class="profile-status-row"><div class="profile-status-bubble"><span class="status-bubble-plus">${uiIcon('plus',12)}</span><span class="profile-status-text">${esc(customStatusOf(p))}</span></div></div>`:''}
             <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}${p.pronouns?` <span class="profile-bullet">•</span> ${esc(p.pronouns)}`:''}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
           </div>
         </div>
@@ -4808,7 +4820,7 @@
     const box=$('contextMenu');
     const prefs=serverPreferenceState(s);
     const channelMuted=(prefs.mutedChannels||[]).includes(String(channelId));
-    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${uiIcon(channelMuted?'bell':'muteBell',15)} ${channelMuted?'Ativar notificações':'Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>↑ Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>↓ Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>${uiIcon('trash',15)} Excluir canal</button></div>`;
+    box.innerHTML=`<div class="context-section"><div class="context-heading">CANAL #${esc(c.name||'canal')}</div><button class="context-item" data-channel-context="mute">${uiIcon(channelMuted?'bell':'muteBell',15)} ${channelMuted?'Ativar notificações':'Silenciar canal'}</button><button class="context-item" data-channel-context="up" ${(!canManage||index<=0)?'disabled':''}>${uiIcon('arrowUp',15)} Mover para cima</button><button class="context-item" data-channel-context="down" ${(!canManage||index===textChannels.length-1)?'disabled':''}>${uiIcon('arrowDown',15)} Mover para baixo</button></div><div class="context-section"><button class="context-item danger" data-channel-context="delete" ${canDelete?'':'disabled'}>${uiIcon('trash',15)} Excluir canal</button></div>`;
     box.hidden=false;
     box.style.left=Math.min(ev.clientX,window.innerWidth-250)+'px'; box.style.top=Math.min(ev.clientY,window.innerHeight-180)+'px';
     box.querySelectorAll('[data-channel-context]').forEach(b=>{b.onclick=()=>channelContextAction(b.dataset.channelContext,channelId);});
@@ -4911,7 +4923,7 @@
     if(tab==='channels'){ $('serverAddText')?.addEventListener('click',()=>{closeModal();openCreateChannel('text');});$('serverAddVoice')?.addEventListener('click',()=>{closeModal();openCreateChannel('voice');});$$('[data-settings-delete-channel]').forEach(b=>b.onclick=async()=>{const id=b.dataset.settingsDeleteChannel;const c=getChannel(s.id,id);if(!c)return;if(c.type==='text'){await channelContextAction('delete',id);}else{if(!confirm(`Excluir o canal de voz ${c.name}?`))return;s.channels=s.channels.filter(x=>x.id!==id);save();persistServersNow();renderShell();if(socialCloudReady()&&s.backendId&&c.backendId){try{await cloudRequest(`/api/servers/${encodeURIComponent(s.backendId)}/channels/${encodeURIComponent(c.backendId)}`,{method:'DELETE'});}catch(err){showToast(err.message||'Falha ao excluir canal.');}}}setTimeout(()=>openServerSettings('channels'),80);});}
     if(tab==='members'||tab==='roles')loadServerSettingsMembers(s,tab==='roles');
     if(tab==='invites'){loadServerSettingsInvites(s);$('createServerInviteV83')?.addEventListener('click',async()=>{try{await cloudRequest(`/api/servers/${encodeURIComponent(sid)}/invites`,{method:'POST',body:'{}'});sendCloudRealtime({type:'server.commit',serverId:sid,reason:'invite.create'});loadServerSettingsInvites(s);showToast('Convite criado.');}catch(err){showToast(err.message||'Falha ao criar convite.');}});}
-    if(tab==='integrations'){$('toggleLumenServer')?.addEventListener('click',async()=>{if(!manager)return;const features=new Set(Array.isArray(s.features)?s.features:[]);const adding=!features.has('lumen-dj');if(adding)features.add('lumen-dj');else features.delete('lumen-dj');try{const patch={features:[...features]};if(socialCloudReady()){const data=await socialRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data?.server||patch);}else Object.assign(s,patch);save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'lumen.toggle'});renderMemberPanel();openServerSettings('integrations');showToast(adding?'Lumen entrou no servidor. ♫':'Lumen saiu do servidor.');}catch(err){showToast(err.message||'Não foi possível atualizar a Lumen.');}});}
+    if(tab==='integrations'){$('toggleLumenServer')?.addEventListener('click',async()=>{if(!manager)return;const features=new Set(Array.isArray(s.features)?s.features:[]);const adding=!features.has('lumen-dj');if(adding)features.add('lumen-dj');else features.delete('lumen-dj');try{const patch={features:[...features]};if(socialCloudReady()){const data=await socialRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'PATCH',body:JSON.stringify(patch)});Object.assign(s,data?.server||patch);}else Object.assign(s,patch);save();persistServersNow();sendCloudRealtime({type:'server.commit',serverId:sid,reason:'lumen.toggle'});renderMemberPanel();openServerSettings('integrations');showToast(adding?'Lumen entrou no servidor.':'Lumen saiu do servidor.');}catch(err){showToast(err.message||'Não foi possível atualizar a Lumen.');}});}
     $('deleteServerV83')?.addEventListener('click',async()=>{if($('deleteServerPhrase').value.trim()!==s.name){showToast('Digite o nome exato do servidor.');return;}try{if(socialCloudReady())await cloudRequest(`/api/servers/${encodeURIComponent(sid)}`,{method:'DELETE'});sendCloudRealtime({type:'account.commit',reason:'server.delete'});state.servers=state.servers.filter(x=>x.id!==s.id);save();persistServersNow();closeModal();openHome('friends');showToast('Servidor excluído.');}catch(err){showToast(err.message||'Falha ao excluir servidor.');}});
   }
   async function loadServerSettingsMembers(s,rolesMode=false){
