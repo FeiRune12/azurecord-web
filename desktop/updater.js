@@ -69,7 +69,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
           state: 'downloaded',
           version: info?.version || null,
           installOnQuit: false,
-          autoInstall: true,
+          autoInstall: false,
         });
       }
     } catch {}
