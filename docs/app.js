@@ -3355,7 +3355,7 @@
       const title=esc(rawTitle);
       const dims=Array.isArray(item.dims)?item.dims:[0,0];
       const fav=isGifFavorite(item);
-      return `<div class="klipy-gif-card-wrap"><button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button><button type="button" class="klipy-favorite-btn ${fav?'active':''}" data-klipy-favorite="${id}" data-favorite-url="${url}" data-favorite-preview="${preview}" data-favorite-title="${title}" data-favorite-size="${Number(item.size||0)}" data-favorite-width="${Number(dims[0]||0)}" data-favorite-height="${Number(dims[1]||0)}" aria-label="${fav?'Remover dos favoritos':'Favoritar GIF'}">${fav?'★':'☆'}</button></div>`;
+      return `<div class="klipy-gif-card-wrap"><button type="button" class="klipy-gif-card" data-klipy-id="${id}" data-klipy-url="${url}" data-klipy-title="${title}" data-klipy-size="${Number(item.size||0)}" data-klipy-width="${Number(dims[0]||0)}" data-klipy-height="${Number(dims[1]||0)}"><img src="${preview}" alt="${title}" loading="lazy" decoding="async"></button><button type="button" class="klipy-favorite-btn ${fav?'active':''}" data-klipy-favorite="${id}" data-favorite-url="${url}" data-favorite-preview="${preview}" data-favorite-title="${title}" data-favorite-size="${Number(item.size||0)}" data-favorite-width="${Number(dims[0]||0)}" data-favorite-height="${Number(dims[1]||0)}" aria-label="${fav?'Remover dos favoritos':'Favoritar GIF'}">${uiIcon('star',16)}</button></div>`;
     }).join('');
     box.querySelectorAll('[data-klipy-id]').forEach(btn=>btn.onclick=()=>{
       const url=String(btn.dataset.klipyUrl||'');if(!url)return;
@@ -3379,7 +3379,7 @@
         description:String(btn.dataset.favoriteTitle||'GIF da KLIPY'),size:Number(btn.dataset.favoriteSize||0),
         dims:[Number(btn.dataset.favoriteWidth||0),Number(btn.dataset.favoriteHeight||0)]
       };
-      const active=toggleGifFavorite(item);btn.classList.toggle('active',active);btn.textContent=active?'★':'☆';
+      const active=toggleGifFavorite(item);btn.classList.toggle('active',active);btn.innerHTML=uiIcon('star',16);
       btn.setAttribute('aria-label',active?'Remover dos favoritos':'Favoritar GIF');
     });
   }
@@ -3400,7 +3400,7 @@
   }
   function openKlipyGifPicker(box){
     box.dataset.mode='gif-klipy';
-    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><div class="choice-row"><button type="button" class="home-mini-btn ghost" id="klipyFavoritesBtn">★ Favoritos</button><span class="klipy-powered">Powered by KLIPY</span></div></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
+    box.innerHTML=`<div class="klipy-picker"><div class="klipy-picker-head"><h4>GIFs</h4><div class="choice-row"><button type="button" class="home-mini-btn ghost" id="klipyFavoritesBtn">${uiIcon('star',16)} Favoritos</button><span class="klipy-powered">Powered by KLIPY</span></div></div><div class="klipy-search-row"><input id="klipyGifSearch" type="search" placeholder="Search KLIPY" autocomplete="off"><button type="button" class="home-mini-btn ghost" id="composerGifUpload">Enviar arquivo</button></div><div id="klipyGifStatus" class="composer-helper">GIFs em destaque</div><div id="klipyGifResults" class="klipy-gif-grid"></div></div>`;
     box.hidden=false;
     const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='image/gif,.gif';fileInput.hidden=true;
     fileInput.onchange=async()=>{if(fileInput.files?.length)await handleFiles({target:fileInput});closeComposerPopover();};
