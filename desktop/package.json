@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "6.0.5",
+  "version": "6.0.6",
   "private": true,
-  "description": "Azurecord 6.0.5: Lumen DJ com avatar oficial do projeto e busca KLIPY expandida para Gunvolt.",
+  "description": "Azurecord 6.0.6: recuperação estável de mensagens e sincronização do layout KLIPY no desktop.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
