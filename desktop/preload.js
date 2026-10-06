@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('azurecordDesktop', {
   version: process.versions.electron,
   appVersion: require('./package.json').version,
   getBackendInfo: () => ipcRenderer.invoke('desktop:backend-info'),
+  getRichPresence: () => ipcRenderer.invoke('desktop:rich-presence'),
   cloudFetch: (payload) => ipcRenderer.invoke('desktop:cloud-fetch', payload),
   notify: (title, body) => ipcRenderer.invoke('desktop:notify', { title, body }),
   setBadgeCount: (count) => ipcRenderer.invoke('desktop:set-badge-count', Number(count) || 0),
