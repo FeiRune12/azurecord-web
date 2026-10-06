@@ -2354,3 +2354,11 @@ button .ui-icon,.home-empty-icon .ui-icon,.app-card .ui-icon,.poll-question .ui-
   .composer-tools #gifBtn{display:inline-flex!important;align-items:center;justify-content:center;min-width:44px}
   .composer-popover[data-mode="mobile-media"]{width:min(94vw,430px);max-height:55vh;overflow:auto}
 }
+
+/* 7.0.1 mobile header hotfix: never draw legacy pseudo-icons over SVG icons. */
+@media(max-width:760px){
+  #searchBtn::before,#peopleBtn::before,#memberToggle::before{content:none!important;display:none!important}
+  #searchBtn,#peopleBtn,#memberToggle{font-size:0!important;overflow:hidden!important}
+  #searchBtn .ui-icon,#peopleBtn .ui-icon,#memberToggle .ui-icon{display:block!important;width:18px!important;height:18px!important}
+  .chat-header{overflow:hidden!important}
+}
