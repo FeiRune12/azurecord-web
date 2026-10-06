@@ -80,6 +80,11 @@
     async installReadyUpdate() {
       if (!isNativeAndroid || typeof native.installReadyUpdate !== 'function') return false;
       try { return native.installReadyUpdate() !== false; } catch { return false; }
+    },
+
+    async installUpdate() {
+      if (!isNativeAndroid || typeof native.installReadyUpdate !== 'function') return false;
+      try { return native.installReadyUpdate() !== false; } catch { return false; }
     }
   };
 })();
