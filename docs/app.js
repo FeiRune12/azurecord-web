@@ -110,6 +110,7 @@
       brain:'<path d="M9 4a4 4 0 0 0-4 4v1a4 4 0 0 0 0 7 4 4 0 0 0 4 4h2V4zM15 4a4 4 0 0 1 4 4v1a4 4 0 0 1 0 7 4 4 0 0 1-4 4h-2V4z"/><path d="M8 9h3M13 9h3M8 15h3M13 15h3"/>',
       coin:'<circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1.2 1.2-2 3-2s3 .8 3 2-1 1.8-3 2-3 .8-3 2 1.2 2 3 2 3-.8 3-2M12 5v14"/>',
       folder:'<path d="M3 6h7l2 2h9v11H3z"/>',
+      gif:'<rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M7.5 10.5H5.8a1.8 1.8 0 0 0 0 3.6h1.7v-1.8H6.3M10 10.5v3.6M13 14.1v-3.6h3.5M13 12.2h2.8"/>',
       phone:'<path d="M6.5 4 10 8l-2 3c1.6 3 3 4.4 6 6l3-2 4 3.5c-1.2 2-3 3-5 2.5C9.5 19.3 4.7 14.5 3 8c-.5-2 1-3.5 3.5-4z"/>',
       gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>',
       warning:'<path d="M12 3 22 20H2z"/><path d="M12 9v5M12 17h.01"/>',
@@ -1860,6 +1861,7 @@
     setUiButton('clearDmBtn','trash','Limpar');
     setUiButton('memberToggle','menu');
     setUiButton('attachBtn','plus');
+    setUiButton('gifBtn','gif');
     setUiButton('stickerBtn','sticker');
     setUiButton('emojiBtn','smile');
     setUiButton('appsBtn','grid');
