@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('azurecordDesktop', {
   setSecureSession: (token) => ipcRenderer.invoke('desktop:secure-session-set', token),
   deleteSecureSession: () => ipcRenderer.invoke('desktop:secure-session-delete'),
   installUpdate: () => ipcRenderer.invoke('desktop:update-install'),
+  checkForUpdates: () => ipcRenderer.invoke('desktop:update-check'),
+  getUpdateState: () => ipcRenderer.invoke('desktop:update-state'),
   getDisplaySources: () => ipcRenderer.invoke('desktop:display-sources'),
   selectDisplaySource: (sourceId) => ipcRenderer.invoke('desktop:display-source-select', sourceId),
   onUpdateStatus: (callback) => {
