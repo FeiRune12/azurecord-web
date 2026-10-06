@@ -4780,7 +4780,7 @@
     if(tab==='points')return `<div class="settings-section"><h3>AzurePoints</h3><div class="settings-feature-card"><strong>Carteira Cloud</strong><p>Saldo, histórico e loja usam sua conta Azurecord Cloud.</p><button class="btn btn-primary" id="openPointsSettings">Abrir AzurePoints</button></div></div>`;
     if(tab==='media')return `<div class="settings-section"><h3>Arquivos e mídia</h3>${settingsToggleRow('autoplayV83','Reprodução automática','Permite mídia compatível tocar automaticamente.',cs.mediaAutoplay!==false)}<div class="settings-feature-card"><strong>Avatar e banner</strong><p>O banner não possui mais limite artificial de MB na seleção. O Azurecord abre o recorte e compacta a área escolhida antes de salvar, evitando mandar a imagem bruta gigantesca para a conta.</p></div></div>`;
     if(tab==='calls')return `<div class="settings-section"><h3>AzureCall</h3><div class="settings-feature-card"><strong>AzureCall 2.0 ativo</strong><p>Voz, vídeo e compartilhamento usam WebRTC com trilhas separadas para câmera e tela. Qualquer lado da chamada pode transmitir, inclusive no navegador móvel quando a captura nativa estiver disponível.</p><div class="choice-row"><button class="choice-btn active" disabled>${uiIcon('volume',15)} Voz</button><button class="choice-btn active" disabled>${uiIcon('video',15)} Vídeo</button><button class="choice-btn active" disabled>${uiIcon('screen',15)} Tela</button></div></div></div>`;
-    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord ${esc(AZURECORD_VERSION)}</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div><div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
+    if(tab==='advanced')return `<div class="settings-section"><h3>Avançado</h3><div class="settings-info-grid"><div><span>Azurecord</span><strong>Azurecord ${esc(AZURECORD_VERSION)}</strong></div><div><span>Worker</span><strong>${esc(cloudInfo?.version||'desconhecido')}</strong></div><div><span>Cloud API</span><strong class="mono">${esc(CLOUD_API_URL)}</strong></div><div><span>Ambiente</span><strong>${window.azurecordDesktop?.platform?'Desktop / Electron':'Web'}</strong></div></div>${window.azurecordDesktop?.platform?'<div class="settings-subsection"><h4>Atualizações do Desktop</h4><p class="muted" id="desktopUpdateStatus">Você escolhe quando instalar uma atualização baixada.</p><div class="settings-actions"><button class="btn btn-ghost" id="desktopCheckUpdate">Verificar atualizações</button><button class="btn btn-primary" id="desktopInstallUpdate" hidden>Atualizar agora</button></div></div>':''}<div class="settings-actions"><button class="btn btn-ghost" id="betaFeedbackBtnV83">Enviar feedback</button></div></div>`;
     return `<div class="settings-section danger-zone"><h3>Conta</h3><div class="settings-option"><div><strong>Sair</strong><span>Encerra esta sessão neste dispositivo.</span></div><button class="home-mini-btn" id="logoutV83">Sair</button></div><div class="settings-option danger"><div><strong>Excluir conta</strong><span>Remove permanentemente sua conta e dados Cloud.</span></div><button class="home-mini-btn danger" id="deleteAccountBtn">Excluir conta</button></div></div>`;
   }
   function bindAppSettings(tab){
@@ -4817,6 +4817,18 @@
     $('openLolaFromSettings')?.addEventListener('click',()=>{closeModal();openDm('user-lola',{suppressProfile:true});});$('newLolaFromSettings')?.addEventListener('click',()=>{closeModal();openDm('user-lola',{suppressProfile:true});setTimeout(()=>startNewLolaChat(),80);});
     $('openPointsSettings')?.addEventListener('click',()=>{closeModal();openAzurePoints();});
     $('autoplayV83')?.addEventListener('click',async()=>{await patchCloudSettings({mediaAutoplay:!(state.cloudSettings.mediaAutoplay!==false)});openAppSettings('media');});
+    const refreshDesktopUpdate=async(check=false)=>{
+      const status=$('desktopUpdateStatus'),install=$('desktopInstallUpdate'),checkBtn=$('desktopCheckUpdate');
+      if(!window.azurecordDesktop?.getUpdateState)return;
+      if(check&&checkBtn){checkBtn.disabled=true;if(status)status.textContent='Verificando atualizações...';await window.azurecordDesktop.checkForUpdates?.();}
+      const info=await window.azurecordDesktop.getUpdateState?.();
+      if(status)status.textContent=info?.ready?'Azurecord '+(info.version||'novo')+' está pronto para instalar.':'Nenhuma atualização baixada está pronta para instalar.';
+      if(install)install.hidden=!info?.ready;
+      if(checkBtn)checkBtn.disabled=false;
+    };
+    $('desktopCheckUpdate')?.addEventListener('click',()=>void refreshDesktopUpdate(true));
+    $('desktopInstallUpdate')?.addEventListener('click',async()=>{const ok=await window.azurecordDesktop?.installUpdate?.();if(!ok)showToast('Nenhuma atualização pronta para instalar.');});
+    if(tab==='advanced'&&window.azurecordDesktop?.platform)setTimeout(()=>void refreshDesktopUpdate(false),0);
     $('betaFeedbackBtnV83')?.addEventListener('click',sendBetaFeedback);$('logoutV83')?.addEventListener('click',logout);$('deleteAccountBtn')?.addEventListener('click',deleteAccount);
   }
   async function loadSettingsSessions(){
