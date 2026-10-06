@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "7.0.2",
+  "version": "7.1.0",
   "private": true,
-  "description": "Azurecord 7.0.0: grupos cloud e hub mobile de GIFs, Stickers e Emojis.",
+  "description": "Azurecord 7.1.0: Rich Presence inicial e controles manuais de atualização no Desktop.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
