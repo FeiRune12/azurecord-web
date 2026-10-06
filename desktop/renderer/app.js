@@ -174,9 +174,9 @@
   const defaultState = {
     accounts: [], currentAccountId:null, rememberedAccountId:null,
     theme:'dark', accent:'#0066ff', notificationsEnabled:true, nativeNotifications:true,
-    friends:[], requests:[], blockedUsers:[], ignoredUsers:[], servers:[],
+    friends:[], requests:[], blockedUsers:[], ignoredUsers:[], servers:[], groups:[],
     cloudSettings:{allowFriendRequests:true,allowDmsFromFriends:true,lolaEnabled:true,lolaMemoryEnabled:true,notificationsEnabled:true,nativeNotifications:true,compactMode:false,reducedMotion:false,mediaAutoplay:true,language:'pt-BR'},
-    dmMessages:{}, channelMessages:{}, pinned:{}, deleted:{}, drafts:{}, attachments:[], closedDms:{},
+    dmMessages:{}, groupMessages:{}, channelMessages:{}, pinned:{}, deleted:{}, drafts:{}, attachments:[], closedDms:{},
     unread:{}, mentionCounts:{}, profiles:{}, roles:{}, lolaMemory:{}, lolaSecrets:{}, lolaInitiated:{}, lolaSessionInfo:{}, lolaGreetingHistory:{}, lastNotifications:[
       {id:uid('notif'),type:'system',title:'Bem-vindo ao Azurecord',body:'A V52 Beta 8.4 corrige solicitações de amizade, remove o servidor de testes e prepara o Web para GitHub Pages.',time:now(),unread:true}
     ]
@@ -186,6 +186,8 @@
   if(!state.closedDms||typeof state.closedDms!=='object')state.closedDms={};
   if(!state.mentionCounts||typeof state.mentionCounts!=='object')state.mentionCounts={};
   if(!Array.isArray(state.blockedUsers))state.blockedUsers=[];
+  if(!Array.isArray(state.groups))state.groups=[];
+  if(!state.groupMessages||typeof state.groupMessages!=='object')state.groupMessages={};
   if(!Array.isArray(state.ignoredUsers))state.ignoredUsers=[];
   if(!state.cloudSettings||typeof state.cloudSettings!=='object')state.cloudSettings=structuredClone(defaultState.cloudSettings);
   else state.cloudSettings={...defaultState.cloudSettings,...state.cloudSettings};
@@ -196,7 +198,7 @@
   let lolaChatEpoch=0;
   let lolaResetPromise=null;
   let authMode = 'login';
-  let view = {mode:'home', home:'friends', homeTab:'all', serverId:null, channelId:null, dmUserId:null, showMembers:true, showProfile:false, contextMessageId:null, contextChannelId:null};
+  let view = {mode:'home', home:'friends', homeTab:'all', serverId:null, channelId:null, dmUserId:null, groupId:null, showMembers:true, showProfile:false, contextMessageId:null, contextChannelId:null};
   let replyTo = null;
   let selectedProfile = null;
   let currentSearch = '';
@@ -1368,6 +1370,8 @@
     const requests=await socialRequest('/api/friends/requests');
     state.requests=(requests.requests||[]).map(r=>{hydrateRemoteUser(r.user);return {id:r.id,from:r.from,to:r.to,status:r.status,time:new Date(r.createdAt||Date.now()).getTime()};});
     if(isLolaSecretUnlocked())ensureLolaSecretRequest();
+    const groups=await socialRequest('/api/groups').catch(()=>({groups:[]}));
+    if(Array.isArray(groups.groups))state.groups=groups.groups;
     const dms=await socialRequest('/api/dms');
     for(const item of (dms.dms||[])){
       hydrateRemoteUser(item.user);
@@ -1767,6 +1771,7 @@
     list.querySelectorAll('[data-dm-open]').forEach(b=>b.onclick=()=>{
       const id=b.dataset.dmOpen;closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');openDm(id);
     });
+    list.querySelectorAll('[data-group-open]').forEach(b=>b.onclick=()=>{const id=b.dataset.groupOpen;closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');openGroup(id);});
     list.querySelectorAll('[data-dm-close]').forEach(b=>b.onclick=e=>{
       e.stopPropagation();closeDmTab(b.dataset.dmClose);renderMobileDms();
     });
@@ -1897,7 +1902,7 @@
       else b.onclick=()=>openHome(b.dataset.home);
     });
     $$('[data-home-tab]').forEach(b=>b.onclick=()=>{view.homeTab=b.dataset.homeTab; renderHome();});
-    $('homeAddBtn').onclick=()=>openHome('add'); $('dmToggle').onclick=toggleDms;
+    $('homeAddBtn').onclick=()=>{if(confirm('Criar um grupo?\n\nOK = Criar grupo\nCancelar = Adicionar amigo'))void createGroupChat();else openHome('add');}; $('dmToggle').onclick=toggleDms;
     $('pointsBtn').onclick=openAzurePoints; $('railPointsBtn').onclick=openAzurePoints; $('lolaStatusBtn').onclick=openLolaAiSetup;
     $('globalSearchBtn').onclick=openGlobalSearch; $('notifyBtn').onclick=openNotifications; $('themeBtn').onclick=toggleTheme; $('openSettings').onclick=openSettings;
     $('logoutBtn').onclick=logout; $('userBar').onclick=(e)=>{if(e.target.closest('button'))return;e.stopPropagation();openProfilePeek(currentUser()?.id,e.currentTarget);};
@@ -2974,9 +2979,13 @@
       const preview=isIgnored(id)?'Mensagens deste usuário estão ocultas.':(last?.failed?'Não enviada • ':'')+(last?.text || (id==='user-lola'?'Conversa livre com a Lola.':'Conversa'));
       return `<div class="dm-item" data-dm-row="${esc(id)}"><button type="button" class="dm-open" data-dm-open="${esc(id)}"><span class="mini-avatar avatar-img" style="${p?.avatar?`background-image:url('${safeUrl(p.avatar)}')`:''}">${p?.avatar?'':esc((p?.username||'?')[0])}</span><span class="dm-item-main"><strong>${esc(p?.username||'Usuário')}</strong><span>${esc(preview)}</span></span>${state.unread[key]?'<span class="unread-dot"></span>':''}</button><button type="button" class="dm-close" data-dm-close="${esc(id)}" aria-label="Fechar conversa com ${esc(p?.username||'usuário')}">×</button></div>`;
     }).join('');
+    if(Array.isArray(state.groups)&&state.groups.length){
+      box.innerHTML += '<div class="dm-group-heading">GRUPOS</div>'+state.groups.map(g=>`<div class="dm-item group-dm-item"><button type="button" class="dm-open" data-group-open="${esc(g.id)}"><span class="mini-avatar group-avatar">${uiIcon('users',16)}</span><span class="dm-item-main"><strong>${esc(g.name||'Grupo')}</strong><span>${Number(g.members?.length||0)} membros</span></span></button></div>`).join('');
+    }
     box.hidden=false;
     $('dmToggle').setAttribute('aria-expanded','true');$('dmToggle').querySelector('.dm-chevron').innerHTML=uiIcon('chevronDown',14);
     box.querySelectorAll('[data-dm-open]').forEach(b=>b.onclick=()=>openDm(b.dataset.dmOpen));
+    box.querySelectorAll('[data-group-open]').forEach(b=>b.onclick=()=>openGroup(b.dataset.groupOpen));
     box.querySelectorAll('[data-dm-close]').forEach(b=>b.onclick=e=>{e.stopPropagation();closeDmTab(b.dataset.dmClose);});
   }
   function dmKey(otherId){ return [state.currentAccountId,otherId].sort().join('|'); }
@@ -3048,6 +3057,36 @@
       showToast('Nova conversa criada. Histórico anterior arquivado no Azurecord Cloud.');
     }
   }
+  async function syncGroups(){
+    if(!socialCloudReady())return false;
+    try{const data=await socialRequest('/api/groups');state.groups=Array.isArray(data.groups)?data.groups:[];save();renderDms();return true;}catch{return false;}
+  }
+  async function syncGroupFromBackend(id){
+    if(!socialCloudReady())return false;
+    try{const data=await socialRequest('/api/groups/'+encodeURIComponent(id)+'/messages');state.groupMessages[id]=(data.messages||[]).map(m=>({...m,author:m.senderId,serverId:m.id,pending:false,failed:false}));save();if(view.mode==='group'&&view.groupId===id)renderMessages();return true;}catch(err){console.warn('[Azurecord] Group sync:',err?.message||err);return false;}
+  }
+  async function openGroup(id){
+    const g=(state.groups||[]).find(x=>x.id===id);if(!g)return;
+    if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
+    view.mode='group';view.groupId=id;view.dmUserId=null;$('homePanel').hidden=true;$('chatView').hidden=false;$('serverSide').hidden=true;$('homeSide').hidden=false;
+    renderChat();$('messageInput').focus();await syncGroupFromBackend(id);
+  }
+  async function createGroupChat(){
+    if(!socialCloudReady()){showToast('Entre na sua conta Cloud para criar um grupo.');return;}
+    const friends=friendIds().map(getProfile).filter(p=>p&&p.id!=='user-lola'&&p.id!=='user-lumen');
+    if(!friends.length){showToast('Adicione pelo menos um amigo primeiro.');return;}
+    const name=prompt('Nome do grupo:','Novo grupo');if(!name?.trim())return;
+    const choices=friends.map(p=>p.username).join(', ');
+    const raw=prompt('Quem entra no grupo? Digite os nomes separados por vírgula:\n'+choices,'');
+    if(raw===null)return;
+    const wanted=raw.split(',').map(x=>usernameKey(x)).filter(Boolean);
+    const memberIds=friends.filter(p=>wanted.includes(usernameKey(p.username))||wanted.includes(usernameKey(p.handle))).map(p=>p.id);
+    if(!memberIds.length){showToast('Escolha pelo menos um amigo da lista.');return;}
+    try{const data=await socialRequest('/api/groups',{method:'POST',body:JSON.stringify({name:name.trim(),memberIds})});if(data.group){state.groups=state.groups||[];state.groups.unshift(data.group);save();renderDms();await openGroup(data.group.id);showToast('Grupo criado.');}}catch(err){showToast(err.message||'Não foi possível criar o grupo.');}
+  }
+  async function sendGroupMessageToBackend(m,id){
+    try{const data=await cloudPostMessageWithRetry('/api/groups/'+encodeURIComponent(id)+'/messages',{text:m.text||'',files:m.files||[],replyTo:m.replyTo||null,clientId:m.clientId||m.id},{retries:1});const saved=data.message;if(saved){m.serverId=saved.id;m.id=saved.id;m.clientId=saved.clientId||m.clientId;m.pending=false;m.failed=false;}saveNow();renderMessages();renderDms();return true;}catch(err){m.pending=false;m.failed=true;saveNow();renderMessages();showToast(err.message||'Falha ao enviar mensagem no grupo.');return false;}
+  }
   async function openDm(id,options={}){
     if(id==='user-lumen'){showToast('Lumen é a mascote do Azurecord. O chat dela ainda não é uma segunda IA.');openProfileModal(id);return;}
     if(isMobileLayout()){closeMobileDms();setMobileDrawer(false);setMobileNavActive('dms');}
@@ -3104,14 +3143,14 @@
   function renderChat(){
     if(view.mode==='home'){$('chatView').hidden=true;return;}
     $('chatView').hidden=false;
-    const isDm=view.mode==='dm',p=isDm?getProfile(view.dmUserId):null,c=isDm?null:getChannel(view.serverId,view.channelId);
-    $('chatIcon').innerHTML=isDm?'':(c?.type==='text'?'#':uiIcon('volume',16));
-    $('channelTitle').textContent=isDm?p?.username||'Mensagem Direta':c?.name||'geral';
-    $('channelTopic').textContent=isDm?`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`:(c?.topic||'');
-    $('channelWelcome').textContent=isDm?`Conversa com ${p?.username||'usuário'}`:`Bem-vindo a #${c?.name||'geral'}`;
+    const isDm=view.mode==='dm',isGroup=view.mode==='group',p=isDm?getProfile(view.dmUserId):null,g=isGroup?(state.groups||[]).find(x=>x.id===view.groupId):null,c=(!isDm&&!isGroup)?getChannel(view.serverId,view.channelId):null;
+    $('chatIcon').innerHTML=isDm?'':isGroup?uiIcon('users',16):(c?.type==='text'?'#':uiIcon('volume',16));
+    $('channelTitle').textContent=isDm?p?.username||'Mensagem Direta':isGroup?g?.name||'Grupo':c?.name||'geral';
+    $('channelTopic').textContent=isDm?`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`:isGroup?`${Number(g?.members?.length||0)} membros`:(c?.topic||'');
+    $('channelWelcome').textContent=isDm?`Conversa com ${p?.username||'usuário'}`:isGroup?`Grupo ${g?.name||''}`:`Bem-vindo a #${c?.name||'geral'}`;
     $('chatHeader').classList.toggle('dm-header',isDm);
     $('chatBanner')?.removeAttribute?.('hidden');
-    $('messageInput').placeholder=isDm?`Mensagem para ${p?.username||'usuário'}`:`Conversar em #${c?.name||'geral'}`;
+    $('messageInput').placeholder=isDm?`Mensagem para ${p?.username||'usuário'}`:isGroup?`Mensagem em ${g?.name||'grupo'}`:`Conversar em #${c?.name||'geral'}`;
     $('clearDmBtn').hidden=!isDm;
     $('newLolaChatBtn').hidden=!(isDm&&view.dmUserId==='user-lola');
     $('lolaStatusBtn').hidden=!(isDm&&view.dmUserId==='user-lola');
@@ -3121,8 +3160,8 @@
     $('profilePeek').hidden=!view.showProfile||!isDm;
     renderMessages();renderTypingIndicator();autoResizeComposer();
   }
-  function getMessages(){ if(view.mode==='dm')return state.dmMessages[dmKey(view.dmUserId)]||[]; return state.channelMessages[`${view.serverId}|${view.channelId}`]||[]; }
-  function setMessages(arr){ if(view.mode==='dm')state.dmMessages[dmKey(view.dmUserId)]=arr; else state.channelMessages[`${view.serverId}|${view.channelId}`]=arr; save(); }
+  function getMessages(){ if(view.mode==='dm')return state.dmMessages[dmKey(view.dmUserId)]||[]; if(view.mode==='group')return state.groupMessages[view.groupId]||[]; return state.channelMessages[`${view.serverId}|${view.channelId}`]||[]; }
+  function setMessages(arr){ if(view.mode==='dm')state.dmMessages[dmKey(view.dmUserId)]=arr; else if(view.mode==='group')state.groupMessages[view.groupId]=arr; else state.channelMessages[`${view.serverId}|${view.channelId}`]=arr; save(); }
   function messageListUiSignature(list=[]){
     return JSON.stringify((list||[]).map(m=>({
       id:m?.id||'',serverId:m?.serverId||'',clientId:m?.clientId||'',author:m?.author||m?.senderId||'',
@@ -4290,7 +4329,7 @@
   async function sendMessage(e){
     e.preventDefault();
     const input=$('messageInput'),text=input.value.trim();
-    const mode=view.mode, dmId=view.dmUserId, serverId=view.serverId, channelId=view.channelId;
+    const mode=view.mode, dmId=view.dmUserId, groupId=view.groupId, serverId=view.serverId, channelId=view.channelId;
     if(mode==='dm'&&dmId==='user-lola'&&!pendingAttachments.length&&window.AzurecordLola.wantsNewConversation(text)){
       input.value='';await startNewLolaChat();return;
     }
@@ -4317,7 +4356,9 @@
     if(outgoingFiles.length){m.files=outgoingFiles;if(m.files.length===1)m.file=m.files[0];}
     learnFromUserText(text);
     if(m.files?.length)m.files.forEach(f=>{if(String(f.type||'').startsWith('image/'))rememberDesign(f);});
-    if(mode==='dm'){
+    if(mode==='group'){
+      state.groupMessages[groupId]=state.groupMessages[groupId]||[];m.clientId=m.id;m.pending=true;state.groupMessages[groupId].push(m);
+    }else if(mode==='dm'){
       const key=dmKey(dmId);state.dmMessages[key]=state.dmMessages[key]||[];m.pending=socialReady() && dmId!=='user-lola';
       if(dmId!=='user-lola')m.pending=true;
       else if(lolaCloudReady())m.pending=true;
@@ -4326,7 +4367,9 @@
       const key=`${serverId}|${channelId}`;state.channelMessages[key]=state.channelMessages[key]||[];state.channelMessages[key].push(m);
     }
     input.value='';autoResizeComposer();stopTypingNow();$('fileInput').value='';pendingAttachments.forEach(releasePendingAttachment);pendingAttachments=[];renderAttachmentPreview();saveNow();renderMessages();renderDms();
-    if(mode==='dm'){
+    if(mode==='group'){
+      await sendGroupMessageToBackend(m,groupId);
+    }else if(mode==='dm'){
       if((dmId==='user-lola'&&lolaCloudReady())||(dmId!=='user-lola'&&socialReady())){
         const persisted=await sendDmToBackend(m,dmId);
         if(dmId==='user-lola' && persisted){simulateLolaReply(m).catch(err=>console.warn('[Azurecord] Lola:',err));}
