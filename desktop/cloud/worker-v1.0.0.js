@@ -12,6 +12,7 @@ const MAX_AVATAR_CHARS = 450000;
 const MAX_BANNER_CHARS = 750000;
 const LOLA_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
 const LOLA_FALLBACK_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+const LOLA_EMERGENCY_MODEL = "@cf/zai-org/glm-4.7-flash";
 const LOLA_MAX_CONTEXT_MESSAGES = 36;
 const LOLA_MAX_OUTPUT_TOKENS = 900;
 const schemaReadyFor = new WeakSet();
@@ -500,7 +501,7 @@ async function handleLola(request, env, url, path) {
     }
 
     const lolaModel = String(env.LOLA_MODEL || LOLA_MODEL).trim() || LOLA_MODEL;
-    const candidateModels = [...new Set([lolaModel, LOLA_FALLBACK_MODEL].filter(Boolean))];
+    const candidateModels = [...new Set([lolaModel, LOLA_FALLBACK_MODEL, LOLA_EMERGENCY_MODEL].filter(Boolean))];
     let result = null;
     let providerError = null;
     let usedModel = lolaModel;
@@ -3353,7 +3354,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "1.0.0",
+          version: "1.0.1",
         });
       }
 
@@ -3363,7 +3364,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "1.0.0",
+          version: "1.0.1",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
