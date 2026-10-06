@@ -1,1 +1,1 @@
-Azurecord 7.0.2 — Mobile UI polish + updater fixes
+Azurecord 7.1.0 — Rich Presence + desktop update controls
