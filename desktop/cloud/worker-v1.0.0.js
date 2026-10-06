@@ -21,7 +21,7 @@ function json(data, status = 200, extraHeaders = {}) {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "X-Azurecord-Version": "1.0.0",
+      "X-Azurecord-Version": "1.0.1",
       ...CORS_HEADERS,
       ...extraHeaders,
     },
@@ -899,6 +899,27 @@ async function ensureSocialSchema(env) {
     )
   `).run();
   await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_server_stickers_server_created ON server_stickers(server_id, created_at)`).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS group_chats (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, icon TEXT, owner_id TEXT NOT NULL,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS group_members (
+      group_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'member', joined_at TEXT NOT NULL,
+      PRIMARY KEY (group_id, user_id)
+    )
+  `).run();
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS group_messages (
+      id TEXT PRIMARY KEY, group_id TEXT NOT NULL, sender_id TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+      client_id TEXT, files_json TEXT, reply_json TEXT, created_at TEXT NOT NULL, edited_at TEXT, deleted_at TEXT
+    )
+  `).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id, joined_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_group_messages_group_created ON group_messages(group_id, created_at)`).run();
+  await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_group_messages_client ON group_messages(group_id, sender_id, client_id)`).run();
   await addColumnIfMissing(env, "channels", "topic", "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing(env, "servers", "icon", "TEXT");
   await addColumnIfMissing(env, "servers", "banner_url", "TEXT");
@@ -1370,6 +1391,82 @@ async function listUserControlProfiles(env, userId, kind) {
   return users;
 }
 
+async function groupPublic(env, row, userId) {
+  if (!row) return null;
+  const membersRows = await env.DB.prepare(`SELECT user_id, role, joined_at FROM group_members WHERE group_id = ? ORDER BY joined_at ASC`).bind(row.id).all();
+  const members = [];
+  for (const m of membersRows.results || []) {
+    const user = await socialUserById(env, m.user_id);
+    if (user) members.push({ ...user, groupRole: m.role || 'member', joinedAt: m.joined_at });
+  }
+  return { id: row.id, name: row.name, icon: row.icon || '', ownerId: row.owner_id, members, createdAt: row.created_at, updatedAt: row.updated_at, myRole: row.owner_id === userId ? 'owner' : 'member' };
+}
+function publicGroupMessage(row) {
+  return { id: row.id, clientId: row.client_id || null, senderId: row.sender_id, text: row.content || '', time: Date.parse(row.created_at)||Date.now(), createdAt: row.created_at, files: parseJsonValue(row.files_json, []), replyTo: parseJsonValue(row.reply_json, null), edited: !!row.edited_at, deleted: !!row.deleted_at };
+}
+async function handleGroupRoutes(request, env, path, userId) {
+  const method=request.method, parts=path.split('/').filter(Boolean);
+  if(parts[0]!=='api'||parts[1]!=='groups')return null;
+  if(parts.length===2&&method==='GET'){
+    const rows=await env.DB.prepare(`SELECT g.* FROM group_chats g JOIN group_members m ON m.group_id=g.id WHERE m.user_id=? ORDER BY g.updated_at DESC LIMIT 100`).bind(userId).all();
+    const groups=[];for(const row of rows.results||[])groups.push(await groupPublic(env,row,userId));
+    return json({ok:true,groups});
+  }
+  if(parts.length===2&&method==='POST'){
+    const body=await readJson(request)||{}, name=cleanText(body.name||'Novo grupo',80);
+    const memberIds=[...new Set((Array.isArray(body.memberIds)?body.memberIds:[]).map(String).filter(Boolean))].filter(id=>id!==userId).slice(0,24);
+    if(!memberIds.length)return json({ok:false,error:'members_required',message:'Escolha pelo menos um amigo.'},400);
+    for(const id of memberIds){if(!(await friendshipExists(env,userId,id))||await blockedBetween(env,userId,id))return json({ok:false,error:'invalid_member',message:'Só é possível adicionar amigos disponíveis ao grupo.'},403);}
+    const id=crypto.randomUUID(), stamp=nowIso(), icon=cleanText(body.icon||'',1400);
+    const batch=[env.DB.prepare(`INSERT INTO group_chats(id,name,icon,owner_id,created_at,updated_at) VALUES(?,?,?,?,?,?)`).bind(id,name,icon,userId,stamp,stamp),
+      env.DB.prepare(`INSERT INTO group_members(group_id,user_id,role,joined_at) VALUES(?,?,'owner',?)`).bind(id,userId,stamp)];
+    for(const memberId of memberIds)batch.push(env.DB.prepare(`INSERT INTO group_members(group_id,user_id,role,joined_at) VALUES(?,?,'member',?)`).bind(id,memberId,stamp));
+    await env.DB.batch(batch);const row=await env.DB.prepare(`SELECT * FROM group_chats WHERE id=?`).bind(id).first();
+    return json({ok:true,group:await groupPublic(env,row,userId)},201);
+  }
+  const groupId=String(parts[2]||'');if(!groupId)return null;
+  const membership=await env.DB.prepare(`SELECT role FROM group_members WHERE group_id=? AND user_id=? LIMIT 1`).bind(groupId,userId).first();
+  if(!membership)return json({ok:false,error:'forbidden',message:'Você não participa deste grupo.'},403);
+  const group=await env.DB.prepare(`SELECT * FROM group_chats WHERE id=? LIMIT 1`).bind(groupId).first();
+  if(!group)return json({ok:false,error:'not_found'},404);
+  if(parts.length===3&&method==='GET')return json({ok:true,group:await groupPublic(env,group,userId)});
+  if(parts.length===3&&method==='PATCH'){
+    if(group.owner_id!==userId)return json({ok:false,error:'forbidden'},403);
+    const body=await readJson(request)||{},name=cleanText(body.name||group.name,80),icon=body.icon===undefined?group.icon:cleanText(body.icon||'',1400),stamp=nowIso();
+    await env.DB.prepare(`UPDATE group_chats SET name=?,icon=?,updated_at=? WHERE id=?`).bind(name,icon,stamp,groupId).run();
+    const row=await env.DB.prepare(`SELECT * FROM group_chats WHERE id=?`).bind(groupId).first();return json({ok:true,group:await groupPublic(env,row,userId)});
+  }
+  if(parts.length===3&&method==='DELETE'){
+    if(group.owner_id===userId){await env.DB.batch([env.DB.prepare(`DELETE FROM group_messages WHERE group_id=?`).bind(groupId),env.DB.prepare(`DELETE FROM group_members WHERE group_id=?`).bind(groupId),env.DB.prepare(`DELETE FROM group_chats WHERE id=?`).bind(groupId)]);return json({ok:true,deleted:true});}
+    await env.DB.prepare(`DELETE FROM group_members WHERE group_id=? AND user_id=?`).bind(groupId,userId).run();return json({ok:true,left:true});
+  }
+  if(parts[3]==='members'&&parts.length===4&&method==='POST'){
+    if(group.owner_id!==userId)return json({ok:false,error:'forbidden'},403);
+    const body=await readJson(request)||{},target=String(body.userId||'');if(!target||!(await friendshipExists(env,userId,target)))return json({ok:false,error:'invalid_member'},400);
+    await env.DB.prepare(`INSERT OR IGNORE INTO group_members(group_id,user_id,role,joined_at) VALUES(?,?,'member',?)`).bind(groupId,target,nowIso()).run();
+    await env.DB.prepare(`UPDATE group_chats SET updated_at=? WHERE id=?`).bind(nowIso(),groupId).run();const row=await env.DB.prepare(`SELECT * FROM group_chats WHERE id=?`).bind(groupId).first();return json({ok:true,group:await groupPublic(env,row,userId)});
+  }
+  if(parts[3]==='members'&&parts[4]&&method==='DELETE'){
+    if(group.owner_id!==userId)return json({ok:false,error:'forbidden'},403);const target=String(parts[4]);if(target===userId)return json({ok:false,error:'owner_cannot_remove_self'},400);
+    await env.DB.prepare(`DELETE FROM group_members WHERE group_id=? AND user_id=?`).bind(groupId,target).run();return json({ok:true});
+  }
+  if(parts[3]==='messages'&&parts.length===4&&method==='GET'){
+    const rows=await env.DB.prepare(`SELECT * FROM group_messages WHERE group_id=? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 300`).bind(groupId).all();
+    return json({ok:true,messages:(rows.results||[]).map(publicGroupMessage)});
+  }
+  if(parts[3]==='messages'&&parts.length===4&&method==='POST'){
+    const body=await readJson(request)||{},text=cleanText(body.text||'',7000),files=cleanFiles(body.files||[]),clientId=String(body.clientId||'').slice(0,120);
+    if(!text&&!files.length)return json({ok:false,error:'empty_message'},400);
+    if(clientId){const dup=await env.DB.prepare(`SELECT * FROM group_messages WHERE group_id=? AND sender_id=? AND client_id=? LIMIT 1`).bind(groupId,userId,clientId).first();if(dup)return json({ok:true,message:publicGroupMessage(dup),duplicate:true});}
+    const id=crypto.randomUUID(),stamp=nowIso();await env.DB.batch([
+      env.DB.prepare(`INSERT INTO group_messages(id,group_id,sender_id,content,client_id,files_json,reply_json,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(id,groupId,userId,text,clientId||null,JSON.stringify(files),body.replyTo?JSON.stringify(body.replyTo):null,stamp),
+      env.DB.prepare(`UPDATE group_chats SET updated_at=? WHERE id=?`).bind(stamp,groupId)
+    ]);
+    const row=await env.DB.prepare(`SELECT * FROM group_messages WHERE id=?`).bind(id).first();return json({ok:true,message:publicGroupMessage(row)},201);
+  }
+  return json({ok:false,error:'not_found'},404);
+}
+
 async function handleSocial(request, env, url, path) {
   await ensureSocialSchema(env);
   const authResult = await requireSocialAuth(request, env);
@@ -1377,6 +1474,9 @@ async function handleSocial(request, env, url, path) {
   const userId = authResult.auth.user.id;
   const method = request.method;
   const parts = path.split("/").filter(Boolean);
+  if (parts[0] === "api" && parts[1] === "groups") {
+    return await handleGroupRoutes(request, env, path, userId);
+  }
 
   if (path === "/api/settings" && method === "GET") {
     return json({ ok: true, settings: await readUserSettings(env, userId) });
