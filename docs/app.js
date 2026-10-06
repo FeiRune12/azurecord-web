@@ -3540,7 +3540,7 @@
       box.innerHTML=`<div class="mobile-media-tabs">${tabs.map(([id,label])=>`<button type="button" class="mobile-media-tab ${id===type?'active':''}" data-media-tab="${id}">${label}</button>`).join('')}</div><div class="mobile-media-body" id="mobileMediaBody"></div>`;
       box.querySelectorAll('[data-media-tab]').forEach(btn=>btn.onclick=()=>renderTab(btn.dataset.mediaTab));
       const body=box.querySelector('#mobileMediaBody');
-      if(type==='gif'){void openKlipyGifPicker(body);return;}
+      if(type==='gif'){openKlipyGifPicker(body);return;}
       if(type==='sticker'&&view.mode==='server'){void openServerStickerPicker(body);return;}
       if(type==='sticker'){
         const stickers=['AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
