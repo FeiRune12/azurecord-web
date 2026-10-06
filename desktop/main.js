@@ -4,6 +4,33 @@ const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, Notification, shel
 const path = require('path');
 const fs = require('fs');
 const { setupAutoUpdater } = require('./updater');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+
+const RICH_PRESENCE_GAMES = [
+  { id: 'gunvolt-ix-dual', name: 'Gunvolt Chronicles: Luminous Avenger iX 1+2 Dual Collection', match: /gunvolt|luminous.*avenger/i }
+];
+
+async function detectRichPresenceGame() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const command = "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object ProcessName,MainWindowTitle,StartTime | ConvertTo-Json -Compress";
+    const result = await execFileAsync('powershell.exe', ['-NoProfile','-NonInteractive','-Command',command], { windowsHide:true, timeout:5000, maxBuffer:1048576 });
+    const raw = String(result.stdout || '').trim();
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    for (const row of rows) {
+      const haystack = String(row?.ProcessName || '') + ' ' + String(row?.MainWindowTitle || '');
+      const game = RICH_PRESENCE_GAMES.find(item => item.match.test(haystack));
+      if (!game) continue;
+      const started = Date.parse(row?.StartTime || '');
+      return { type:'game', gameId:game.id, name:game.name, startedAt:Number.isFinite(started)?started:Date.now() };
+    }
+  } catch (err) { log('[rich-presence-detect]', err?.message || err); }
+  return null;
+}
 
 // Allow only one Azurecord process/window. If the launcher is run twice,
 // the second launch forwards activation to the existing window and exits.
@@ -314,6 +341,8 @@ app.whenReady().then(async () => {
       try { app.setBadgeCount(value); } catch {}
       return value;
     });
+    ipcMain.handle('desktop:rich-presence', async () => detectRichPresenceGame());
+
     ipcMain.handle('desktop:notify', (_event, payload = {}) => {
       if (!Notification.isSupported()) return false;
       new Notification({ title: String(payload.title || 'Azurecord'), body: String(payload.body || '') }).show();
