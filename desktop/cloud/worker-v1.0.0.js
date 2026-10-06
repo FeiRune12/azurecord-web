@@ -851,6 +851,7 @@ async function ensureSocialSchema(env) {
       updated_at TEXT NOT NULL
     )
   `).run();
+  await addColumnIfMissing(env, "user_presence", "activity_json", "TEXT");
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS poll_votes (
       message_id TEXT NOT NULL,
@@ -978,13 +979,20 @@ function socialUser(user) {
   };
 }
 
+function cleanPresenceActivity(value) {
+  if (!value || typeof value !== "object") return null;
+  const name = cleanText(value.name || "", 160);
+  if (!name) return null;
+  return { type: "game", gameId: cleanText(value.gameId || "", 80), name, startedAt: Math.max(0, Number(value.startedAt) || 0) };
+}
+
 function normalizedPresenceStatus(status) {
   return ["online","idle","dnd","offline"].includes(String(status)) ? String(status) : "offline";
 }
 
 async function presenceDetailsFor(env, userId, fallbackStatus="online") {
   const row = await env.DB.prepare(`
-    SELECT status, custom_status, last_seen_at, updated_at
+    SELECT status, custom_status, activity_json, last_seen_at, updated_at
     FROM user_presence
     WHERE user_id = ?
     LIMIT 1
@@ -1007,6 +1015,7 @@ async function presenceDetailsFor(env, userId, fallbackStatus="online") {
   return {
     status,
     customStatus: cleanText(row.custom_status || "", 120),
+    activity: parseJsonValue(row.activity_json, null),
     lastSeenAt: row.last_seen_at || null,
     updatedAt: row.updated_at || null,
   };
@@ -1023,6 +1032,7 @@ async function socialUserById(env, id) {
   const presence = await presenceDetailsFor(env, id, base?.status || "online");
   user.status = presence.status;
   user.customStatus = presence.customStatus;
+  user.activity = presence.activity || null;
   user.lastSeenAt = presence.lastSeenAt;
   user.statusUpdatedAt = presence.updatedAt;
   return user;
@@ -1489,20 +1499,23 @@ async function handleSocial(request, env, url, path) {
   if (path === "/api/presence/heartbeat" && method === "POST") {
     const body = await readJson(request) || {};
     const status = normalizedPresenceStatus(body.status || "online");
+    const activity = cleanPresenceActivity(body.activity);
     const stamp = nowIso();
     await env.DB.prepare(`
-      INSERT INTO user_presence (user_id, status, custom_status, last_seen_at, updated_at)
-      VALUES (?, ?, '', ?, ?)
+      INSERT INTO user_presence (user_id, status, custom_status, activity_json, last_seen_at, updated_at)
+      VALUES (?, ?, '', ?, ?, ?)
       ON CONFLICT(user_id) DO UPDATE SET
         status = excluded.status,
+        activity_json = excluded.activity_json,
         last_seen_at = excluded.last_seen_at,
         updated_at = excluded.updated_at
-    `).bind(userId, status, stamp, stamp).run();
+    `).bind(userId, status, activity ? JSON.stringify(activity) : null, stamp, stamp).run();
     const self = await presenceDetailsFor(env, userId, status);
     return json({
       ok: true,
       status: self.status,
       customStatus: self.customStatus,
+      activity: self.activity || null,
       lastSeenAt: self.lastSeenAt,
       updatedAt: self.updatedAt,
       presence: await presencePayloadForPeers(env, userId),
