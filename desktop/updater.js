@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
-  const noop = { checkNow: async () => false, isReady: () => false, installNow: () => false };
+  const noop = { checkNow: async () => false, isReady: () => false, readyVersion: () => null, installNow: () => false };
 
   if (!app.isPackaged) {
     log('[updater] Ignorado em modo de desenvolvimento.');
@@ -87,6 +87,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
   };
 
   const isReady = () => updateReady;
+  const readyVersion = () => downloadedVersion;
 
   const installNow = () => {
     if (!updateReady) return false;
@@ -122,7 +123,7 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
   const interval = setInterval(checkNow, 15 * 60 * 1000);
   interval.unref?.();
 
-  return { checkNow, isReady, installNow };
+  return { checkNow, isReady, readyVersion, installNow };
 }
 
 module.exports = { setupAutoUpdater };
