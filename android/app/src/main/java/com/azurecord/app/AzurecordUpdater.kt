@@ -125,8 +125,9 @@ object AzurecordUpdater {
     fun installReadyUpdate(activity: Activity, finishAfterRequest: Boolean): Boolean {
         val prefs = prefs(activity)
         if (prefs.getBoolean(KEY_INSTALL_IN_PROGRESS, false)) {
-            if (finishAfterRequest) activity.finishAndRemoveTask()
-            return true
+            // A previous PackageInstaller session may have been cancelled or lost.
+            // Do not leave the UI reporting success forever: allow a fresh explicit attempt.
+            prefs.edit().putBoolean(KEY_INSTALL_IN_PROGRESS, false).apply()
         }
 
         val path = prefs.getString(KEY_PATH, null) ?: return false
