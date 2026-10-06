@@ -1903,7 +1903,7 @@
     $('logoutBtn').onclick=logout; $('userBar').onclick=(e)=>{if(e.target.closest('button'))return;e.stopPropagation();openProfilePeek(currentUser()?.id,e.currentTarget);};
     $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('messageInput').addEventListener('input',handleTypingInput); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('chatView')?.addEventListener('dragenter',handleChatDragEnter); $('chatView')?.addEventListener('dragover',handleChatDragOver); $('chatView')?.addEventListener('dragleave',handleChatDragLeave); $('chatView')?.addEventListener('drop',handleChatDrop); $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b||b.disabled)return;const [removed]=pendingAttachments.splice(Number(b.dataset.removeAttachment),1);releasePendingAttachment(removed);renderAttachmentPreview();});
     $('gifBtn').dataset.composerType='gif'; $('stickerBtn').dataset.composerType='sticker'; $('emojiBtn').dataset.composerType='emoji'; $('appsBtn').dataset.composerType='apps';
-    $('gifBtn').onclick=()=>openComposerPopover('gif'); $('stickerBtn').onclick=()=>openComposerPopover('sticker'); $('emojiBtn').onclick=()=>openComposerPopover('emoji'); $('appsBtn').onclick=()=>openComposerPopover('apps');
+    $('gifBtn').onclick=()=>isMobileLayout()?openMobileMediaHub('gif'):openComposerPopover('gif'); $('stickerBtn').onclick=()=>openComposerPopover('sticker'); $('emojiBtn').onclick=()=>openComposerPopover('emoji'); $('appsBtn').onclick=()=>openComposerPopover('apps');
     $('composer').addEventListener('click',e=>e.stopPropagation()); $('composerPopover')?.addEventListener('click',e=>e.stopPropagation());
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
@@ -3478,6 +3478,29 @@
       finally{if(add){add.disabled=false;add.textContent='+ Adicionar';}input.value='';}
     };
     try{renderServerStickerGrid(box,await fetchServerStickers());}catch(err){const grid=box.querySelector('#serverStickerGrid');if(grid)grid.innerHTML='<div class="sticker-empty">'+esc(err.message||'Falha ao carregar stickers.')+'</div>';}
+  }
+  function openMobileMediaHub(initial='gif'){
+    const box=$('composerPopover');if(!box)return;
+    const tabs=[['gif','GIFs'],['sticker','Stickers'],['emoji','Emojis']];
+    const renderTab=(type)=>{
+      box.hidden=false;box.dataset.mode='mobile-media';
+      box.innerHTML=`<div class="mobile-media-tabs">${tabs.map(([id,label])=>`<button type="button" class="mobile-media-tab ${id===type?'active':''}" data-media-tab="${id}">${label}</button>`).join('')}</div><div class="mobile-media-body" id="mobileMediaBody"></div>`;
+      box.querySelectorAll('[data-media-tab]').forEach(btn=>btn.onclick=()=>renderTab(btn.dataset.mediaTab));
+      const body=box.querySelector('#mobileMediaBody');
+      if(type==='gif'){void openKlipyGifPicker(body);return;}
+      if(type==='sticker'&&view.mode==='server'){void openServerStickerPicker(body);return;}
+      if(type==='sticker'){
+        const stickers=['AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
+        body.innerHTML=`<div class="composer-grid">${stickers.map((value,i)=>`<button type="button" class="composer-chip" data-mobile-sticker="${i}">${esc(value)}</button>`).join('')}</div><p class="composer-helper">Stickers rápidos para a conversa.</p>`;
+        body.querySelectorAll('[data-mobile-sticker]').forEach(btn=>btn.onclick=()=>{insertAtCursor(`[Sticker: ${stickers[Number(btn.dataset.mobileSticker)]}]`);closeComposerPopover();});
+        return;
+      }
+      const emoji=['😀','😂','😍','😎','😭','😡','🥹','😴','🤔','😳','🔥','💙','✨','🎮','🎨','🗿','👍','👀'];
+      body.innerHTML=`<div class="composer-grid mobile-emoji-grid">${emoji.map((value,i)=>`<button type="button" class="composer-chip" data-mobile-emoji="${i}">${value}</button>`).join('')}</div><p class="composer-helper">Toque para inserir um emoji.</p>`;
+      body.querySelectorAll('[data-mobile-emoji]').forEach(btn=>btn.onclick=()=>{insertAtCursor(emoji[Number(btn.dataset.mobileEmoji)]);closeComposerPopover();});
+    };
+    $('.composer-quick').forEach(b=>b.classList.toggle('active',b.id==='gifBtn'));
+    renderTab(initial);
   }
   function openComposerPopover(type){
     const box=$('composerPopover');
