@@ -2362,3 +2362,19 @@ button .ui-icon,.home-empty-icon .ui-icon,.app-card .ui-icon,.poll-question .ui-
   #searchBtn .ui-icon,#peopleBtn .ui-icon,#memberToggle .ui-icon{display:block!important;width:18px!important;height:18px!important}
   .chat-header{overflow:hidden!important}
 }
+
+/* 7.0.2 friends/mobile polish */
+@media(max-width:760px){
+  #homeAddBtn::before{content:none!important;display:none!important}
+  #homeAddBtn{display:grid!important;place-items:center!important}
+  #homeAddBtn .ui-icon{display:block!important;width:19px!important;height:19px!important}
+  .mascot-row{display:grid!important;grid-template-columns:44px minmax(0,1fr)!important;grid-template-areas:"avatar main" "avatar actions"!important;column-gap:10px!important;row-gap:7px!important;align-items:start!important;border:1px solid var(--line)!important;background:var(--panel-2)!important}
+  .mascot-row .home-avatar{grid-area:avatar!important;margin:0!important}
+  .mascot-row .friend-main{grid-area:main!important;min-width:0!important}
+  .mascot-row .friend-main>strong{display:flex!important;align-items:center!important;gap:6px!important;flex-wrap:wrap!important}
+  .mascot-row .friend-main>span{display:none!important}
+  .mascot-row .presence-dot{display:none!important}
+  .mascot-row .friend-actions{grid-area:actions!important;display:flex!important;gap:6px!important;width:auto!important;padding:0!important;justify-content:flex-start!important}
+  .mascot-row .role-chip{margin:0!important}
+  .lumen-mascot-row{background:linear-gradient(90deg,rgba(139,92,255,.08),var(--panel-2) 58%)!important}
+}
