@@ -1,1 +1,1 @@
-Azurecord 7.0.0 — Grupos Cloud + Mobile Media Hub
+Azurecord 7.0.1 — Android updater + correção de ícones
