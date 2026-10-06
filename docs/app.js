@@ -1693,7 +1693,7 @@
     }
     el.hidden=false;
     el.removeAttribute('aria-hidden');
-    el.innerHTML=`<div class="section-title">CONTAS SALVAS NESTE COMPUTADOR</div>${accounts.slice(0,5).map(a=>`<div class="result-item" data-saved="${esc(a.id)}"><div class="home-avatar avatar-img" style="background-image:url('${safeUrl(a.avatar)}')">${a.avatar?'':esc(a.username?.[0]||'F')}</div><div><strong>${esc(a.username)}</strong><p>${esc(a.email)}</p></div><div class="spacer"></div><button class="home-mini-btn ghost" data-forget-saved="${esc(a.id)}">Esquecer</button><button class="home-mini-btn" data-use-saved="${esc(a.id)}">Usar conta</button></div>`).join('')}`;
+    el.innerHTML=`<div class="section-title">CONTAS SALVAS NESTE ${isMobileLayout()?'DISPOSITIVO':'COMPUTADOR'}</div>${accounts.slice(0,5).map(a=>`<div class="result-item" data-saved="${esc(a.id)}"><div class="home-avatar avatar-img" style="background-image:url('${safeUrl(a.avatar)}')">${a.avatar?'':esc(a.username?.[0]||'F')}</div><div><strong>${esc(a.username)}</strong><p>${esc(a.email)}</p></div><div class="spacer"></div><button class="home-mini-btn ghost" data-forget-saved="${esc(a.id)}">Esquecer</button><button class="home-mini-btn" data-use-saved="${esc(a.id)}">Usar conta</button></div>`).join('')}`;
     el.onclick=(e)=>{
       const forget=e.target.closest('[data-forget-saved]');
       if(forget){e.stopPropagation();const id=forget.dataset.forgetSaved;state.accounts=(state.accounts||[]).filter(a=>a.id!==id);if(state.profiles)delete state.profiles[id];if(state.rememberedAccountId===id)state.rememberedAccountId=null;saveNow();renderSavedAccounts();showToast('Conta removida deste dispositivo.');return;}
@@ -1918,8 +1918,20 @@
     if(localStorage.getItem(THEME_KEY)) state.theme=localStorage.getItem(THEME_KEY); applyTheme(); renderSavedAccounts();
     backendReadyPromise=initBackend().then(()=>{if(backendToken)startBackendEvents();});
     const cloudReadyPromise=initCloudAuth();
+    const nativeSessionPromise=(async()=>{try{const token=await window.azurecordDesktop?.getSecureSession?.();if(token&&!cloudToken)cloudToken=token;return !!token;}catch{return false;}})();
     const finishTarget=async()=>{
-      await Promise.allSettled([waitForBackend(3500),cloudReadyPromise]);
+      await nativeSessionPromise;
+      let cloudResult=await cloudReadyPromise;
+      // Android WebView can expose the native bridge a fraction later than the page boot.
+      // If a remembered Cloud account exists, retry secure-session restoration before showing login.
+      if(!cloudVerifiedAccountId&&state.rememberedAccountId&&state.accounts.some(a=>a.id===state.rememberedAccountId&&a.cloud)){
+        for(let attempt=0;attempt<3&&!cloudVerifiedAccountId;attempt++){
+          if(attempt)await new Promise(r=>setTimeout(r,350*(attempt+1)));
+          try{if(!cloudToken)cloudToken=await window.azurecordDesktop?.getSecureSession?.()||null;}catch{}
+          if(cloudToken)cloudResult=await ensureCloudSessionReady({force:true});
+        }
+      }
+      await Promise.allSettled([waitForBackend(3500),Promise.resolve(cloudResult)]);
       if(cloudToken&&cloudVerifiedAccountId&&state.rememberedAccountId===cloudVerifiedAccountId){
         state.currentAccountId=cloudVerifiedAccountId;save();
         const resumed=currentUser();
