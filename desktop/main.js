@@ -352,6 +352,14 @@ app.whenReady().then(async () => {
     ipcMain.handle('desktop:update-install', () => {
       return updaterController?.installNow?.() || false;
     });
+    ipcMain.handle('desktop:update-check', async () => {
+      const checked = await updaterController?.checkNow?.();
+      return { checked: checked !== false, ready: !!updaterController?.isReady?.(), version: updaterController?.readyVersion?.() || null };
+    });
+    ipcMain.handle('desktop:update-state', () => ({
+      ready: !!updaterController?.isReady?.(),
+      version: updaterController?.readyVersion?.() || null
+    }));
 
     ipcMain.handle('desktop:secure-session-get', () => {
       try {
