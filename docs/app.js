@@ -1830,13 +1830,27 @@
     };
     box.hidden=false;
   }
-  async function checkNativeReadyUpdate(){
+  async function checkNativeReadyUpdate({forceCheck=false}={}){
     try{
-      const version=await window.azurecordDesktop?.getReadyUpdateVersion?.();
-      if(version&&version!==AZURECORD_VERSION&&version!==updateChoiceVersion){
-        await showUpdateChoice(version,()=>window.azurecordDesktop?.installReadyUpdate?.());
+      const desktop=window.azurecordDesktop;
+      if(!desktop)return false;
+      if(forceCheck&&typeof desktop.checkForUpdates==='function'){
+        const result=await desktop.checkForUpdates();
+        if(result?.ready&&result?.version&&result.version!==AZURECORD_VERSION){
+          await showUpdateChoice(result.version,()=>desktop.installUpdate?.());
+          return true;
+        }
       }
-    }catch{}
+      const state=typeof desktop.getUpdateState==='function'?await desktop.getUpdateState():null;
+      if(state?.ready&&state?.version&&state.version!==AZURECORD_VERSION&&state.version!==updateChoiceVersion){
+        await showUpdateChoice(state.version,()=>desktop.installUpdate?.());
+        return true;
+      }
+      return false;
+    }catch(err){
+      console.warn('[Azurecord updater]',err?.message||err);
+      return false;
+    }
   }
   function setUiButton(id,icon,label=''){
     const el=$(id);if(!el)return;
