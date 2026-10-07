@@ -2215,7 +2215,8 @@
   function openHome(section='friends'){
     if(isMobileLayout()){closeMobileDms();setMobileNavActive('home');}
     const hasRequests=(state.requests||[]).some(r=>r.status==='pending'&&(r.from===state.currentAccountId||r.to===state.currentAccountId));
-    if(section==='requests'&&!hasRequests)section='friends';
+    // Solicitações permanece acessível mesmo quando a caixa está vazia.
+    // Assim Web/Vercel/Cloudflare têm a mesma navegação e o usuário pode consultar recebidas/enviadas a qualquer momento.
     view.mode='home';
     view.home=section;
     view.homeTab=section==='requests'?'pending':section==='add'?'add':'all';
@@ -4678,12 +4679,10 @@
     const requestBadge=$('requestBadge');
     if(requestBadge){requestBadge.hidden=incoming===0;requestBadge.textContent=incoming||'';}
     const requestNav=$('[data-home="requests"]');
-    if(requestNav)requestNav.hidden=pending===0;
+    if(requestNav)requestNav.hidden=false;
     const friendBadge=$('friendBadge');
     if(friendBadge){friendBadge.hidden=true;friendBadge.textContent='';}
-    if(pending===0&&view.mode==='home'&&(view.home==='requests'||view.homeTab==='pending')){
-      view.home='friends';view.homeTab='all';
-    }
+    // Não expulsar o usuário da aba Solicitações quando não houver pendências.
   }
 
   async function sendBetaFeedback(){if(!backendOnline||!backendToken){showToast('Conecte-se ao backend para enviar feedback.');return;}const category=prompt('Categoria: bug, suggestion, design, performance ou other','bug');if(!category)return;const description=prompt('Descreva o que aconteceu (mínimo 10 caracteres):');if(!description)return;try{const result=await backendRequest('/api/beta/feedback',{method:'POST',body:JSON.stringify({category:category.trim().toLowerCase(),description,appVersion:'1.0.0'})});showToast('Feedback registrado: '+result.feedback.id);}catch(err){showToast(err.message||'Não foi possível enviar feedback.');}}
