@@ -15,17 +15,20 @@ const RICH_PRESENCE_GAMES = [
 async function detectRichPresenceGame() {
   if (process.platform !== 'win32') return null;
   try {
-    const command = "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object ProcessName,MainWindowTitle,StartTime | ConvertTo-Json -Compress";
-    const result = await execFileAsync('powershell.exe', ['-NoProfile','-NonInteractive','-Command',command], { windowsHide:true, timeout:5000, maxBuffer:1048576 });
+    // ProcessName is enough for most games and does not depend on the game exposing a window title.
+    // CIM also gives us the executable path/command line, which helps collections and launchers.
+    const command = "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,CommandLine,CreationDate | ConvertTo-Json -Compress";
+    const result = await execFileAsync('powershell.exe', ['-NoProfile','-NonInteractive','-Command',command], { windowsHide:true, timeout:8000, maxBuffer:4194304 });
     const raw = String(result.stdout || '').trim();
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const rows = Array.isArray(parsed) ? parsed : [parsed];
     for (const row of rows) {
-      const haystack = String(row?.ProcessName || '') + ' ' + String(row?.MainWindowTitle || '');
+      const haystack = [row?.Name,row?.ExecutablePath,row?.CommandLine].filter(Boolean).join(' ');
       const game = RICH_PRESENCE_GAMES.find(item => item.match.test(haystack));
       if (!game) continue;
-      const started = Date.parse(row?.StartTime || '');
+      const started = Date.parse(row?.CreationDate || '');
+      log('[rich-presence-detect] detected', game.id, String(row?.Name || ''));
       return { type:'game', gameId:game.id, name:game.name, startedAt:Number.isFinite(started)?started:Date.now() };
     }
   } catch (err) { log('[rich-presence-detect]', err?.message || err); }
