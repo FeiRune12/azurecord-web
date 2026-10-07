@@ -1925,7 +1925,13 @@
     $('logoutBtn').onclick=logout; $('userBar').onclick=(e)=>{if(e.target.closest('button'))return;e.stopPropagation();openProfilePeek(currentUser()?.id,e.currentTarget);};
     $('composer').onsubmit=sendMessage; $('messageInput').addEventListener('keydown',handleComposerKey); $('messageInput').addEventListener('input',handleTypingInput); $('attachBtn').onclick=()=>$('fileInput').click(); $('fileInput').onchange=handleFiles; $('chatView')?.addEventListener('dragenter',handleChatDragEnter); $('chatView')?.addEventListener('dragover',handleChatDragOver); $('chatView')?.addEventListener('dragleave',handleChatDragLeave); $('chatView')?.addEventListener('drop',handleChatDrop); $('attachmentPreview')?.addEventListener('click',e=>{const b=e.target.closest('[data-remove-attachment]');if(!b||b.disabled)return;const [removed]=pendingAttachments.splice(Number(b.dataset.removeAttachment),1);releasePendingAttachment(removed);renderAttachmentPreview();});
     $('gifBtn').dataset.composerType='gif'; $('stickerBtn').dataset.composerType='sticker'; $('emojiBtn').dataset.composerType='emoji'; $('appsBtn').dataset.composerType='apps';
-    $('gifBtn').onclick=()=>isMobileLayout()?openMobileMediaHub('gif'):openComposerPopover('gif'); $('stickerBtn').onclick=()=>openComposerPopover('sticker'); $('emojiBtn').onclick=()=>openComposerPopover('emoji'); $('appsBtn').onclick=()=>openComposerPopover('apps');
+    const openGifFromComposer=(e)=>{e?.preventDefault?.();e?.stopPropagation?.();if(isMobileLayout())openMobileMediaHub('gif');else openComposerPopover('gif');};
+    // Android WebView can lose a synthetic click after touch handling in the composer.
+    // Pointer/touch opens the picker directly; click remains as keyboard/desktop fallback.
+    let gifPointerOpenedAt=0;
+    $('gifBtn').onclick=(e)=>{if(Date.now()-gifPointerOpenedAt<700)return;openGifFromComposer(e);};
+    $('gifBtn').addEventListener('pointerup',e=>{if(!isMobileLayout())return;gifPointerOpenedAt=Date.now();openGifFromComposer(e);},{passive:false});
+    $('stickerBtn').onclick=()=>openComposerPopover('sticker'); $('emojiBtn').onclick=()=>openComposerPopover('emoji'); $('appsBtn').onclick=()=>openComposerPopover('apps');
     $('composer').addEventListener('click',e=>e.stopPropagation()); $('composerPopover')?.addEventListener('click',e=>e.stopPropagation());
     $('memberToggle').onclick=()=>{view.showMembers=!view.showMembers; renderMemberPanel();}; $('memberClose').onclick=()=>{$('memberPanel').hidden=true;}; $('peopleBtn').onclick=()=>{$('memberPanel').hidden=false;renderMemberPanel();}; $('chatTitleTrigger').onclick=(e)=>{ e.stopPropagation(); if(view.mode==='dm'&&view.dmUserId) openProfilePeek(view.dmUserId,e.currentTarget); };
     $('profilePeekClose').onclick=()=>{selectedProfile=null;view.showProfile=false;$('profilePeek').hidden=true;$('profilePeek').style.left='';$('profilePeek').style.top='';}; $('clearDmBtn').onclick=clearDm; $('newLolaChatBtn').onclick=()=>startNewLolaChat();
@@ -3386,6 +3392,7 @@
     const box=$('composerPopover');
     if(!box)return;
     box.hidden=true;
+    box.style.removeProperty('display');
     box.innerHTML='';
     delete box.dataset.mode;
     $$('.composer-quick').forEach(b=>b.classList.remove('active'));
@@ -3553,6 +3560,9 @@
     // On Android/WebView the chat pane clips positioned descendants. Portal the
     // media picker to <body> so the GIF sheet can receive touches and scroll.
     if(isMobileLayout()&&box.parentElement!==document.body)document.body.appendChild(box);
+    box.hidden=false;
+    box.dataset.mode='mobile-media';
+    box.style.display='block';
     const tabs=[['gif','GIFs'],['sticker','Stickers'],['emoji','Emojis']];
     const renderTab=(type)=>{
       box.hidden=false;box.dataset.mode='mobile-media';
