@@ -2382,9 +2382,10 @@ button .ui-icon,.home-empty-icon .ui-icon,.app-card .ui-icon,.poll-question .ui-
 
 /* 7.1.2 mobile requests + GIF picker hotfix */
 @media(max-width:760px){
-  .mobile-bottom-nav{overflow-x:auto!important;overflow-y:hidden!important;justify-content:flex-start!important;scrollbar-width:none!important}
+  .mobile-bottom-nav{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;overflow:hidden!important;scrollbar-width:none!important}
   .mobile-bottom-nav::-webkit-scrollbar{display:none!important}
-  .mobile-bottom-nav>button{min-width:68px!important;flex:1 0 68px!important;position:relative!important}
+  .mobile-bottom-nav>button{min-width:0!important;width:auto!important;flex:none!important;position:relative!important;padding-left:1px!important;padding-right:1px!important}
+  .mobile-bottom-nav>button b{font-size:8px!important;max-width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
   .mobile-bottom-nav [data-mobile-requests] i{position:absolute;top:5px;right:10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-style:normal;display:grid;place-items:center}
   .mobile-bottom-nav [data-mobile-requests] i[hidden]{display:none!important}
   .composer-popover[data-mode="mobile-media"]{position:fixed!important;left:8px!important;right:8px!important;bottom:calc(64px + env(safe-area-inset-bottom))!important;width:auto!important;max-width:none!important;max-height:min(62dvh,560px)!important;padding:8px!important;overflow:hidden!important;z-index:120!important}
