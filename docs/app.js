@@ -246,6 +246,8 @@
   let typingStopTimer = null;
   let dragDepth = 0;
   let presenceHeartbeatTimer = null;
+  let desktopRichPresence = null;
+  let desktopRichPresenceTimer = null;
   let callSignalPollTimer = null;
   let callSignalCursor = Date.now() - 5000;
   let activeCall = null;
@@ -1020,8 +1022,9 @@
       const customStatus=String(item?.customStatus||'').slice(0,120);
       const lastSeenAt=String(item?.lastSeenAt||'');
       const updatedAt=String(item?.updatedAt||item?.statusUpdatedAt||'');
-      realtimePresence.set(userId,{status,customStatus,lastSeenAt,updatedAt,at:stamp});
-      const p=getProfile(userId);if(p){p.status=status;if(item?.customStatus!==undefined)p.customStatus=customStatus;if(lastSeenAt)p.lastSeenAt=lastSeenAt;if(updatedAt)p.statusUpdatedAt=updatedAt;}
+      const activity=item?.activity&&item.activity.name?item.activity:null;
+      realtimePresence.set(userId,{status,customStatus,activity,lastSeenAt,updatedAt,at:stamp});
+      const p=getProfile(userId);if(p){p.status=status;p.activity=activity;if(item?.customStatus!==undefined)p.customStatus=customStatus;if(lastSeenAt)p.lastSeenAt=lastSeenAt;if(updatedAt)p.statusUpdatedAt=updatedAt;}
     }
     if(view.mode==='home')renderHome();
     if(view.mode==='server')renderMemberPanel();
@@ -1030,10 +1033,30 @@
       if($('channelTopic'))$('channelTopic').textContent=`${p?.handle||''} • ${statusLabel(resolvedPresence(p?.id))}`;
     }
   }
+  async function readDesktopRichPresence(){
+    if(typeof window.azurecordDesktop?.getRichPresence!=='function'){desktopRichPresence=null;return null;}
+    try{
+      const next=await window.azurecordDesktop.getRichPresence();
+      desktopRichPresence=next&&next.name?{type:'game',gameId:String(next.gameId||''),name:String(next.name||'').slice(0,160),startedAt:Number(next.startedAt)||Date.now()}:null;
+    }catch(err){console.warn('[Azurecord] Rich Presence:',err?.message||err);desktopRichPresence=null;}
+    return desktopRichPresence;
+  }
+  function startDesktopRichPresence(){
+    clearInterval(desktopRichPresenceTimer);desktopRichPresenceTimer=null;
+    if(typeof window.azurecordDesktop?.getRichPresence!=='function')return;
+    void readDesktopRichPresence().then(()=>{if(socialCloudReady())void syncPresenceHeartbeat();});
+    desktopRichPresenceTimer=setInterval(async()=>{
+      const before=JSON.stringify(desktopRichPresence||null);
+      await readDesktopRichPresence();
+      if(before!==JSON.stringify(desktopRichPresence||null)&&socialCloudReady())void syncPresenceHeartbeat();
+    },10000);
+  }
   async function syncPresenceHeartbeat(status=effectiveOwnPresence()){
     if(!socialCloudReady()||!state.currentAccountId)return false;
     try{
-      const data=await cloudRequest('/api/presence/heartbeat',{method:'POST',body:JSON.stringify({status})});
+      if(typeof window.azurecordDesktop?.getRichPresence==='function')await readDesktopRichPresence();
+      const data=await cloudRequest('/api/presence/heartbeat',{method:'POST',body:JSON.stringify({status,activity:desktopRichPresence})});
+      if(data?.activity!==undefined){const me=currentUser();if(me){me.activity=data.activity||null;state.profiles[me.id]={...(state.profiles[me.id]||me),...me};}}
       applyPresenceSnapshot(data?.presence||[]);
       return true;
     }catch(err){
@@ -1108,8 +1131,9 @@
     const userId=String(event.userId||'');if(!userId||userId===state.currentAccountId)return;
     const status=['online','idle','dnd','offline'].includes(event.status)?event.status:'offline';
     const existing=realtimePresence.get(userId)||{};
-    realtimePresence.set(userId,{...existing,status,customStatus:String(event.customStatus??existing.customStatus??''),lastSeenAt:String(event.lastSeenAt||existing.lastSeenAt||''),updatedAt:String(event.updatedAt||existing.updatedAt||''),at:Date.now()});
-    const p=getProfile(userId);if(p){p.status=status;if(event.customStatus!==undefined)p.customStatus=String(event.customStatus||'');if(event.lastSeenAt)p.lastSeenAt=event.lastSeenAt;if(event.updatedAt)p.statusUpdatedAt=event.updatedAt;}
+    const activity=event?.activity&&event.activity.name?event.activity:(event.activity===null?null:existing.activity||null);
+    realtimePresence.set(userId,{...existing,status,activity,customStatus:String(event.customStatus??existing.customStatus??''),lastSeenAt:String(event.lastSeenAt||existing.lastSeenAt||''),updatedAt:String(event.updatedAt||existing.updatedAt||''),at:Date.now()});
+    const p=getProfile(userId);if(p){p.status=status;p.activity=activity;if(event.customStatus!==undefined)p.customStatus=String(event.customStatus||'');if(event.lastSeenAt)p.lastSeenAt=event.lastSeenAt;if(event.updatedAt)p.statusUpdatedAt=event.updatedAt;}
     if(view.mode==='home')renderHome();
     if(view.mode==='dm'&&view.dmUserId===userId)renderChat();
     if(view.mode==='server')renderMemberPanel();
@@ -1351,7 +1375,8 @@
     cloudRealtimeFailures=0;
     cloudSocialSnapshotAt=0;
     startCloudRealtimeSocket();
-    startPresenceHeartbeat();
+    startDesktopRichPresence();
+  startPresenceHeartbeat();
     startCallSignalPolling();
     wakeCloudRealtimeSync({snapshot:true});
   }
@@ -4558,6 +4583,8 @@
     const friendship=system?systemMascotKind(p.id):(self?'Seu perfil':(blocked?'Bloqueado':(isFriend(p.id)?'Amigo':'Ainda não são amigos')));
     const avatar=p.avatar?safeUrl(p.avatar):'';
     const banner=p.banner?safeUrl(p.banner):'';
+    const liveActivity=(p.id===state.currentAccountId?desktopRichPresence:null)||realtimePresence.get(String(p.id))?.activity||p.activity||null;
+    const activityHtml=liveActivity?.name?`<div class="profile-activity-card"><div class="dm-peek-label">JOGANDO</div><strong>${esc(liveActivity.name)}</strong><span>${liveActivity.startedAt?'há '+esc(formatDuration(Math.max(0,Date.now()-Number(liveActivity.startedAt)))):''}</span></div>`:'';
     if(compact){
       return `<div class="profile-detail profile-preview-compact">
         <div class="profile-hero" style="${banner?`background-image:linear-gradient(180deg,rgba(5,8,14,.05),rgba(5,8,14,.65)),url('${banner}')`:`background:linear-gradient(135deg,${p.accent||'#0066ff'},#0b1224)`}"></div>
@@ -4568,7 +4595,7 @@
             <div class="profile-title-block"><h2>${esc(p.username)}</h2><div class="handle">${esc(p.handle||'@'+p.username.toLowerCase())}${p.pronouns?` <span class="profile-bullet">•</span> ${esc(p.pronouns)}`:''}</div><div class="profile-status-line"><span class="status-dot ${resolvedPresence(p.id)}"></span>${statusLabel(resolvedPresence(p.id))} <span class="profile-bullet">•</span> ${esc(friendship)}</div><div class="profile-presence-time">${esc(presenceMeta(p))}</div></div>
           </div>
         </div>
-        <div class="profile-preview-bio">${esc(p.bio||'Sem bio.')}</div>
+        <div class="profile-preview-bio">${esc(p.bio||'Sem bio.')}</div>${activityHtml}
         <div class="profile-actions profile-preview-actions"><button class="btn btn-primary wide" data-profile-full="${p.id}">Exibir perfil completo</button></div>
       </div>`;
     }
@@ -4583,7 +4610,7 @@
         <div class="profile-top-actions">${self?'<button class="btn btn-primary" data-profile-edit>Editar perfil</button>':''}</div>
       </div>
       <div class="profile-badges-row"><span class="role-chip">${esc(p.badge||'Membro')}</span><span class="role-chip">ID ${esc(p.id)}</span></div>
-      <div class="profile-body-grid">
+      ${activityHtml}<div class="profile-body-grid">
         <section class="profile-section-card"><div class="dm-peek-label">SOBRE MIM</div><p>${esc(p.bio||'Sem bio.')}</p></section>
         <section class="profile-section-card"><div class="dm-peek-label">PERSONALIDADE</div><p>${esc(p.personality||'Usuário do Azurecord.')}</p></section>
       </div>
