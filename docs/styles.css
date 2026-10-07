@@ -2398,3 +2398,11 @@ button .ui-icon,.home-empty-icon .ui-icon,.app-card .ui-icon,.poll-question .ui-
   .composer-popover[data-mode="mobile-media"] .klipy-gif-card{min-height:82px!important;touch-action:manipulation!important}
   .composer-popover[data-mode="mobile-media"] .klipy-gif-card img{height:104px!important;pointer-events:none!important}
 }
+
+/* 7.1.2 Android GIF sheet portal */
+@media(max-width:760px){
+ body>.composer-popover[data-mode="mobile-media"]{display:block!important;position:fixed!important;left:8px!important;right:8px!important;top:auto!important;bottom:calc(68px + env(safe-area-inset-bottom))!important;width:auto!important;max-height:64dvh!important;z-index:10000!important;overflow:hidden!important;overscroll-behavior:contain!important;touch-action:pan-y!important}
+ body>.composer-popover[data-mode="mobile-media"][hidden]{display:none!important}
+ body>.composer-popover[data-mode="mobile-media"] .mobile-media-body{overflow:hidden!important;max-height:calc(64dvh - 58px)!important}
+ body>.composer-popover[data-mode="mobile-media"] .klipy-gif-grid{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important}
+}
