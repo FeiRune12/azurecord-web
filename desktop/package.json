@@ -1,8 +1,8 @@
 {
   "name": "azurecord-desktop",
-  "version": "7.1.2",
+  "version": "7.1.3",
   "private": true,
-  "description": "Azurecord 7.1.2: correção do updater e detecção local do Rich Presence no Windows.",
+  "description": "Azurecord 7.1.3: Rich Presence integrado e detecção robusta do Gunvolt no Windows.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
