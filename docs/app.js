@@ -4423,13 +4423,16 @@
     if(mode==='group'){
       await sendGroupMessageToBackend(m,groupId);
     }else if(mode==='dm'){
-      if((dmId==='user-lola'&&lolaCloudReady())||(dmId!=='user-lola'&&socialReady())){
+      // Always let the sender attempt Cloud/session recovery. Previously a brief
+      // Android wake/session race skipped sendDmToBackend entirely and marked
+      // normal DMs as failed before its recovery logic could run.
+      if(dmId==='user-lola'&&!lolaCloudReady()&&!cloudToken){
+        m.pending=false;save();simulateLolaReply(m).catch(()=>{});
+      }else{
         const persisted=await sendDmToBackend(m,dmId);
         if(dmId==='user-lola' && persisted){simulateLolaReply(m).catch(err=>console.warn('[Azurecord] Lola:',err));}
         else if(dmId==='user-lola' && !persisted){simulateLolaReply(m).catch(()=>{});}
-      }else if(dmId==='user-lola'){
-        m.pending=false;save();simulateLolaReply(m).catch(()=>{});
-      }else{m.pending=true;m.failed=true;saveNow();renderMessages();showToast('DM guardada localmente; faça login para enviá-la.');}
+      }
     }else if(mode==='server'){
       m.pending=true;m.failed=false;m.retryable=true;saveNow();renderMessages();
       void sendChannelMessageToBackend(m,serverId,channelId);
