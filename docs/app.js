@@ -3507,8 +3507,22 @@
   async function fetchServerStickers(){
     if(view.mode!=='server')return [];
     const server=getServer(view.serverId);if(!server)return [];
-    const data=await socialRequest('/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/stickers');
-    return Array.isArray(data?.stickers)?data.stickers:[];
+    const path='/api/servers/'+encodeURIComponent(server.backendId||server.id)+'/stickers';
+    // Sticker browsing must not get stranded in the generic "Cloud reconnecting"
+    // state after Android resumes. Revalidate once, then retry the GET once.
+    try{
+      const data=await socialRequest(path);
+      return Array.isArray(data?.stickers)?data.stickers:[];
+    }catch(err){
+      if((err?.code==='cloud_reconnecting'||retryableCloudMessageError(err))&&typeof navigator!=='undefined'&&navigator.onLine!==false){
+        const recovered=await ensureCloudSessionReady({force:true});
+        if(recovered){
+          const data=await cloudRequest(path,{timeoutMs:12000});
+          return Array.isArray(data?.stickers)?data.stickers:[];
+        }
+      }
+      throw err;
+    }
   }
   function renderServerStickerGrid(box,stickers=[]){
     const grid=box.querySelector('#serverStickerGrid');if(!grid)return;
@@ -3553,7 +3567,7 @@
       }catch(err){showToast(err.message||'Não foi possível adicionar o sticker.');}
       finally{if(add){add.disabled=false;add.textContent='+ Adicionar';}input.value='';}
     };
-    try{renderServerStickerGrid(box,await fetchServerStickers());}catch(err){const grid=box.querySelector('#serverStickerGrid');if(grid)grid.innerHTML='<div class="sticker-empty">'+esc(err.message||'Falha ao carregar stickers.')+'</div>';}
+    try{renderServerStickerGrid(box,await fetchServerStickers());}catch(err){const grid=box.querySelector('#serverStickerGrid');if(grid){const msg=err?.code==='cloud_reconnecting'?'Não foi possível reconectar ao Azurecord Cloud.':'Falha ao carregar stickers.';grid.innerHTML='<div class="sticker-empty">'+esc(msg)+'</div><button type="button" class="home-mini-btn" id="retryServerStickers">Tentar novamente</button>';box.querySelector('#retryServerStickers')?.addEventListener('click',()=>{grid.innerHTML='<div class="sticker-empty">Reconectando…</div>';void fetchServerStickers().then(items=>renderServerStickerGrid(box,items)).catch(e=>{grid.innerHTML='<div class="sticker-empty">'+esc(e.message||'Falha ao carregar stickers.')+'</div>';});});}}
   }
   function openMobileMediaHub(initial='gif'){
     const box=$('composerPopover');if(!box)return;
