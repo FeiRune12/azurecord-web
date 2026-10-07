@@ -1,1 +1,1 @@
-Azurecord 7.1.2 — updater bridge fix + Rich Presence detection fix
+Azurecord 7.1.3 — Rich Presence Cloud + Gunvolt window-title detection
