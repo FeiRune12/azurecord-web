@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Azurecord 7.1.2 synchronized mobile/desktop release
+// Azurecord 7.1.3 synchronized mobile/desktop release
 android {
     namespace = "com.azurecord.app"
     compileSdk = 36
@@ -12,8 +12,8 @@ android {
         applicationId = "com.azurecord.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 712
-        versionName = "7.1.2"
+        versionCode = 713
+        versionName = "7.1.3"
     }
 
     signingConfigs {
