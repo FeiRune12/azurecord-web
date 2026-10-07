@@ -3557,20 +3557,29 @@
   }
   function openMobileMediaHub(initial='gif'){
     const box=$('composerPopover');if(!box)return;
-    // On Android/WebView the chat pane clips positioned descendants. Portal the
-    // media picker to <body> so the GIF sheet can receive touches and scroll.
+    // Mobile uses a standalone sheet. Do not nest KLIPY inside mobileMediaBody:
+    // KLIPY changes dataset.mode itself, which previously destroyed the selector
+    // used by the mobile sheet CSS and made the panel effectively disappear.
     if(isMobileLayout()&&box.parentElement!==document.body)document.body.appendChild(box);
     box.hidden=false;
-    box.dataset.mode='mobile-media';
     box.style.display='block';
     const tabs=[['gif','GIFs'],['sticker','Stickers'],['emoji','Emojis']];
-    const renderTab=(type)=>{
-      box.hidden=false;box.dataset.mode='mobile-media';
+    const renderShell=(type)=>{
+      box.dataset.mode='mobile-media';
       box.innerHTML=`<div class="mobile-media-tabs">${tabs.map(([id,label])=>`<button type="button" class="mobile-media-tab ${id===type?'active':''}" data-media-tab="${id}">${label}</button>`).join('')}</div><div class="mobile-media-body" id="mobileMediaBody"></div>`;
       box.querySelectorAll('[data-media-tab]').forEach(btn=>btn.onclick=()=>renderTab(btn.dataset.mediaTab));
-      const body=box.querySelector('#mobileMediaBody');
-      if(type==='gif'){openKlipyGifPicker(body);return;}
-      if(type==='sticker'&&view.mode==='server'){void openServerStickerPicker(body);return;}
+      return box.querySelector('#mobileMediaBody');
+    };
+    const renderTab=(type)=>{
+      const body=renderShell(type);
+      if(type==='gif'){
+        openKlipyGifPicker(body);
+        // openKlipyGifPicker marks its own target as gif-klipy. Keep the outer
+        // sheet marker on composerPopover so Android/mobile CSS remains active.
+        box.dataset.mode='mobile-media';
+        return;
+      }
+      if(type==='sticker'&&view.mode==='server'){void openServerStickerPicker(body);box.dataset.mode='mobile-media';return;}
       if(type==='sticker'){
         const stickers=['AZURE','BOOST','GG!','KAWAII','LOL','BORA'];
         body.innerHTML=`<div class="composer-grid">${stickers.map((value,i)=>`<button type="button" class="composer-chip" data-mobile-sticker="${i}">${esc(value)}</button>`).join('')}</div><p class="composer-helper">Stickers rápidos para a conversa.</p>`;
@@ -3581,7 +3590,6 @@
       body.innerHTML=`<div class="composer-grid mobile-emoji-grid">${emoji.map((value,i)=>`<button type="button" class="composer-chip" data-mobile-emoji="${i}">${value}</button>`).join('')}</div><p class="composer-helper">Toque para inserir um emoji.</p>`;
       body.querySelectorAll('[data-mobile-emoji]').forEach(btn=>btn.onclick=()=>{insertAtCursor(emoji[Number(btn.dataset.mobileEmoji)]);closeComposerPopover();});
     };
-    $('.composer-quick').forEach(b=>b.classList.toggle('active',b.id==='gifBtn'));
     renderTab(initial);
   }
   function openComposerPopover(type){
