@@ -3550,6 +3550,9 @@
   }
   function openMobileMediaHub(initial='gif'){
     const box=$('composerPopover');if(!box)return;
+    // On Android/WebView the chat pane clips positioned descendants. Portal the
+    // media picker to <body> so the GIF sheet can receive touches and scroll.
+    if(isMobileLayout()&&box.parentElement!==document.body)document.body.appendChild(box);
     const tabs=[['gif','GIFs'],['sticker','Stickers'],['emoji','Emojis']];
     const renderTab=(type)=>{
       box.hidden=false;box.dataset.mode='mobile-media';
@@ -3574,6 +3577,8 @@
   function openComposerPopover(type){
     const box=$('composerPopover');
     if(!box)return;
+    // Desktop/tablet keeps the popover anchored to the chat composer.
+    if(!isMobileLayout()&&box.parentElement!==$('chatView'))$('chatView')?.querySelector('.chat-body')?.appendChild(box);
     delete box.dataset.mode;
     const active=$('.composer-quick.active');
     if(!box.hidden && active && active.dataset.composerType===type){closeComposerPopover();return;}
