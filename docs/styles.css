@@ -2378,3 +2378,22 @@ button .ui-icon,.home-empty-icon .ui-icon,.app-card .ui-icon,.poll-question .ui-
   .mascot-row .role-chip{margin:0!important}
   .lumen-mascot-row{background:linear-gradient(90deg,rgba(139,92,255,.08),var(--panel-2) 58%)!important}
 }
+
+
+/* 7.1.2 mobile requests + GIF picker hotfix */
+@media(max-width:760px){
+  .mobile-bottom-nav{overflow-x:auto!important;overflow-y:hidden!important;justify-content:flex-start!important;scrollbar-width:none!important}
+  .mobile-bottom-nav::-webkit-scrollbar{display:none!important}
+  .mobile-bottom-nav>button{min-width:68px!important;flex:1 0 68px!important;position:relative!important}
+  .mobile-bottom-nav [data-mobile-requests] i{position:absolute;top:5px;right:10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-style:normal;display:grid;place-items:center}
+  .mobile-bottom-nav [data-mobile-requests] i[hidden]{display:none!important}
+  .composer-popover[data-mode="mobile-media"]{position:fixed!important;left:8px!important;right:8px!important;bottom:calc(64px + env(safe-area-inset-bottom))!important;width:auto!important;max-width:none!important;max-height:min(62dvh,560px)!important;padding:8px!important;overflow:hidden!important;z-index:120!important}
+  .composer-popover[data-mode="mobile-media"] .mobile-media-body{min-height:0!important;max-height:calc(min(62dvh,560px) - 54px)!important;overflow:hidden!important}
+  .composer-popover[data-mode="mobile-media"] .klipy-picker{height:100%!important;min-height:0!important;grid-template-rows:auto auto auto minmax(0,1fr)!important}
+  .composer-popover[data-mode="mobile-media"] .klipy-picker-head{gap:6px!important;flex-wrap:wrap!important}
+  .composer-popover[data-mode="mobile-media"] .choice-row{min-width:0!important;flex-wrap:wrap!important}
+  .composer-popover[data-mode="mobile-media"] .klipy-search-row{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important}
+  .composer-popover[data-mode="mobile-media"] .klipy-gif-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;max-height:none!important;height:100%!important;min-height:160px!important;overflow-y:auto!important;overscroll-behavior:contain!important;-webkit-overflow-scrolling:touch!important;padding-bottom:8px!important}
+  .composer-popover[data-mode="mobile-media"] .klipy-gif-card{min-height:82px!important;touch-action:manipulation!important}
+  .composer-popover[data-mode="mobile-media"] .klipy-gif-card img{height:104px!important;pointer-events:none!important}
+}
