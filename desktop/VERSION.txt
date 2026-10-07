@@ -1,1 +1,1 @@
-Azurecord 7.1.0 — Rich Presence + desktop update controls
+Azurecord 7.1.1 — Rich Presence detection fix
