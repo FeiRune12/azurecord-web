@@ -1,5 +1,6 @@
 (() => {
   const onVercel = /(^|\.)vercel\.app$/i.test(location.hostname);
+  window.AZURECORD_BUILD = { version: '7.1.2' };
   window.AZURECORD_CONFIG = {
     apiBaseUrl: onVercel
       ? location.origin + '/azurecord-cloud'
