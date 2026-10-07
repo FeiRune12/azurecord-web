@@ -2,6 +2,7 @@ import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const root = process.cwd();
+const clientVersion = '7.1.2';
 const sourceDir = resolve(root, '..', '..', 'docs');
 const distDir = resolve(root, 'dist');
 const apiBaseUrl = String(
@@ -22,7 +23,7 @@ await mkdir(distDir, { recursive: true });
 await cp(sourceDir, distDir, { recursive: true });
 await writeFile(
   resolve(distDir, 'config.js'),
-  `window.AZURECORD_CONFIG = ${JSON.stringify({ apiBaseUrl, realtimeBaseUrl, webBaseUrl }, null, 2)};\n`,
+  `window.AZURECORD_BUILD = ${JSON.stringify({ version: clientVersion })};\nwindow.AZURECORD_CONFIG = ${JSON.stringify({ apiBaseUrl, realtimeBaseUrl, webBaseUrl }, null, 2)};\n`,
   'utf8'
 );
 console.log('Azurecord Web Vercel sincronizado diretamente de /docs.');
