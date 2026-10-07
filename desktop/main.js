@@ -15,20 +15,21 @@ const RICH_PRESENCE_GAMES = [
 async function detectRichPresenceGame() {
   if (process.platform !== 'win32') return null;
   try {
-    // ProcessName is enough for most games and does not depend on the game exposing a window title.
-    // CIM also gives us the executable path/command line, which helps collections and launchers.
-    const command = "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_Process | Select-Object Name,ExecutablePath,CommandLine,CreationDate | ConvertTo-Json -Compress";
+    // Merge CIM metadata with Get-Process window titles. Some Steam games use
+    // opaque executable names while exposing the real game name only in the
+    // top-level window title (the Dual Collection does this on some builds).
+    const command = "$ErrorActionPreference='SilentlyContinue'; $cim=Get-CimInstance Win32_Process; $titles=@{}; Get-Process | ForEach-Object { if($_.MainWindowTitle){$titles[[int]$_.Id]=$_.MainWindowTitle} }; $cim | ForEach-Object { [PSCustomObject]@{ Name=$_.Name; ProcessId=$_.ProcessId; ExecutablePath=$_.ExecutablePath; CommandLine=$_.CommandLine; CreationDate=$_.CreationDate; MainWindowTitle=$titles[[int]$_.ProcessId] } } | ConvertTo-Json -Compress";
     const result = await execFileAsync('powershell.exe', ['-NoProfile','-NonInteractive','-Command',command], { windowsHide:true, timeout:8000, maxBuffer:4194304 });
     const raw = String(result.stdout || '').trim();
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const rows = Array.isArray(parsed) ? parsed : [parsed];
     for (const row of rows) {
-      const haystack = [row?.Name,row?.ExecutablePath,row?.CommandLine].filter(Boolean).join(' ');
+      const haystack = [row?.Name,row?.ExecutablePath,row?.CommandLine,row?.MainWindowTitle].filter(Boolean).join(' ');
       const game = RICH_PRESENCE_GAMES.find(item => item.match.test(haystack));
       if (!game) continue;
       const started = Date.parse(row?.CreationDate || '');
-      log('[rich-presence-detect] detected', game.id, String(row?.Name || ''));
+      log('[rich-presence-detect] detected', game.id, String(row?.Name || ''), String(row?.MainWindowTitle || ''));
       return { type:'game', gameId:game.id, name:game.name, startedAt:Number.isFinite(started)?started:Date.now() };
     }
   } catch (err) { log('[rich-presence-detect]', err?.message || err); }
