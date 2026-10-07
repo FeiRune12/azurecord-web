@@ -1711,13 +1711,14 @@
     if(!$('mobileNav')){
       const nav=document.createElement('nav');
       nav.id='mobileNav';nav.className='mobile-bottom-nav';
-      nav.innerHTML=`<button data-mobile-home class="active"><span>${uiIcon('home',20)}</span><b>Início</b></button><button data-mobile-servers><span>${uiIcon('servers',20)}</span><b>Servidores</b></button><button data-mobile-dms><span>${uiIcon('message',20)}</span><b>Mensagens</b></button><button data-mobile-you><span>${uiIcon('user',20)}</span><b>Você</b></button>`;
+      nav.innerHTML=`<button data-mobile-home class="active"><span>${uiIcon('home',20)}</span><b>Início</b></button><button data-mobile-requests><span>${uiIcon('mail',20)}</span><b>Solicitações</b><i id="mobileRequestBadge" hidden>0</i></button><button data-mobile-servers><span>${uiIcon('servers',20)}</span><b>Servidores</b></button><button data-mobile-dms><span>${uiIcon('message',20)}</span><b>Mensagens</b></button><button data-mobile-you><span>${uiIcon('user',20)}</span><b>Você</b></button>`;
       $('appScreen')?.appendChild(nav);
       const backdrop=document.createElement('button');
       backdrop.id='mobileDrawerBackdrop';backdrop.className='mobile-drawer-backdrop';backdrop.hidden=true;backdrop.setAttribute('aria-label','Fechar navegação');
       $('appScreen')?.appendChild(backdrop);
       backdrop.onclick=()=>setMobileDrawer(false);
       nav.querySelector('[data-mobile-home]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('home');openHome('friends');};
+      nav.querySelector('[data-mobile-requests]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('requests');openHome('requests');};
       nav.querySelector('[data-mobile-servers]').onclick=()=>{closeMobileDms();setMobileNavActive('servers');setMobileDrawer(true);};
       nav.querySelector('[data-mobile-dms]').onclick=()=>openMobileDms();
       nav.querySelector('[data-mobile-you]').onclick=()=>{closeMobileDms();setMobileDrawer(false);setMobileNavActive('you');openAppSettings('account');};
@@ -1736,7 +1737,7 @@
   function setMobileNavActive(section){
     const nav=$('mobileNav');if(!nav)return;
     nav.querySelectorAll('button').forEach(btn=>btn.classList.remove('active'));
-    const map={home:'[data-mobile-home]',servers:'[data-mobile-servers]',dms:'[data-mobile-dms]',you:'[data-mobile-you]'};
+    const map={home:'[data-mobile-home]',requests:'[data-mobile-requests]',servers:'[data-mobile-servers]',dms:'[data-mobile-dms]',you:'[data-mobile-you]'};
     const target=nav.querySelector(map[section]||'');if(target)target.classList.add('active');
   }
 
