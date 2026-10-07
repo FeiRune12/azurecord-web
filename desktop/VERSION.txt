@@ -1,1 +1,1 @@
-Azurecord 7.1.1 — Rich Presence detection fix
+Azurecord 7.1.2 — updater bridge fix + Rich Presence detection fix
