@@ -2957,13 +2957,25 @@
   async function acceptRequest(id){
     const r=state.requests.find(x=>x.id===id);if(!r)return;
     if(!socialCloudReady()){showToast('Entre na conta Cloud para aceitar pedidos.');return;}
+    const friendId=r.from===state.currentAccountId?r.to:r.from;
+    const previousRequests=[...(state.requests||[])];
+    const previousFriends=[...(state.friends||[])];
+    // Optimistic UI: accepting must feel instant. Cloud confirms in the background.
+    state.requests=(state.requests||[]).filter(x=>x.id!==id);
+    if(friendId&&!isFriend(friendId))state.friends.push({a:state.currentAccountId,b:friendId,created:now()});
+    save();renderHome();renderDms();renderBadges();
     try{
-      await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/accept`,{method:'POST'});
-      sendCloudRealtime({type:'social.commit',targetUserId:r.from,reason:'friend.accept'});
-      await hydrateFromCloudSocial({quiet:true});
-      const p=getProfile(r.from);if(p)addNotification('Novo amigo',`${p.username} agora é seu amigo.`,'friend');
-      renderHome();renderDms();renderBadges();
-    }catch(err){showToast(err.message||'Não foi possível aceitar o pedido.');}
+      const result=await cloudRequest(`/api/friends/requests/${encodeURIComponent(id)}/accept`,{method:'POST'});
+      if(result?.friend)hydrateRemoteUser(result.friend);
+      sendCloudRealtime({type:'social.commit',targetUserId:friendId,reason:'friend.accept'});
+      const p=getProfile(friendId);if(p)addNotification('Novo amigo',`${p.username} agora é seu amigo.`,'friend');
+      // Reconcile asynchronously. Never hold the click UI hostage to a full snapshot.
+      void hydrateFromCloudSocial({quiet:true});
+    }catch(err){
+      state.requests=previousRequests;state.friends=previousFriends;
+      save();renderHome();renderDms();renderBadges();
+      showToast(err.message||'Não foi possível aceitar o pedido.');
+    }
   }
   async function declineRequest(id){
     if(!socialCloudReady()){showToast('Entre na conta Cloud para recusar pedidos.');return;}
