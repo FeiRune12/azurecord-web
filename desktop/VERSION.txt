@@ -1,1 +1,1 @@
-Azurecord 7.1.3 — Rich Presence Cloud + Gunvolt window-title detection
+Azurecord 7.1.4 — instant friendship + Rich Presence Cloud + updater fix
