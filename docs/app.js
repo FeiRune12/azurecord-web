@@ -1866,6 +1866,13 @@
           await showUpdateChoice(result.version,()=>desktop.installUpdate?.());
           return true;
         }
+        if(result?.available){
+          showToast(result.version?`Azurecord ${result.version} encontrado. Preparando atualização...`:'Nova atualização encontrada. Preparando...');
+          return true;
+        }
+        if(result?.checked===false){
+          throw new Error(result?.error||'O updater não conseguiu consultar a release.');
+        }
       }
       const state=typeof desktop.getUpdateState==='function'?await desktop.getUpdateState():null;
       if(state?.ready&&state?.version&&state.version!==AZURECORD_VERSION&&state.version!==updateChoiceVersion){
