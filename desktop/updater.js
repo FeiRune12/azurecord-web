@@ -136,10 +136,10 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     log('[updater] Erro:', error?.stack || error);
   });
 
-  const checkNow = async () => {
+  const checkNow = async (manual = true) => {
     if (checkingPromise) return checkingPromise;
     if (downloading || prompting || updateReady) return false;
-    offeredVersion = null;
+    if (manual) offeredVersion = null;
     checkingPromise = (async () => {
       try {
         await autoUpdater.checkForUpdates();
@@ -186,9 +186,9 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
     log('[updater] Atualização pendente ainda não aplicada:', startupState.pendingVersion);
   }
 
-  const startupTimer = setTimeout(checkNow, 1500);
+  const startupTimer = setTimeout(() => checkNow(false), 1500);
   startupTimer.unref?.();
-  const interval = setInterval(checkNow, 15 * 60 * 1000);
+  const interval = setInterval(() => checkNow(false), 15 * 60 * 1000);
   interval.unref?.();
 
   return { checkNow, isReady, readyVersion, installNow };
