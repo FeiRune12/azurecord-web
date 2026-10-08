@@ -3372,7 +3372,7 @@ export default {
         return json({
           name: "Azurecord API",
           status: "online",
-          version: "1.0.1",
+          version: "1.0.2",
         });
       }
 
@@ -3382,7 +3382,7 @@ export default {
           ok: true,
           service: "azurecord-api",
           database: Boolean(env.DB),
-          version: "1.0.1",
+          version: "1.0.2",
           capabilities: {
             cloudAuth: true,
             profileSync: true,
