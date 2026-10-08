@@ -357,8 +357,15 @@ app.whenReady().then(async () => {
       return updaterController?.installNow?.() || false;
     });
     ipcMain.handle('desktop:update-check', async () => {
-      const checked = await updaterController?.checkNow?.();
-      return { checked: checked !== false, ready: !!updaterController?.isReady?.(), version: updaterController?.readyVersion?.() || null };
+      const result = await updaterController?.checkNow?.();
+      if (result && typeof result === 'object') {
+        return {
+          ...result,
+          ready: !!updaterController?.isReady?.() || !!result.ready,
+          version: updaterController?.readyVersion?.() || result.version || null
+        };
+      }
+      return { checked: result !== false, available: false, ready: !!updaterController?.isReady?.(), version: updaterController?.readyVersion?.() || null };
     });
     ipcMain.handle('desktop:update-state', () => ({
       ready: !!updaterController?.isReady?.(),
