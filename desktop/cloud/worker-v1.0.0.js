@@ -22,7 +22,7 @@ function json(data, status = 200, extraHeaders = {}) {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "X-Azurecord-Version": "1.0.1",
+      "X-Azurecord-Version": "1.0.2",
       ...CORS_HEADERS,
       ...extraHeaders,
     },
@@ -1226,6 +1226,7 @@ async function presencePayloadForPeers(env, userId) {
       userId: id,
       status: details.status,
       customStatus: details.customStatus,
+      activity: details.activity || null,
       lastSeenAt: details.lastSeenAt,
       updatedAt: details.updatedAt,
     });
@@ -1829,7 +1830,11 @@ async function handleSocial(request, env, url, path) {
         await env.DB.prepare(`INSERT INTO friendships (id, user_a, user_b, created_at) VALUES (?, ?, ?, ?)`).bind(crypto.randomUUID(), row.sender_id, row.receiver_id, stamp).run();
       }
       await env.DB.prepare(`UPDATE friend_requests SET status = 'accepted', updated_at = ? WHERE id = ?`).bind(stamp, requestId).run();
-      return json({ ok: true });
+      return json({
+        ok: true,
+        request: { id: requestId, from: row.sender_id, to: row.receiver_id, status: 'accepted', updatedAt: stamp },
+        friend: await socialUserById(env, row.sender_id),
+      });
     }
     if (method === "POST" && action === "decline" && row.receiver_id === userId) {
       await env.DB.prepare(`UPDATE friend_requests SET status = 'declined', updated_at = ? WHERE id = ?`).bind(stamp, requestId).run();
