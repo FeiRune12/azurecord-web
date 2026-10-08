@@ -138,15 +138,18 @@ function setupAutoUpdater({ getMainWindow, log = () => {} } = {}) {
 
   const checkNow = async (manual = true) => {
     if (checkingPromise) return checkingPromise;
-    if (downloading || prompting || updateReady) return false;
+    if (updateReady) return { checked: true, available: true, ready: true, version: downloadedVersion };
+    if (downloading || prompting) return { checked: true, available: true, ready: false, version: offeredVersion || null, busy: true };
     if (manual) offeredVersion = null;
     checkingPromise = (async () => {
       try {
-        await autoUpdater.checkForUpdates();
-        return true;
+        const result = await autoUpdater.checkForUpdates();
+        const version = String(result?.updateInfo?.version || '').trim() || null;
+        const available = !!version && version !== app.getVersion();
+        return { checked: true, available, ready: updateReady, version, currentVersion: app.getVersion() };
       } catch (error) {
         log('[updater] Falha ao verificar:', error?.stack || error);
-        return false;
+        return { checked: false, available: false, ready: updateReady, version: downloadedVersion, error: String(error?.message || error) };
       } finally {
         checkingPromise = null;
       }
