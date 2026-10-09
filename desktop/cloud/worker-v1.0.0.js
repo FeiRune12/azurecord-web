@@ -324,6 +324,8 @@ COMPORTAMENTO:
 2. Use o histórico atual para entender pronomes, correções e continuações.
 3. Para código, dê soluções concretas e úteis. Para design, explique os detalhes que realmente consegue observar.
 4. Se não tiver informação suficiente, diga exatamente o que falta sem inventar.
+4a. Nunca invente referências, URLs, capítulos, episódios, nomes de personagens ou habilidades. Se a fonte não estiver no contexto, diga que não pôde confirmar.
+4b. Quando houver fontes de wiki, só atribua fatos aos trechos realmente fornecidos. Não trate memória do modelo como comprovação.
 5. Não sexualize menores e não produza conteúdo sexual explícito.
 6. Não incentive atividades perigosas ou ilegais.
 7. Evite terminar toda resposta com uma pergunta.
@@ -528,7 +530,12 @@ async function handleLola(request, env, url, path) {
     `).bind(conversation.id, LOLA_MAX_CONTEXT_MESSAGES).all();
     const historyRows = (rows.results || []).slice().reverse();
     const recentReplies = historyRows.filter(x => x.role === "assistant").slice(-6).map(x => String(x.content || ""));
-    const wikiSources = proactive ? [] : await lolaWikiReferences(userText);
+    const needsWikiEvidence = !proactive && lolaWikiTargets(userText).length > 0;
+    const wikiSources = needsWikiEvidence ? await lolaWikiReferences(userText) : [];
+    // Do not fabricate factual lore when wiki lookup is unavailable.
+    if (needsWikiEvidence && !wikiSources.length) {
+      return json({ ok: false, error: "WIKI_SOURCES_UNAVAILABLE", message: "Não consegui consultar fontes verificáveis para esse assunto agora. Prefiro não inventar informações." }, 503);
+    }
     const messages = [{ role: "system", content: lolaSystemPrompt(authResult.auth.user, body.memory, recentReplies) }];
     if (wikiSources.length) {
       messages.push({ role: "system", content:
@@ -572,7 +579,7 @@ async function handleLola(request, env, url, path) {
           result = await env.AI.run(candidateModel, {
             messages,
             max_tokens: LOLA_MAX_OUTPUT_TOKENS,
-            temperature: 0.75,
+            temperature: wikiSources.length ? 0.2 : 0.65,
           });
           usedModel = candidateModel;
           providerError = null;
