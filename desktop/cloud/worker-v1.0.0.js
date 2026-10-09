@@ -502,42 +502,51 @@ async function handleLola(request, env, url, path) {
 
     const lolaModel = String(env.LOLA_MODEL || LOLA_MODEL).trim() || LOLA_MODEL;
     const candidateModels = [...new Set([lolaModel, LOLA_FALLBACK_MODEL, LOLA_EMERGENCY_MODEL].filter(Boolean))];
+    // Successful HTTP/AI calls may contain no answer. In that case try the next
+    // model instead of leaving the conversation stuck after a single reply.
+    function lolaAnswerText(output) {
+      const message = output?.choices?.[0]?.message?.content;
+      const content = typeof message === "string" ? message
+        : Array.isArray(message) ? message.filter(part => part?.type === "text").map(part => part.text || "").join("") : "";
+      return String(content || output?.response || output?.result?.response || output?.result?.text || output?.text || "").trim();
+    }
     let result = null;
+    let reply = "";
     let providerError = null;
     let usedModel = lolaModel;
-    for (const candidateModel of candidateModels) {
-      for (let attempt = 0; attempt < 2; attempt++) {
+    // Retry on empty content, model errors and overly large history.
+    for (let pass = 0; pass < 2 && !reply; pass++) {
+      const requestMessages = pass === 0 ? messages : [
+        messages[0],
+        ...messages.slice(-6).filter(m => m.role !== "system")
+      ];
+      for (const candidateModel of candidateModels) {
         try {
-          result = await env.AI.run(candidateModel, {
-            messages,
-            max_tokens: LOLA_MAX_OUTPUT_TOKENS,
-            temperature: 0.75,
+          const output = await env.AI.run(candidateModel, {
+            messages: requestMessages,
+            max_tokens: pass === 0 ? LOLA_MAX_OUTPUT_TOKENS : 500,
+            temperature: 0.55,
           });
+          const answer = lolaAnswerText(output);
+          if (!answer) {
+            console.warn("LOLA AI EMPTY MODEL OUTPUT", candidateModel);
+            continue;
+          }
+          result = output;
+          reply = answer;
           usedModel = candidateModel;
           providerError = null;
           break;
         } catch (error) {
           providerError = error;
-          if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 180));
+          console.warn("LOLA AI MODEL RETRY", candidateModel, String(error?.message || error).slice(0, 220));
         }
       }
-      if (!providerError && result) break;
     }
-    if (providerError) {
-      console.error("LOLA WORKERS AI ERROR", providerError);
-      return json({ ok: false, error: "AI_PROVIDER_ERROR", message: "O Workers AI está configurado, mas não conseguiu gerar a resposta agora. Tente novamente em instantes.", model: usedModel }, 502);
-    }
-
-    // Workers AI can return legacy { response } or OpenAI-style { choices }.
-    // The Llama 4 and Llama 3.3 models currently use choices[0].message.content.
-    const modelContent = result?.choices?.[0]?.message?.content;
-    const reply = String(
-      (typeof modelContent === "string" ? modelContent : Array.isArray(modelContent)
-        ? modelContent.filter(part => part?.type === "text").map(part => part.text || "").join("") : null)
-      ?? result?.response ?? result?.result?.response ?? result?.result?.text ?? result?.text ?? ""
-    ).trim();
     if (!reply) {
-      return json({ ok: false, error: "AI_EMPTY_RESPONSE", message: "O modelo respondeu sem texto." }, 502);
+      console.error("LOLA WORKERS AI UNAVAILABLE", providerError || "All models returned empty answers");
+      return json({ ok: false, error: providerError ? "AI_PROVIDER_ERROR" : "AI_EMPTY_RESPONSE",
+        message: "Não consegui gerar uma resposta agora. Pode tentar enviar novamente?", model: usedModel }, 502);
     }
 
     const latest = await activeLolaConversation(env, userId, true);
