@@ -528,7 +528,14 @@ async function handleLola(request, env, url, path) {
       return json({ ok: false, error: "AI_PROVIDER_ERROR", message: "O Workers AI está configurado, mas não conseguiu gerar a resposta agora. Tente novamente em instantes.", model: usedModel }, 502);
     }
 
-    const reply = String(result?.response ?? result?.result ?? result?.text ?? "").trim();
+    // Workers AI can return legacy { response } or OpenAI-style { choices }.
+    // The Llama 4 and Llama 3.3 models currently use choices[0].message.content.
+    const modelContent = result?.choices?.[0]?.message?.content;
+    const reply = String(
+      (typeof modelContent === "string" ? modelContent : Array.isArray(modelContent)
+        ? modelContent.filter(part => part?.type === "text").map(part => part.text || "").join("") : null)
+      ?? result?.response ?? result?.result?.response ?? result?.result?.text ?? result?.text ?? ""
+    ).trim();
     if (!reply) {
       return json({ ok: false, error: "AI_EMPTY_RESPONSE", message: "O modelo respondeu sem texto." }, 502);
     }
