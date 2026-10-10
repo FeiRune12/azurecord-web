@@ -67,7 +67,7 @@ test('Lola: request retries restore saved responses rather than regenerate them'
   assert.match(worker,/reused: true/);
   assert.match(worker,/responseClientId \|\| null, proactive \? 1 : 0/);
   assert.match(client,/clientId:String\(clientId\)\.slice\(0,120\)/);
-  assert.match(client,/askLolaAi\(text,messages,files,false,message\.id\)/);
+  assert.match(client,/askLolaAi\(text,messages,files,false,replyKey\)/);
 });
 
 test('Lola: repeating a question is still passed to the model',()=>{
@@ -102,6 +102,7 @@ test('Lola: restores orphaned replies in own DM even when another tab is active'
   assert.match(client,/const originalView=\{mode:'dm',serverId:null,channelId:null,dmUserId:'user-lola'\}/);
   assert.match(client,/const messages=\(state\.dmMessages\[dmKey\('user-lola'\)\]\|\|\[\]\)/);
   assert.match(client,/const unanswered=all\[lastUserIndex\]/);
+  assert.match(client,/const originalId=unanswered\.clientId\|\|unanswered\.id/);
   assert.match(client,/const answered=all\.some/);
   assert.match(client,/if\(!answered && recent && !unanswered\._lolaAnswered\)/);
 });
