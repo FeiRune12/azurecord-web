@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const {spawnSync} = require('node:child_process');
 const worker = fs.readFileSync(path.join(__dirname, '..', 'cloud', 'worker-v1.0.3.js'), 'utf8');
 function extract(name) {
   const marker = (name === 'lolaCallWithDeadline' ? 'async function ' : 'function ') + name + '(';
@@ -17,6 +18,12 @@ const names=['lolaChatCommand','lolaWikiTargets','lolaCompactHistory','lolaAnswe
 const fns=vm.runInNewContext(names.map(extract).join('\n')+
   '\n({lolaChatCommand,lolaWikiTargets,lolaCompactHistory,lolaAnswerText,lolaCallWithDeadline})',
   {setTimeout,clearTimeout});
+test('Lola: new Worker parses as a valid JavaScript module',()=>{
+  const file=path.join(__dirname,'..','cloud','worker-v1.0.3.js');
+  const result=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+});
+
 test('Lola: opt-in commands and fandom/Wikipedia routing',()=>{
   assert.equal(fns.lolaChatCommand('Oi'),null);
   assert.equal(fns.lolaChatCommand('/resumir').kind,'summary');
