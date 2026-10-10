@@ -758,10 +758,19 @@
     }
   }
 
-  async function askLolaAi(userText, recentMessages, attachments=[], proactive=false){
-    if(!lolaCloudReady())return {failed:true,code:'login_required'};
+  async function askLolaAi(userText, recentMessages, attachments=[], proactive=false, clientId=null){
+    // The desktop/Android secure session can load after the Lola DM opens.
+    // Recover it before deciding the model is "offline".
+    if(!lolaCloudReady()){
+      const recovered=await ensureCloudSessionReady();
+      if(!recovered){
+        if(cloudToken)scheduleCloudSessionRecovery();
+        return {failed:true,code:!cloudToken?'login_required':
+          (typeof navigator!=='undefined' && navigator.onLine===false?'offline':'cloud_reconnecting')};
+      }
+    }
     const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),90000);
+    const timeout=setTimeout(()=>controller.abort(),42000);
     try{
       const recent=Array.isArray(recentMessages)?recentMessages.slice(-48).map(m=>({
         role:m?.author==='user-lola'?'assistant':'user',
@@ -770,6 +779,9 @@
       })).filter(m=>m.text||m.images.length):[];
       const payloadBase={
         proactive,
+        // Stable ID from the original message protects against duplicate replies
+        // if the request succeeds but the HTTP response is lost.
+        ...(clientId?{clientId:String(clientId).slice(0,120)}:{}),
         userText:String(userText||'').slice(0,7000),
         recent,
         attachments:(attachments||[]).slice(0,3).map(f=>({dataUrl:f?.dataUrl||'',url:f?.url||'',name:f?.name||'',type:f?.type||'',visual:f?.visual||null})),
@@ -791,6 +803,13 @@
               continue;
             }
           }
+          // Retry only a transport-level interruption. The Worker already retries
+          // providers, so retrying every server-side 502 would waste inference.
+          if(attempt===0 && !controller.signal.aborted &&
+             ['cloud_network_error','cloud_timeout'].includes(String(err.code||''))){
+            await new Promise(resolve=>setTimeout(resolve,500));
+            continue;
+          }
           throw err;
         }
       }
@@ -799,7 +818,8 @@
         saveNow();
       }
       return data?.reply?{text:String(data.reply).trim(),message:data.message||null,
-        model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}:null;
+        model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}
+        :{failed:true,code:'AI_EMPTY_RESPONSE'};
     }catch(err){
       console.warn('[Azurecord] Lola Cloud:',err?.message||err);
       return {failed:true,code:err.code||'ai_error',reason:err.message||''};
@@ -3089,8 +3109,18 @@
       }
       const local=state.dmMessages[key]||[];
       const beforeSignature=messageListUiSignature(local);
-      const merged=new Map(local.map(m=>[m.clientId||m.serverId||m.id,m]));
-      for(const m of data.messages||[])merged.set(m.clientId||m.id,{...m,author:m.senderId,serverId:m.id,pending:false,failed:false});
+      // Assistant and user messages can share a clientId for retry recovery;
+      // they must never overwrite one another when merging Cloud history.
+      const messageMergeKey=(m)=>{
+        const lolaReply=(m.senderId||m.author)==='user-lola';
+        return (lolaReply?'assistant:':'user:')+
+          (lolaReply?(m.serverId||m.id):(m.clientId||m.serverId||m.id));
+      };
+      const merged=new Map(local.map(m=>[messageMergeKey(m),m]));
+      for(const m of data.messages||[]){
+        const remote={...m,author:m.senderId,serverId:m.id,pending:false,failed:false};
+        merged.set(messageMergeKey(remote),remote);
+      }
       state.dmMessages[key]=[...merged.values()].sort((a,b)=>(a.time||0)-(b.time||0));
       const messagesChanged=beforeSignature!==messageListUiSignature(state.dmMessages[key]);
       save();
@@ -3099,6 +3129,23 @@
         if(messagesChanged)renderMessages();
       }
       flushPendingDms(id).catch(err=>console.warn('[Azurecord] Fila DM:',err));
+      if(id==='user-lola'){
+        // After a reload, finish an already-confirmed message that never got
+        // a Cloud reply. An existing answer prevents duplicate generation.
+        const all=state.dmMessages[key]||[];
+        const lastUserIndex=all.findLastIndex(m=>m.author===me && m.serverId && !m.pending);
+        if(lastUserIndex>=0){
+          const unanswered=all[lastUserIndex];
+          const originalId=unanswered.clientId||unanswered.id;
+          const answered=all.some(m=>m.author==='user-lola' &&
+            (m.simulatedFor===originalId || (m.clientId && m.clientId===originalId))) ||
+            all.slice(lastUserIndex+1).some(m=>m.author==='user-lola' && !m.localGreeting);
+          const recent=Date.now()-Number(unanswered.time||0)<10*60*1000;
+          if(!answered && recent && !unanswered._lolaAnswered){
+            void simulateLolaReply(unanswered).catch(err=>console.warn('[Azurecord] Lola restore:',err?.message||err));
+          }
+        }
+      }
       return true;
     }catch(err){
       console.warn('[Azurecord] DM sync failed:',err.message);
@@ -4099,25 +4146,44 @@
     return choices[Math.floor((mem.messageCount+choices.length)%choices.length)];
   }
 
+  const lolaReplyInflight=new Set();
   async function simulateLolaReply(message){
-    if(!message || message.author!==state.currentAccountId || message.__simulatedReply)return;
-    const target=view.mode==='dm'?view.dmUserId:'user-lola';
-    if(target!=='user-lola')return;
+    if(!message || message.author!==state.currentAccountId || message._lolaAnswered)return;
+    // Never generate a Cloud reply until the user's message exists on Cloud.
+    // Pending sends are retried by the regular DM outbox flush.
+    if(cloudToken && !message.serverId)return;
+    const replyKey=String(message.clientId||message.id||message.serverId||'');
+    if(lolaReplyInflight.has(replyKey))return;
+    lolaReplyInflight.add(replyKey);
+    try{
     const epoch=lolaChatEpoch;
     const accountAtSend=state.currentAccountId;
-    const originalView={mode:view.mode,serverId:view.serverId,channelId:view.channelId,dmUserId:view.dmUserId};
+    // A reply belongs to Lola's DM even if the user switches tabs mid-request.
+    const originalView={mode:'dm',serverId:null,channelId:null,dmUserId:'user-lola'};
     const text=String(message.text||'').trim();
     const mem=learnFromUserText(text);mem.lastIntent=inferLolaIntent(text);
     const files=attachmentListForMessage(message);
-    const messages=getMessages().filter(m=>m?.id!==message.id).slice(-32);
-    const aiResult=await askLolaAi(text,messages,files,false);
+    const messages=(state.dmMessages[dmKey('user-lola')]||[])
+      .filter(m=>m?.id!==message.id).slice(-32);
+    const aiResult=await askLolaAi(text,messages,files,false,replyKey);
     if(accountAtSend!==state.currentAccountId||epoch!==lolaChatEpoch||aiResult?.discarded)return;
     if(aiResult?.newChat){await startNewLolaChat();return;}
     const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
     let reply=aiResult?.text;
     if(!reply){
-      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. ',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. ',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. ',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. '};
-      reply=diagnostic[aiResult?.code]||window.AzurecordLola.offlineReply(text,previousReplies,files.length);
+      const diagnostic={
+        AI_NOT_CONFIGURED:'O vínculo de IA não está disponível no Worker. Tente novamente mais tarde.',
+        AI_PROVIDER_ERROR:'O provedor de IA falhou nesta resposta. Tente novamente em alguns segundos.',
+        AI_EMPTY_RESPONSE:'O servidor não retornou texto. Tente novamente.',
+        AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Aguarde um pouco e tente novamente.',
+        cloud_timeout:'A requisição demorou demais. Vou tentar normalmente na próxima mensagem.',
+        cloud_network_error:'Não consegui chegar ao Worker agora. Confira sua conexão e tente novamente.',
+        cloud_reconnecting:'Sua sessão Cloud está reconectando. Tente novamente daqui a pouco.',
+        offline:'Seu dispositivo está sem internet. Assim que voltar, envie novamente.',
+        login_required:'Sua sessão Cloud não está ativa. Entre na sua conta para usar a Lola.'
+      };
+      const errorCode=String(aiResult?.code||'ai_error');
+      reply=diagnostic[errorCode]||('Não consegui completar a chamada da IA (código: '+errorCode.slice(0,48)+'). Tente novamente.');
     }
     if(!reply)return;
     // Ao falhar o provedor, não inventa uma resposta factual e nem entra
@@ -4125,15 +4191,17 @@
     const key=originalView.mode==='dm'?dmKey('user-lola'):`${originalView.serverId}|${originalView.channelId}`;
     let arr=originalView.mode==='dm'?state.dmMessages[key]||[]:state.channelMessages[key]||[];
     const backendId=aiResult?.message?.id||null;
-    if(arr.some(m=>(backendId&&(m.id===backendId||m.serverId===backendId))||m.simulatedFor===message.id))return;
+    if(arr.some(m=>(backendId&&(m.id===backendId||m.serverId===backendId))||m.simulatedFor===replyKey)){message._lolaAnswered=true;return;}
     arr.push({id:backendId||uid('msg'),serverId:backendId||undefined,author:'user-lola',text:reply,
-      time:aiResult?.message?.time||now(),simulatedFor:message.id,backendPersisted:!!backendId,
+      time:aiResult?.message?.time||now(),simulatedFor:replyKey,backendPersisted:!!backendId,
       ...(originalView.mode==='dm'?{lolaSessionId:aiResult?.sessionId||state.lolaSessionInfo?.[accountAtSend]?.id||'legacy'}:{})});
     if(originalView.mode==='dm')state.dmMessages[key]=arr;else state.channelMessages[key]=arr;
+    message._lolaAnswered=true;
     mem.replyHistory=capList([...(mem.replyHistory||[]),reply],16);
     learnFromUserText(reply,'lola');save();
     if(originalView.mode==='dm'&&view.mode==='dm'&&view.dmUserId==='user-lola')renderMessages();
     else if(originalView.mode==='server'&&view.mode==='server'&&view.serverId===originalView.serverId&&view.channelId===originalView.channelId)renderMessages();
+    }finally{lolaReplyInflight.delete(replyKey);}
   }
   function renderAttachmentCards(files=[]){
     return files.map(f=>{
@@ -4359,9 +4427,15 @@
         if(message.failed&&message.retryable===false)continue;
         if(other==='user-lola'){
           const currentSession=state.lolaSessionInfo?.[me]?.id||await ensureLolaSession();
+          // A pending send from an archived conversation must not leak into a new one.
+          if(message.lolaSessionId && message.lolaSessionId!=='legacy' &&
+             message.lolaSessionId!==currentSession)continue;
           if(currentSession)message.lolaSessionId=currentSession;
         }
-        await sendDmToBackend(message,other);
+        const confirmed=await sendDmToBackend(message,other);
+        if(other==='user-lola' && confirmed && !message._lolaAnswered){
+          void simulateLolaReply(message).catch(err=>console.warn('[Azurecord] Lola recovery:',err?.message||err));
+        }
       }
     }
   }
@@ -4488,8 +4562,11 @@
         m.pending=false;save();simulateLolaReply(m).catch(()=>{});
       }else{
         const persisted=await sendDmToBackend(m,dmId);
-        if(dmId==='user-lola' && persisted){simulateLolaReply(m).catch(err=>console.warn('[Azurecord] Lola:',err));}
-        else if(dmId==='user-lola' && !persisted){simulateLolaReply(m).catch(()=>{});}
+        if(dmId==='user-lola' && persisted){
+          void simulateLolaReply(m).catch(err=>console.warn('[Azurecord] Lola:',err));
+        }
+        // No AI call on failed persistence: the outbox will finish the send
+        // and trigger Lola when Cloud confirms it.
       }
     }else if(mode==='server'){
       m.pending=true;m.failed=false;m.retryable=true;saveNow();renderMessages();
