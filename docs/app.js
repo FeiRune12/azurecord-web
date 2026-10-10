@@ -3126,8 +3126,9 @@
         const lastUserIndex=all.findLastIndex(m=>m.author===me && m.serverId && !m.pending);
         if(lastUserIndex>=0){
           const unanswered=all[lastUserIndex];
+          const originalId=unanswered.clientId||unanswered.id;
           const answered=all.some(m=>m.author==='user-lola' &&
-            (m.simulatedFor===unanswered.id || (m.clientId && m.clientId===unanswered.id))) ||
+            (m.simulatedFor===originalId || (m.clientId && m.clientId===originalId))) ||
             all.slice(lastUserIndex+1).some(m=>m.author==='user-lola' && !m.localGreeting);
           const recent=Date.now()-Number(unanswered.time||0)<10*60*1000;
           if(!answered && recent && !unanswered._lolaAnswered){
@@ -4141,7 +4142,7 @@
     // Never generate a Cloud reply until the user's message exists on Cloud.
     // Pending sends are retried by the regular DM outbox flush.
     if(cloudToken && !message.serverId)return;
-    const replyKey=String(message.id||message.serverId||'');
+    const replyKey=String(message.clientId||message.id||message.serverId||'');
     if(lolaReplyInflight.has(replyKey))return;
     lolaReplyInflight.add(replyKey);
     try{
@@ -4154,7 +4155,7 @@
     const files=attachmentListForMessage(message);
     const messages=(state.dmMessages[dmKey('user-lola')]||[])
       .filter(m=>m?.id!==message.id).slice(-32);
-    const aiResult=await askLolaAi(text,messages,files,false,message.id);
+    const aiResult=await askLolaAi(text,messages,files,false,replyKey);
     if(accountAtSend!==state.currentAccountId||epoch!==lolaChatEpoch||aiResult?.discarded)return;
     if(aiResult?.newChat){await startNewLolaChat();return;}
     const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
@@ -4169,9 +4170,9 @@
     const key=originalView.mode==='dm'?dmKey('user-lola'):`${originalView.serverId}|${originalView.channelId}`;
     let arr=originalView.mode==='dm'?state.dmMessages[key]||[]:state.channelMessages[key]||[];
     const backendId=aiResult?.message?.id||null;
-    if(arr.some(m=>(backendId&&(m.id===backendId||m.serverId===backendId))||m.simulatedFor===message.id)){message._lolaAnswered=true;return;}
+    if(arr.some(m=>(backendId&&(m.id===backendId||m.serverId===backendId))||m.simulatedFor===replyKey)){message._lolaAnswered=true;return;}
     arr.push({id:backendId||uid('msg'),serverId:backendId||undefined,author:'user-lola',text:reply,
-      time:aiResult?.message?.time||now(),simulatedFor:message.id,backendPersisted:!!backendId,
+      time:aiResult?.message?.time||now(),simulatedFor:replyKey,backendPersisted:!!backendId,
       ...(originalView.mode==='dm'?{lolaSessionId:aiResult?.sessionId||state.lolaSessionInfo?.[accountAtSend]?.id||'legacy'}:{})});
     if(originalView.mode==='dm')state.dmMessages[key]=arr;else state.channelMessages[key]=arr;
     message._lolaAnswered=true;
