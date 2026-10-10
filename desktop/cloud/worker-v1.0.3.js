@@ -451,7 +451,7 @@ function lolaWikiTargets(query) {
   const command = lolaChatCommand(query);
   const research = command?.kind === "research";
   const q = String(research ? command.topic : query || "").slice(0, 250);
-  const gunvolt = /\b(?:gunvolt|azure striker|copen|kirin|joule|septima|sumeragi|asimov)\b/i.test(q);
+  const gunvolt = /\b(?:gunvolt|azure striker|copen|kirin|joule|septima|sumeragi|asimov|zed|anthem|luminous avenger)\b/i.test(q);
   const inazuma = /\b(?:inazuma|endou|gouenji|kidou|tenma|victory road)\b/i.test(q);
   const wiki = research || /\b(?:wiki|wikipedia|wikip[eé]dia|fandom)\b/i.test(q);
   if (!gunvolt && !inazuma && !wiki) return [];
@@ -742,7 +742,7 @@ async function handleLola(request, env, url, path) {
     }
 
     const verifiedDirect = gunvoltVerified || (
-      wikiRelevant && !wikiSources.length && lolaGunvoltFactualQuestion(userText)
+      lolaGunvoltFactualQuestion(userText) && !wikiSources.length
         ? { reply: lolaGunvoltUnsupportedReply(userText), sources: [] }
         : null
     );
@@ -821,7 +821,7 @@ async function handleLola(request, env, url, path) {
       message: lolaMessagePublic(row, userId, conversation.id),
       sessionId: conversation.id,
       model: usedModel,
-      provider: "cloudflare-workers-ai",
+      provider: verifiedDirect || usedModel === "source-guard" ? "verified-knowledge" : "cloudflare-workers-ai",
       wikiSources: verifiedDirect?.sources?.length
         ? verifiedDirect.sources.map(url => ({title:"INTI CREATES / Gunvolt Official",url,wiki:"Fonte oficial"}))
         : wikiSources.map(({title,url,wiki}) => ({title,url,wiki})),
