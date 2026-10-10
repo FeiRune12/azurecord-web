@@ -575,11 +575,30 @@ async function handleLola(request, env, url, path) {
     const body = await readJson(request);
     if (!body) return json({ ok: false, error: "JSON inválido." }, 400);
     const proactive = Boolean(body.proactive);
+    // The caller's own message ID makes retrying after a lost HTTP response safe.
+    const responseClientId = String(body.clientId || "").trim().slice(0, 120);
     const conversation = await activeLolaConversation(env, userId, true);
     const rawSession = String(body.sessionId || "").trim();
     const requestedSession = (!rawSession || rawSession === "legacy") ? conversation.id : rawSession;
     if (requestedSession !== conversation.id) {
       return json({ ok: false, error: "conversation_changed", message: "A conversa mudou. O cliente deve reenviar na conversa atual.", sessionId: conversation.id }, 409);
+    }
+
+    if (responseClientId) {
+      const existing = await env.DB.prepare(`
+        SELECT * FROM lola_messages
+        WHERE conversation_id = ? AND role = 'assistant' AND client_id = ?
+        LIMIT 1
+      `).bind(conversation.id, responseClientId).first();
+      if (existing) {
+        return json({
+          ok: true, reply: existing.content || "",
+          message: lolaMessagePublic(existing, userId, conversation.id),
+          sessionId: conversation.id, model: "saved", provider: "cloudflare-workers-ai",
+          reused: true, wikiSources: [], proactive: Number(existing.proactive || 0) === 1,
+          usage: null
+        });
+      }
     }
 
     const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
@@ -627,8 +646,12 @@ async function handleLola(request, env, url, path) {
     for (const turn of lolaCompactHistory(historyRows)) messages.push(turn);
 
     // Se a mensagem ainda não foi persistida por algum motivo, inclua-a no contexto.
+    const lastHistoryMessage = historyRows[historyRows.length - 1];
     const lastUser = [...historyRows].reverse().find(x => x.role === "user");
-    const currentAlreadyPersisted = !!lastUser && String(lastUser.content || "").trim() === userText.trim();
+    // Comparing against ANY previous user message dropped repeated questions
+    // when an assistant reply was the last item in the history.
+    const currentAlreadyPersisted = !!lastHistoryMessage && lastHistoryMessage.role === "user" &&
+      String(lastHistoryMessage.content || "").trim() === userText.trim();
     if (!proactive && !currentAlreadyPersisted) {
       messages.push({ role: "user", content: lolaContentFromTextAndImages(userText, attachments) });
     } else if (!proactive && attachments.length) {
@@ -702,8 +725,8 @@ async function handleLola(request, env, url, path) {
       env.DB.prepare(`
         INSERT INTO lola_messages (
           id, conversation_id, role, content, created_at, client_id, files_json, reply_json, proactive
-        ) VALUES (?, ?, 'assistant', ?, ?, NULL, '[]', NULL, ?)
-      `).bind(id, conversation.id, reply, stamp, proactive ? 1 : 0),
+        ) VALUES (?, ?, 'assistant', ?, ?, ?, '[]', NULL, ?)
+      `).bind(id, conversation.id, reply, stamp, responseClientId || null, proactive ? 1 : 0),
       env.DB.prepare(`UPDATE lola_conversations SET updated_at = ? WHERE id = ?`).bind(stamp, conversation.id),
     ]);
 
