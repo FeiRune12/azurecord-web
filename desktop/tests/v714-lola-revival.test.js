@@ -110,3 +110,54 @@ test('Lola: restores orphaned replies in own DM even when another tab is active'
 test('Lola: stale queued messages never escape an archived conversation',()=>{
   assert.match(client,/message\.lolaSessionId!==currentSession\)continue/);
 });
+
+
+// Stable official sources for the Gunvolt canon test:
+// https://gunvolt.com/en/GV1/
+// https://gunvolt.com/en/GV2/product/
+// https://gunvolt.com/en/GV3/product/
+// https://inticreates.com/gunvolt-chronicles-luminous-avenger-ix-coming-to-switch-ps4-steam-on-september-26th-2019/
+const canonStart=worker.indexOf('const LOLA_GUNVOLT_OFFICIAL =');
+const canonEnd=worker.indexOf('function lolaWikiTargets(query)',canonStart);
+assert.ok(canonStart>=0 && canonEnd>canonStart);
+const canon=vm.runInNewContext(worker.slice(canonStart,canonEnd)+
+  '\n({lolaGunvoltVerifiedAnswer,lolaGunvoltSuspect,lolaGunvoltFactualQuestion,lolaGunvoltUnsupportedReply,lolaGunvoltRelevant})');
+
+test('Lola: Gunvolt overview is sourced, with real developer and dates',()=>{
+  const answer=canon.lolaGunvoltVerifiedAnswer('O que é Azure Striker Gunvolt?');
+  assert.ok(answer);
+  assert.match(answer.reply,/INTI CREATES/);
+  assert.match(answer.reply,/Sumeragi/);
+  assert.match(answer.reply,/2014/);
+  assert.match(answer.reply,/2016/);
+  assert.match(answer.reply,/2022/);
+  assert.match(answer.reply,/Luminous Avenger iX/);
+  assert.match(answer.reply,/Kirin/);
+  assert.doesNotMatch(answer.reply,/INT_SYS|Natsume|Dr[.] Black|2017\)|2020\)/i);
+  assert.ok(answer.sources.every(src=>src.startsWith('https://')));
+});
+
+test('Lola: development, years and major characters cite official sources',()=>{
+  const studio=canon.lolaGunvoltVerifiedAnswer('Quem desenvolveu Gunvolt?');
+  assert.match(studio.reply,/INTI CREATES/);
+  const dates=canon.lolaGunvoltVerifiedAnswer('Quando saiu Gunvolt 2 e Gunvolt 3?');
+  assert.match(dates.reply,/Gunvolt 2 \(2016\)/);
+  assert.match(dates.reply,/Gunvolt 3 \(2022\)/);
+  const copen=canon.lolaGunvoltVerifiedAnswer('Quem é Copen?');
+  assert.match(copen.reply,/Luminous Avenger iX/);
+  const kirin=canon.lolaGunvoltVerifiedAnswer('Quem é Kirin?');
+  assert.match(kirin.reply,/Gunvolt 3/);
+  assert.equal(canon.lolaGunvoltVerifiedAnswer('Oi, Lola!'),null);
+});
+
+test('Lola: catches screenshot hallucinations and fails closed for unknown lore',()=>{
+  const impossible='A série foi criada pela INT_SYS, publicada pela Natsume, e o vilão é Dr. Black. Gunvolt 2 (2017), Gunvolt 3 (2020).';
+  assert.equal(canon.lolaGunvoltSuspect(impossible),true);
+  assert.equal(canon.lolaGunvoltSuspect('Gunvolt 2 (2016), Gunvolt 3 (2022), INTI CREATES'),false);
+  assert.equal(canon.lolaGunvoltFactualQuestion('Quem é Zed em Gunvolt 3?'),true);
+  assert.equal(canon.lolaGunvoltVerifiedAnswer('Quem é Zed em Gunvolt 3?'),null);
+  assert.match(canon.lolaGunvoltUnsupportedReply('Quem é Zed em Gunvolt 3?'),/não consegui verificar/);
+  assert.match(worker,/lolaGunvoltFactualQuestion\(userText\) && !wikiSources\.length/);
+  assert.match(worker,/lolaGunvoltSuspect\(reply\)/);
+  assert.match(worker,/const gunvoltVerified = !proactive \? lolaGunvoltVerifiedAnswer\(userText\) : null/);
+});
