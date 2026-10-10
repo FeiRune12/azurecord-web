@@ -161,3 +161,20 @@ test('Lola: catches screenshot hallucinations and fails closed for unknown lore'
   assert.match(worker,/lolaGunvoltSuspect\(reply\)/);
   assert.match(worker,/const gunvoltVerified = !proactive \? lolaGunvoltVerifiedAnswer\(userText\) : null/);
 });
+
+
+test('Lola: session is recovered before displaying an offline diagnosis',()=>{
+  assert.match(client,/if\(!lolaCloudReady\(\)\)\{\s+const recovered=await ensureCloudSessionReady\(\)/);
+  assert.match(client,/if\(cloudToken\)scheduleCloudSessionRecovery\(\)/);
+  assert.match(client,/return \{failed:true,code:!cloudToken\?'login_required'/);
+  assert.match(client,/:\{failed:true,code:'AI_EMPTY_RESPONSE'\}/);
+});
+
+test('Lola: errors identify their origin instead of falsely claiming model outage',()=>{
+  assert.match(client,/cloud_reconnecting:'Sua sessão Cloud está reconectando/);
+  assert.match(client,/login_required:'Sua sessão Cloud não está ativa/);
+  assert.match(client,/AI_PROVIDER_ERROR:'O provedor de IA falhou/);
+  assert.match(client,/cloud_network_error:'Não consegui chegar ao Worker/);
+  assert.match(client,/Não consegui completar a chamada da IA \(código:/);
+  assert.doesNotMatch(client,/reply=diagnostic\[aiResult\?\.code\]\|\|window.AzurecordLola.offlineReply/);
+});
