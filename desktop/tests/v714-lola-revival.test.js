@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const {spawnSync} = require('node:child_process');
-const worker = fs.readFileSync(path.join(__dirname, '..', 'cloud', 'worker-v1.0.3.js'), 'utf8');
+const worker = fs.readFileSync(path.join(__dirname, '..', 'cloud', 'worker-v1.0.4.js'), 'utf8');
 const client=fs.readFileSync(path.resolve(__dirname,'..','..','docs','app.js'),'utf8');
 function extract(name) {
   const marker = (name === 'lolaCallWithDeadline' ? 'async function ' : 'function ') + name + '(';
@@ -20,7 +20,7 @@ const fns=vm.runInNewContext(names.map(extract).join('\n')+
   '\n({lolaChatCommand,lolaWikiTargets,lolaCompactHistory,lolaAnswerText,lolaCallWithDeadline})',
   {setTimeout,clearTimeout});
 test('Lola: new Worker parses as a valid JavaScript module',()=>{
-  const file=path.join(__dirname,'..','cloud','worker-v1.0.3.js');
+  const file=path.join(__dirname,'..','cloud','worker-v1.0.4.js');
   const result=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
 });
@@ -30,7 +30,7 @@ test('Lola: opt-in commands and fandom/Wikipedia routing',()=>{
   assert.equal(fns.lolaChatCommand('/resumir').kind,'summary');
   assert.equal(fns.lolaChatCommand('/ideias app').kind,'ideas');
   assert.equal(fns.lolaChatCommand('/pesquisar Gunvolt').kind,'research');
-  assert.equal(fns.lolaWikiTargets('/pesquisar Gunvolt')[0].host,'azurestrikergunvolt.fandom.com');
+  assert.equal(fns.lolaWikiTargets('/pesquisar Gunvolt')[0].host,'pt.wikipedia.org');
   assert.equal(fns.lolaWikiTargets('/pesquisar energia solar')[0].host,'pt.wikipedia.org');
   assert.equal(fns.lolaWikiTargets('conversa casual').length,0);
 });
@@ -157,8 +157,8 @@ test('Lola: catches screenshot hallucinations and fails closed for unknown lore'
   assert.equal(canon.lolaGunvoltFactualQuestion('Quem é Zed em Gunvolt 3?'),true);
   assert.equal(canon.lolaGunvoltVerifiedAnswer('Quem é Zed em Gunvolt 3?'),null);
   assert.match(canon.lolaGunvoltUnsupportedReply('Quem é Zed em Gunvolt 3?'),/não consegui verificar/);
-  assert.match(worker,/lolaGunvoltFactualQuestion\(userText\) && !wikiSources\.length/);
-  assert.match(worker,/lolaGunvoltSuspect\(reply\)/);
+  assert.match(worker,/lolaOfficialFactualIntent\(userText\)/);
+  assert.match(worker,/lolaFactualContradiction\(reply,topic\)/);
   assert.match(worker,/const gunvoltVerified = !proactive \? lolaGunvoltVerifiedAnswer\(userText\) : null/);
 });
 
@@ -177,4 +177,69 @@ test('Lola: errors identify their origin instead of falsely claiming model outag
   assert.match(client,/cloud_network_error:'Não consegui chegar ao Worker/);
   assert.match(client,/Não consegui completar a chamada da IA \(código:/);
   assert.doesNotMatch(client,/reply=diagnostic\[aiResult\?\.code\]\|\|window.AzurecordLola.offlineReply/);
+});
+
+
+// Evidence: official LEVEL5 catalogue/history, product and Inazuma 2018 event:
+// https://www.level5.co.jp/products/index.html
+// https://www.level5.co.jp/company/history.html
+// https://www.inazuma.jp/victory-road/pt-br/topics/250719/
+// https://www.inazuma.jp/fes2018/
+const officialEnd=worker.indexOf('function lolaWikiTargets(query)',canonStart);
+assert.ok(officialEnd>canonStart);
+const official=vm.runInNewContext(worker.slice(canonStart,officialEnd)+
+  '\n({lolaInazumaVerifiedAnswer,lolaOfficialTargets,lolaOfficialUrlAllowed,'+
+  'lolaOfficialTopic,lolaOfficialEvidenceCoversQuestion,lolaFactualContradiction,'+
+  'lolaOnlyApprovedSourceUrls,lolaSourceSafeAnswer,lolaOfficialPageText})',{URL});
+
+test('Official sources: Inazuma dates from LEVEL5, not alternate history',()=>{
+  const a=official.lolaInazumaVerifiedAnswer('O que é Inazuma Eleven?');
+  assert.ok(a);
+  for(const term of ['LEVEL5','2008','2009','2010','2011','2025'])
+    assert.ok(a.reply.includes(term),term);
+  assert.doesNotMatch(a.reply,/Yoshihiko Hikari|Ares no Sky|Victory Road \(2012\)/);
+  assert.ok(a.sources.every(official.lolaOfficialUrlAllowed));
+});
+test('Official sources: Victory Road launch in November 2025',()=>{
+  const a=official.lolaInazumaVerifiedAnswer('Quando lançou Inazuma Eleven Victory Road?');
+  assert.match(a.reply,/13\/11\/2025/);
+  assert.ok(a.sources.some(s=>s.includes('inazuma.jp')));
+});
+test('Official sources: distinguishes Ares and Orion anime titles',()=>{
+  const a=official.lolaInazumaVerifiedAnswer('O que é Orion em Inazuma Eleven?');
+  assert.match(a.reply,/Orion no Kokuin/);
+  assert.match(a.reply,/2018/);
+});
+test('Official source guard: screenshot errors and invented URLs blocked',()=>{
+  const fake='Yoshihiko Hikari, Victory Road (2012), Ares no Sky (2015), Orion no Koku (2019)';
+  assert.equal(official.lolaFactualContradiction(fake,'inazuma'),true);
+  assert.equal(official.lolaFactualContradiction('Victory Road 2025','inazuma'),false);
+  assert.equal(official.lolaFactualContradiction('Dr. Black criou Gunvolt','gunvolt'),true);
+  assert.equal(official.lolaOfficialUrlAllowed('http://www.inazuma.jp/fes2018/'),false);
+  assert.equal(official.lolaOfficialUrlAllowed('https://www.inazuma.jp.evil.example/fes2018/'),false);
+  const allowed=[{url:'https://www.level5.co.jp/products/index.html'}];
+  assert.equal(official.lolaOnlyApprovedSourceUrls('https://fake.example/',allowed),false);
+  assert.equal(official.lolaOnlyApprovedSourceUrls('https://www.level5.co.jp/products/index.html',allowed),true);
+});
+test('Official source guard: unknown character without supporting passage remains unverified',()=>{
+  const docs=[{url:'https://gunvolt.com/en/GV3/product/',origin:'official-static',excerpt:'Gunvolt 3 foi lançado em 2022.'}];
+  assert.equal(official.lolaOfficialTopic('Quem é Zed em Gunvolt 3?'),'gunvolt');
+  assert.equal(official.lolaOfficialEvidenceCoversQuestion('Quem é Zed em Gunvolt 3?',docs),false);
+  assert.match(official.lolaSourceSafeAnswer('Quem é Zed em Gunvolt 3?',docs),/Prefiro não inventar/);
+});
+test('Official source guard: HTML strips script content, never executes page instructions',()=>{
+  const html='<script>alert("injected")</script><main><p>Victory Road 2025</p></main>';
+  const plain=official.lolaOfficialPageText(html,'Victory Road');
+  assert.doesNotMatch(plain,/alert|injected/);
+  assert.match(plain,/Victory Road 2025/);
+});
+test('Official source guard: Wikipedia secondary and Fandom not automatic',()=>{
+  const targets=fns.lolaWikiTargets('/pesquisar Inazuma Eleven');
+  assert.ok(targets.every(t=>t.host.endsWith('wikipedia.org')));
+  assert.equal(fns.lolaWikiTargets('Quem é Endou?').length,0);
+  assert.match(worker,/FONTES SECUNDÁRIAS, NÃO OFICIAIS/);
+  assert.match(worker,/DOCUMENTOS OFICIAIS VERIFICÁVEIS/);
+  assert.match(worker,/lolaOfficialLookup\(userText\)/);
+  assert.match(worker,/lolaOfficialEvidenceCoversQuestion\(userText,officialSources\)/);
+  assert.doesNotMatch(worker,/host: "inazuma-eleven.fandom.com"/);
 });
