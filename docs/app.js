@@ -759,7 +759,16 @@
   }
 
   async function askLolaAi(userText, recentMessages, attachments=[], proactive=false, clientId=null){
-    if(!lolaCloudReady())return {failed:true,code:'login_required'};
+    // The desktop/Android secure session can load after the Lola DM opens.
+    // Recover it before deciding the model is "offline".
+    if(!lolaCloudReady()){
+      const recovered=await ensureCloudSessionReady();
+      if(!recovered){
+        if(cloudToken)scheduleCloudSessionRecovery();
+        return {failed:true,code:!cloudToken?'login_required':
+          (typeof navigator!=='undefined' && navigator.onLine===false?'offline':'cloud_reconnecting')};
+      }
+    }
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),42000);
     try{
@@ -809,7 +818,8 @@
         saveNow();
       }
       return data?.reply?{text:String(data.reply).trim(),message:data.message||null,
-        model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}:null;
+        model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}
+        :{failed:true,code:'AI_EMPTY_RESPONSE'};
     }catch(err){
       console.warn('[Azurecord] Lola Cloud:',err?.message||err);
       return {failed:true,code:err.code||'ai_error',reason:err.message||''};
@@ -4161,8 +4171,19 @@
     const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
     let reply=aiResult?.text;
     if(!reply){
-      const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. ',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. ',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. ',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',cloud_timeout:'A resposta demorou demais. A conexão com a IA pode estar instável; tente novamente. ',cloud_network_error:'A conexão com a IA caiu temporariamente. Tente novamente em instantes. ',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. '};
-      reply=diagnostic[aiResult?.code]||window.AzurecordLola.offlineReply(text,previousReplies,files.length);
+      const diagnostic={
+        AI_NOT_CONFIGURED:'O vínculo de IA não está disponível no Worker. Tente novamente mais tarde.',
+        AI_PROVIDER_ERROR:'O provedor de IA falhou nesta resposta. Tente novamente em alguns segundos.',
+        AI_EMPTY_RESPONSE:'O servidor não retornou texto. Tente novamente.',
+        AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Aguarde um pouco e tente novamente.',
+        cloud_timeout:'A requisição demorou demais. Vou tentar normalmente na próxima mensagem.',
+        cloud_network_error:'Não consegui chegar ao Worker agora. Confira sua conexão e tente novamente.',
+        cloud_reconnecting:'Sua sessão Cloud está reconectando. Tente novamente daqui a pouco.',
+        offline:'Seu dispositivo está sem internet. Assim que voltar, envie novamente.',
+        login_required:'Sua sessão Cloud não está ativa. Entre na sua conta para usar a Lola.'
+      };
+      const errorCode=String(aiResult?.code||'ai_error');
+      reply=diagnostic[errorCode]||('Não consegui completar a chamada da IA (código: '+errorCode.slice(0,48)+'). Tente novamente.');
     }
     if(!reply)return;
     // Ao falhar o provedor, não inventa uma resposta factual e nem entra
