@@ -530,7 +530,13 @@ async function lolaWikiLookup(question) {
       if (!response.ok) return [];
       const payload = await response.json();
       if (!Array.isArray(payload?.query?.pages)) return [];
+      // A Wikipedia result for "Zed" or "Kirin" can refer to something
+      // entirely unrelated. Require game-specific evidence before passing
+      // general-encyclopedia content to Lola as Gunvolt canon.
+      const gunvoltTopic = lolaGunvoltRelevant(question);
       return payload.query.pages.filter(p => p?.title && typeof p.extract === "string" && p.extract.trim().length > 60)
+        .filter(p => !gunvoltTopic || !host.endsWith("wikipedia.org") ||
+          /\b(?:gunvolt|sumeragi|inti creates|luminous avenger)\b/i.test(String(p.title) + " " + String(p.extract)))
         .slice(0,2).map(p => ({
           title: String(p.title).slice(0,130),
           url: typeof p.fullurl === "string" && p.fullurl.startsWith("https://" + host + "/")
