@@ -3099,8 +3099,18 @@
       }
       const local=state.dmMessages[key]||[];
       const beforeSignature=messageListUiSignature(local);
-      const merged=new Map(local.map(m=>[m.clientId||m.serverId||m.id,m]));
-      for(const m of data.messages||[])merged.set(m.clientId||m.id,{...m,author:m.senderId,serverId:m.id,pending:false,failed:false});
+      // Assistant and user messages can share a clientId for retry recovery;
+      // they must never overwrite one another when merging Cloud history.
+      const messageMergeKey=(m)=>{
+        const lolaReply=(m.senderId||m.author)==='user-lola';
+        return (lolaReply?'assistant:':'user:')+
+          (lolaReply?(m.serverId||m.id):(m.clientId||m.serverId||m.id));
+      };
+      const merged=new Map(local.map(m=>[messageMergeKey(m),m]));
+      for(const m of data.messages||[]){
+        const remote={...m,author:m.senderId,serverId:m.id,pending:false,failed:false};
+        merged.set(messageMergeKey(remote),remote);
+      }
       state.dmMessages[key]=[...merged.values()].sort((a,b)=>(a.time||0)-(b.time||0));
       const messagesChanged=beforeSignature!==messageListUiSignature(state.dmMessages[key]);
       save();
@@ -3109,6 +3119,22 @@
         if(messagesChanged)renderMessages();
       }
       flushPendingDms(id).catch(err=>console.warn('[Azurecord] Fila DM:',err));
+      if(id==='user-lola'){
+        // After a reload, finish an already-confirmed message that never got
+        // a Cloud reply. An existing answer prevents duplicate generation.
+        const all=state.dmMessages[key]||[];
+        const lastUserIndex=all.findLastIndex(m=>m.author===me && m.serverId && !m.pending);
+        if(lastUserIndex>=0){
+          const unanswered=all[lastUserIndex];
+          const answered=all.some(m=>m.author==='user-lola' &&
+            (m.simulatedFor===unanswered.id || (m.clientId && m.clientId===unanswered.id))) ||
+            all.slice(lastUserIndex+1).some(m=>m.author==='user-lola' && !m.localGreeting);
+          const recent=Date.now()-Number(unanswered.time||0)<10*60*1000;
+          if(!answered && recent && !unanswered._lolaAnswered){
+            void simulateLolaReply(unanswered).catch(err=>console.warn('[Azurecord] Lola restore:',err?.message||err));
+          }
+        }
+      }
       return true;
     }catch(err){
       console.warn('[Azurecord] DM sync failed:',err.message);
@@ -4119,15 +4145,15 @@
     if(lolaReplyInflight.has(replyKey))return;
     lolaReplyInflight.add(replyKey);
     try{
-    const target=view.mode==='dm'?view.dmUserId:'user-lola';
-    if(target!=='user-lola')return;
     const epoch=lolaChatEpoch;
     const accountAtSend=state.currentAccountId;
-    const originalView={mode:view.mode,serverId:view.serverId,channelId:view.channelId,dmUserId:view.dmUserId};
+    // A reply belongs to Lola's DM even if the user switches tabs mid-request.
+    const originalView={mode:'dm',serverId:null,channelId:null,dmUserId:'user-lola'};
     const text=String(message.text||'').trim();
     const mem=learnFromUserText(text);mem.lastIntent=inferLolaIntent(text);
     const files=attachmentListForMessage(message);
-    const messages=getMessages().filter(m=>m?.id!==message.id).slice(-32);
+    const messages=(state.dmMessages[dmKey('user-lola')]||[])
+      .filter(m=>m?.id!==message.id).slice(-32);
     const aiResult=await askLolaAi(text,messages,files,false,message.id);
     if(accountAtSend!==state.currentAccountId||epoch!==lolaChatEpoch||aiResult?.discarded)return;
     if(aiResult?.newChat){await startNewLolaChat();return;}
@@ -4379,6 +4405,9 @@
         if(message.failed&&message.retryable===false)continue;
         if(other==='user-lola'){
           const currentSession=state.lolaSessionInfo?.[me]?.id||await ensureLolaSession();
+          // A pending send from an archived conversation must not leak into a new one.
+          if(message.lolaSessionId && message.lolaSessionId!=='legacy' &&
+             message.lolaSessionId!==currentSession)continue;
           if(currentSession)message.lolaSessionId=currentSession;
         }
         const confirmed=await sendDmToBackend(message,other);
