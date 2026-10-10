@@ -377,6 +377,76 @@ function lolaChatCommand(text) {
   return { kind: "help", topic, instruction: "Explique brevemente que a Lola conversa, auxilia com código e design, analisa imagens e tem comandos /resumir, /ideias [tema] e /pesquisar [tema]. Não prometa ações externas." };
 }
 
+// Verified facts from INTI CREATES' public game pages. Keep this tiny fact
+// bank separate from free-form model completions: if retrieval fails, basic
+// franchise history must not fall back to a confident hallucination.
+const LOLA_GUNVOLT_OFFICIAL = Object.freeze({
+  gv1: "https://gunvolt.com/en/GV1/",
+  gv2: "https://gunvolt.com/en/GV2/product/",
+  gv3: "https://gunvolt.com/en/GV3/product/",
+  ix: "https://inticreates.com/gunvolt-chronicles-luminous-avenger-ix-coming-to-switch-ps4-steam-on-september-26th-2019/",
+  gv2story: "https://gunvolt.com/en/GV2/story/"
+});
+
+function lolaGunvoltRelevant(text) {
+  return /\b(?:gunvolt|azure striker|copen|kirin|joule|septima|sumeragi|asimov|luminous avenger|zed|gv[123])\b/i
+    .test(String(text || ""));
+}
+
+function lolaGunvoltVerifiedAnswer(question) {
+  const text = String(question || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  if (!lolaGunvoltRelevant(text)) return null;
+  const sourceLabel = "\n\nFontes oficiais: ";
+  const overview = "Azure Striker Gunvolt é uma série de jogos de ação e plataforma 2D criada pela INTI CREATES. Gunvolt é um Adept capaz de controlar eletricidade, e a organização Sumeragi é central nos conflitos da franquia.\n\nOs três jogos principais começaram com Gunvolt (2014), Gunvolt 2 (2016) e Gunvolt 3 (2022). Copen, rival de Gunvolt e personagem jogável no segundo jogo, também protagoniza o spin-off Gunvolt Chronicles: Luminous Avenger iX (2019). Kirin é uma personagem jogável de Gunvolt 3.";
+  const mainSources = [LOLA_GUNVOLT_OFFICIAL.gv1, LOLA_GUNVOLT_OFFICIAL.gv2,
+    LOLA_GUNVOLT_OFFICIAL.gv3, LOLA_GUNVOLT_OFFICIAL.ix];
+  const hasSeries = /\b(?:gunvolt|azure striker|gv[123])\b/.test(text);
+  if (/\b(?:quem|qual|quais|onde|quando)\b.*\b(?:criou|desenvolveu|desenvolvedora|estudio|empresa|editora|publicou)\b|\b(?:desenvolvedora|publisher|publicadora|estudio|quem criou|quem desenvolveu)\b/.test(text)) {
+    return { reply: "A desenvolvedora de Azure Striker Gunvolt é a INTI CREATES. Ela também publicou os jogos principais digitalmente; algumas edições físicas tiveram parceiros de distribuição distintos." +
+      sourceLabel + [LOLA_GUNVOLT_OFFICIAL.gv2, LOLA_GUNVOLT_OFFICIAL.gv3].join("\n"), sources: [LOLA_GUNVOLT_OFFICIAL.gv2, LOLA_GUNVOLT_OFFICIAL.gv3] };
+  }
+  if (/\b(?:quando|data|ano|lancamento|lancou|lancado|datas)\b/.test(text) && hasSeries) {
+    return { reply: "Os lançamentos originais dos jogos principais foram: Azure Striker Gunvolt (2014), Gunvolt 2 (2016) e Gunvolt 3 (2022). O spin-off com Copen, Luminous Avenger iX, foi lançado em 2019. Datas variam conforme a plataforma." +
+      sourceLabel + mainSources.join("\n"), sources: mainSources };
+  }
+  if (/\bcopen\b/.test(text) && /\b(?:quem|o que|personagem|fale|sobre|historia)\b/.test(text)) {
+    return { reply: "Copen é um rival e anti-herói da série Gunvolt. Ele se tornou jogável em Azure Striker Gunvolt 2 (2016) e protagoniza Gunvolt Chronicles: Luminous Avenger iX (2019). Ele não é apenas um figurante da franquia!" +
+      sourceLabel + [LOLA_GUNVOLT_OFFICIAL.gv2, LOLA_GUNVOLT_OFFICIAL.ix].join("\n"),
+      sources: [LOLA_GUNVOLT_OFFICIAL.gv2, LOLA_GUNVOLT_OFFICIAL.ix] };
+  }
+  if (/\bkirin\b/.test(text) && /\b(?:quem|o que|personagem|fale|sobre|historia)\b/.test(text)) {
+    return { reply: "Kirin é uma das protagonistas jogáveis de Azure Striker Gunvolt 3 (2022). Sua jogabilidade combina ataques com espada e talismãs; Gunvolt também pode ser controlado durante as batalhas." +
+      sourceLabel + LOLA_GUNVOLT_OFFICIAL.gv3, sources: [LOLA_GUNVOLT_OFFICIAL.gv3] };
+  }
+  if (/\bsumeragi\b/.test(text) && /\b(?:quem|o que|empresa|grupo|fale|sobre|historia)\b/.test(text)) {
+    return { reply: "Sumeragi é uma organização importante na história de Gunvolt. O primeiro arco envolve seus planos envolvendo os Adepts e os poderes chamados Septimas. Gunvolt enfrenta essa organização, não um suposto 'Dr. Black' como vilão geral da série." +
+      sourceLabel + LOLA_GUNVOLT_OFFICIAL.gv2story, sources: [LOLA_GUNVOLT_OFFICIAL.gv2story] };
+  }
+  const broad = /^(?:gunvolt|azure striker gunvolt|o que e gunvolt|o que e azure striker gunvolt)\??$/.test(text) ||
+    (hasSeries && /\b(?:serie|franquia|visao geral|me fale|me conta|me explica|explique|o que e|sobre a serie|sobre a franquia)\b/.test(text) &&
+      !/\b(?:zed|lola|joule|asimov|copen|kirin|antagonista|chefes|final|fases|boss|habilidade|especial|ending|speedrun)\b/.test(text));
+  return broad ? { reply: overview + sourceLabel + mainSources.join("\n"), sources: mainSources } : null;
+}
+
+function lolaGunvoltFactualQuestion(text) {
+  return lolaGunvoltRelevant(text) &&
+    /(?:\?|\/pesquisar|\/wiki|\b(?:quem|quando|onde|qual|quais|o que|como|explique|explica|me fala|hist[oó]ria|habilidade|poder|lan[cç]|origem|personagem|lore)\b)/i.test(String(text || ""));
+}
+
+function lolaGunvoltUnsupportedReply(question) {
+  return "Sobre " + String(question || "Gunvolt").replace(/^\/(?:pesquisar|wiki)\s+/i,"").slice(0,100) +
+    ": não consegui verificar detalhes suficientes nas fontes consultadas. Prefiro admitir isso a inventar personagens ou datas. 😅\n\n" +
+    "Para começar, o portal oficial da série é " + LOLA_GUNVOLT_OFFICIAL.gv1 +
+    " e há informações dos jogos em " + LOLA_GUNVOLT_OFFICIAL.gv3 + ".";
+}
+
+function lolaGunvoltSuspect(answer) {
+  const text = String(answer || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /\bdr\.?\s*black\b|\bint[_\s-]*sys\b|\bnatsume\b/.test(text) ||
+    /(?:gunvolt\s*(?:2|ii)|azure striker gunvolt\s*2)[^\n.]{0,55}\b2017\b/.test(text) ||
+    /(?:gunvolt\s*(?:3|iii)|azure striker gunvolt\s*3)[^\n.]{0,55}\b2020\b/.test(text);
+}
+
 function lolaWikiTargets(query) {
   const command = lolaChatCommand(query);
   const research = command?.kind === "research";
@@ -390,7 +460,10 @@ function lolaWikiTargets(query) {
     .replace(/[?!]+/g, "").trim().slice(0, 110);
   if (search.length < 3) return [];
   const targets = [];
-  if (gunvolt) targets.push({ host: "azurestrikergunvolt.fandom.com", label: "Azure Striker Wiki" });
+  if (gunvolt) {
+    targets.push({ host: "azurestrikergunvolt.fandom.com", label: "Azure Striker Wiki" });
+    targets.push({ host: "en.wikipedia.org", label: "Wikipedia (EN)" });
+  }
   if (inazuma) targets.push({ host: "inazuma-eleven.fandom.com", label: "Inazuma Eleven Wiki" });
   if (wiki && !gunvolt && !inazuma) {
     targets.push({ host: "pt.wikipedia.org", label: "Wikipédia (PT)" });
@@ -444,7 +517,7 @@ async function lolaWikiLookup(question) {
   if (!targets.length) return [];
   const tasks = targets.map(async ({host,label,search}) => {
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), 2000);
+    const deadline = setTimeout(() => controller.abort(), 4500);
     try {
       const api = new URL("https://" + host + "/api.php");
       const params = {
@@ -629,7 +702,8 @@ async function handleLola(request, env, url, path) {
     const recentReplies = historyRows.filter(x => x.role === "assistant").slice(-6).map(x => String(x.content || ""));
     // Only enrich topical questions; missing wiki results are never fatal.
     const command = lolaChatCommand(userText);
-    const wikiRelevant = !proactive && lolaWikiTargets(userText).length > 0 &&
+    const gunvoltVerified = !proactive ? lolaGunvoltVerifiedAnswer(userText) : null;
+    const wikiRelevant = !proactive && !gunvoltVerified && lolaWikiTargets(userText).length > 0 &&
       (command?.kind === "research" || /\b(?:quem|qual|quais|onde|quando|wiki|wikip[eé]dia|fandom|pesquis|explique|explica)\b/i.test(userText));
     const wikiSources = wikiRelevant ? await lolaWikiLookup(userText) : [];
     const messages = [{ role: "system", content: lolaSystemPrompt(authResult.auth.user, body.memory, recentReplies) }];
@@ -667,12 +741,17 @@ async function handleLola(request, env, url, path) {
       messages.push({ role: "user", content: "Inicie esta conversa com uma saudação curta, natural e variada. Não faça uma apresentação longa." });
     }
 
+    const verifiedDirect = gunvoltVerified || (
+      wikiRelevant && !wikiSources.length && lolaGunvoltFactualQuestion(userText)
+        ? { reply: lolaGunvoltUnsupportedReply(userText), sources: [] }
+        : null
+    );
     const lolaModel = String(env.LOLA_MODEL || LOLA_MODEL).trim() || LOLA_MODEL;
     const candidateModels = [...new Set([lolaModel, LOLA_FALLBACK_MODEL, LOLA_EMERGENCY_MODEL].filter(Boolean))].slice(0, 3);
     let result = null;
-    let reply = "";
+    let reply = verifiedDirect?.reply || "";
     let providerError = null;
-    let usedModel = lolaModel;
+    let usedModel = verifiedDirect ? "official-sources" : lolaModel;
     const overallDeadline = Date.now() + LOLA_AI_DEADLINE_MS;
     // Old implementation made up to six sequential expensive inferences.
     for (let index = 0; index < candidateModels.length && !reply; index++) {
@@ -704,6 +783,11 @@ async function handleLola(request, env, url, path) {
         console.warn("LOLA AI MODEL RETRY", candidateModel, String(error?.message || error).slice(0, 180));
         if (/quota|insufficient.credit|neurons.*exceed|daily.limit/i.test(String(error?.message || ""))) break;
       }
+    }
+    if (reply && !verifiedDirect && lolaGunvoltRelevant(userText) && lolaGunvoltSuspect(reply)) {
+      console.warn("LOLA GUNVOLT UNSUPPORTED ANSWER BLOCKED");
+      reply = lolaGunvoltUnsupportedReply(userText);
+      usedModel = "source-guard";
     }
     if (!reply) {
       console.error("LOLA WORKERS AI UNAVAILABLE", providerError?.code || "NO_TEXT_OR_PROVIDER_ERROR");
@@ -738,7 +822,9 @@ async function handleLola(request, env, url, path) {
       sessionId: conversation.id,
       model: usedModel,
       provider: "cloudflare-workers-ai",
-      wikiSources: wikiSources.map(({title,url,wiki}) => ({title,url,wiki})),
+      wikiSources: verifiedDirect?.sources?.length
+        ? verifiedDirect.sources.map(url => ({title:"INTI CREATES / Gunvolt Official",url,wiki:"Fonte oficial"}))
+        : wikiSources.map(({title,url,wiki}) => ({title,url,wiki})),
       proactive,
       usage: result?.usage || null,
     });
