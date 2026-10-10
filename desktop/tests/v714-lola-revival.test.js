@@ -157,7 +157,7 @@ test('Lola: catches screenshot hallucinations and fails closed for unknown lore'
   assert.equal(canon.lolaGunvoltFactualQuestion('Quem é Zed em Gunvolt 3?'),true);
   assert.equal(canon.lolaGunvoltVerifiedAnswer('Quem é Zed em Gunvolt 3?'),null);
   assert.match(canon.lolaGunvoltUnsupportedReply('Quem é Zed em Gunvolt 3?'),/não consegui verificar/);
-  assert.match(worker,/lolaOfficialFactualIntent\(userText\)/);
+  assert.match(worker,/lolaOfficialFactualIntent\(researchText\)/);
   assert.match(worker,/lolaFactualContradiction\(reply,topic\)/);
   assert.match(worker,/const gunvoltVerified = !proactive \? lolaGunvoltVerifiedAnswer\(researchText\) : null/);
 });
@@ -240,7 +240,7 @@ test('Official source guard: Wikipedia secondary and Fandom not automatic',()=>{
   assert.equal(fns.lolaWikiTargets('Quem é Endou?').length,0);
   assert.match(worker,/FONTES SECUNDÁRIAS, NÃO OFICIAIS/);
   assert.match(worker,/DOCUMENTOS OFICIAIS VERIFICÁVEIS/);
-  assert.match(worker,/lolaOfficialLookup\(userText\)/);
+  assert.match(worker,/lolaOfficialLookup\(researchText\)/);
   assert.match(worker,/lolaOfficialEvidenceCoversQuestion\(researchText,officialSources\)/);
   assert.doesNotMatch(worker,/host: "inazuma-eleven.fandom.com"/);
 });
