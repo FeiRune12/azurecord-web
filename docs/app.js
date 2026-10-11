@@ -758,10 +758,42 @@
     }
   }
 
-  async function askLolaAi(userText, recentMessages, attachments=[], proactive=false){
+  // Reaproveita a resposta já salva em D1 quando o HTTP cai depois da inferência.
+  // Apenas GET: nunca dispara outra inferência nem duplica o consumo do Workers AI.
+  async function recoverLolaResponse(clientId, expectedSessionId){
+    const stableId=String(clientId||'').trim().slice(0,120);
+    if(!stableId || (typeof navigator!=='undefined' && navigator.onLine===false))return null;
+    const accountAtRequest=state.currentAccountId;
+    for(const delayMs of [0,1200,2500,4500]){
+      if(state.currentAccountId!==accountAtRequest)return null;
+      if(delayMs)await new Promise(resolve=>setTimeout(resolve,delayMs));
+      if(state.currentAccountId!==accountAtRequest)return null;
+      try{
+        const history=await cloudRequest('/api/dms/user-lola',{timeoutMs:6000});
+        const remoteSessionId=String(history?.sessionId||'');
+        if(expectedSessionId && expectedSessionId!=='legacy' &&
+           remoteSessionId && remoteSessionId!==expectedSessionId)return null;
+        const match=Array.isArray(history?.messages) ? history.messages.find(m=>
+          m?.clientId===stableId && m?.senderId==='user-lola' &&
+          m?.aiGenerated===true && typeof m?.text==='string' && m.text.trim()
+        ) : null;
+        if(match){
+          console.info('[Azurecord] Lola: resposta recuperada do histórico Cloud.');
+          return {text:match.text.trim(),message:match,model:'saved',
+            provider:'cloudflare-workers-ai',sessionId:remoteSessionId||expectedSessionId||null};
+        }
+      }catch(error){
+        if(error?.status===401 || error?.status===403)return null;
+      }
+    }
+    return null;
+  }
+
+  async function askLolaAi(userText, recentMessages, attachments=[], proactive=false, clientId=null){
     if(!lolaCloudReady())return {failed:true,code:'login_required'};
     const controller=new AbortController();
     const timeout=setTimeout(()=>controller.abort(),90000);
+    let recoverySessionId=null;
     try{
       const recent=Array.isArray(recentMessages)?recentMessages.slice(-48).map(m=>({
         role:m?.author==='user-lola'?'assistant':'user',
@@ -770,12 +802,14 @@
       })).filter(m=>m.text||m.images.length):[];
       const payloadBase={
         proactive,
+        clientId:String(clientId||'').trim().slice(0,120),
         userText:String(userText||'').slice(0,7000),
         recent,
         attachments:(attachments||[]).slice(0,3).map(f=>({dataUrl:f?.dataUrl||'',url:f?.url||'',name:f?.name||'',type:f?.type||'',visual:f?.visual||null})),
         memory:memoryContext(getLolaMemory())
       };
       let sessionId=await ensureLolaSession();
+      recoverySessionId=sessionId;
       let data=null;
       for(let attempt=0;attempt<2;attempt++){
         try{
@@ -786,6 +820,7 @@
             const replacement=String(err.data?.sessionId||'').trim();
             if(replacement){
               sessionId=replacement;
+              recoverySessionId=replacement;
               state.lolaSessionInfo[state.currentAccountId]={id:replacement,pendingReset:false};
               saveNow();
               continue;
@@ -798,10 +833,19 @@
         state.lolaSessionInfo[state.currentAccountId]={id:String(data.sessionId),pendingReset:false};
         saveNow();
       }
+      if(!data?.reply && clientId){
+        const recovered=await recoverLolaResponse(clientId,recoverySessionId);
+        if(recovered)return recovered;
+      }
       return data?.reply?{text:String(data.reply).trim(),message:data.message||null,
         model:data.model||null,provider:data.provider||'cloudflare-workers-ai',sessionId:data.sessionId||sessionId||null,newChat:!!data.newChat}:null;
     }catch(err){
-      console.warn('[Azurecord] Lola Cloud:',err?.message||err);
+      if(clientId && err.code!=='conversation_changed' && err.code!=='AI_PROVIDER_ERROR' &&
+         err.code!=='AI_RATE_LIMIT' && err.status!==401 && err.status!==403){
+        const recovered=await recoverLolaResponse(clientId,recoverySessionId);
+        if(recovered)return recovered;
+      }
+      console.warn('[Azurecord] Lola Cloud:',err?.code||'ai_error',err?.message||err);
       return {failed:true,code:err.code||'ai_error',reason:err.message||''};
     }finally{clearTimeout(timeout);}
   }
@@ -4110,14 +4154,22 @@
     const mem=learnFromUserText(text);mem.lastIntent=inferLolaIntent(text);
     const files=attachmentListForMessage(message);
     const messages=getMessages().filter(m=>m?.id!==message.id).slice(-32);
-    const aiResult=await askLolaAi(text,messages,files,false);
+    const aiResult=await askLolaAi(text,messages,files,false,message.id);
     if(accountAtSend!==state.currentAccountId||epoch!==lolaChatEpoch||aiResult?.discarded)return;
     if(aiResult?.newChat){await startNewLolaChat();return;}
-    const previousReplies=(state.dmMessages[dmKey('user-lola')]||[]).filter(m=>m.author==='user-lola').slice(-10).map(m=>m.text);
     let reply=aiResult?.text;
     if(!reply){
       const diagnostic={AI_NOT_CONFIGURED:'O binding Workers AI não ficou disponível nesta implantação. A Lola vai tentar novamente quando o backend reconectar. ',AI_PROVIDER_ERROR:'O Workers AI não conseguiu responder agora. Tente novamente em instantes. ',AI_EMPTY_RESPONSE:'O modelo respondeu sem texto. Tente novamente. ',AI_RATE_LIMIT:'Muitas mensagens em pouco tempo. Espera alguns segundos e tenta de novo. ⏳',login_required:'Sua sessão Cloud não está ativa. Entre novamente na sua conta para usar a Lola. '};
-      reply=diagnostic[aiResult?.code]||window.AzurecordLola.offlineReply(text,previousReplies,files.length);
+      const errorCode=String(aiResult?.code||'AI_NO_REPLY').slice(0,72);
+      const connectionErrors={
+        cloud_network_error:'A conexão com o Azurecord Cloud caiu e não foi possível recuperar a resposta. Tente novamente.',
+        cloud_timeout:'A resposta demorou demais e não foi possível recuperá-la. Tente novamente.',
+        offline:'Você está sem internet. Reconecte-se para conversar com a Lola.',
+        ai_error:'Houve uma falha ao obter a resposta da IA. Tente novamente.',
+        AI_NO_REPLY:'A IA não retornou uma resposta válida. Tente novamente.'
+      };
+      reply=diagnostic[errorCode]||connectionErrors[errorCode]||
+        'A comunicação com a IA falhou ('+errorCode+'). Tente novamente.';
     }
     if(!reply)return;
     // Ao falhar o provedor, não inventa uma resposta factual e nem entra
